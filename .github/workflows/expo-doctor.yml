@@ -24,8 +24,8 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: 📦 Setup Node + PNPM + install deps
-        uses: ./.github/actions/setup-node-pnpm-install
+      - name: 📦 Setup Node and dependencies
+        uses: ./.github/actions/setup-node-install
 
       - name: 🚑 Run Doctor Checks
         run: npx expo-doctor@latest
