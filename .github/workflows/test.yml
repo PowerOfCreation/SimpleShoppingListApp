@@ -21,7 +21,7 @@ jobs:
         uses: ./.github/actions/setup-node-install
 
       - name: 🏃‍♂️ Run Tests
-        run: pnpm run test:ci
+        run: npm run test:ci
 
       - name: Jest Coverage Comment
         uses: MishaKav/jest-coverage-comment@main

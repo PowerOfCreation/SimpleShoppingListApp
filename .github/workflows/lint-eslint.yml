@@ -30,4 +30,4 @@ jobs:
 
       - name: 🏃‍♂️ Run ESLint PR
         if: github.event_name != 'pull_request'
-        run: pnpm run lint
+        run: npm run lint
