@@ -135,3 +135,5 @@ expo-env.d.ts
 # The purpose of the prompt is to encourage users to add the android and ios directories to the project's .gitignore.
 android
 ios
+
+coverage
