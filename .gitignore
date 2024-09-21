@@ -130,3 +130,8 @@ docs/pages/versions/*/react-native/*.diff
 **/ios/.xcode.env.local
 
 expo-env.d.ts
+
+# https://docs.expo.dev/workflow/prebuild/#clean
+# The purpose of the prompt is to encourage users to add the android and ios directories to the project's .gitignore.
+android
+ios
