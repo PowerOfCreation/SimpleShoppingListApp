@@ -1,5 +1,6 @@
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { StyleSheet, TextInput } from "react-native"
+import React from "react"
 
 export type ThemedTextInput = {
   onChangeText: (text: string) => void

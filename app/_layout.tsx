@@ -1,6 +1,7 @@
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { Stack } from "expo-router"
 import { useColorScheme } from "react-native"
+import React from "react"
 
 export default function RootLayout() {
   useColorScheme()
