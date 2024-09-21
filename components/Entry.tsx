@@ -1,4 +1,8 @@
-import { GestureResponderEvent, TouchableOpacity } from "react-native"
+import {
+  GestureResponderEvent,
+  TouchableOpacity,
+  StyleSheet,
+} from "react-native"
 import { ThemedText } from "./ThemedText"
 import React from "react"
 
@@ -9,24 +13,23 @@ type EntryProps = {
 }
 
 export function Entry(props: EntryProps) {
+  const getBackgroundColor = () => {
+    return props.isCompleted
+      ? styles.completedBackground
+      : styles.uncompletedBackground
+  }
+
+  const getTextStyles = () => {
+    return props.isCompleted ? [styles.completedText] : [styles.defaultText]
+  }
+
   return (
     <TouchableOpacity
-      style={{
-        width: "100%",
-        backgroundColor: props.isCompleted ? "#121212" : "#2e2e2e",
-        height: 60,
-        justifyContent: "center",
-        borderTopWidth: 1,
-        borderBlockColor: "gray",
-      }}
+      style={[getBackgroundColor(), styles.buttonStyle]}
       onPress={props.onToggleComplete}
     >
       <ThemedText
-        style={{
-          left: 50,
-          color: props.isCompleted ? "#00400b" : "white",
-          textDecorationLine: props.isCompleted ? "line-through" : "none",
-        }}
+        style={[styles.baseText, getTextStyles()]}
         type="defaultSemiBold"
       >
         {props.ingredientName}
@@ -34,3 +37,30 @@ export function Entry(props: EntryProps) {
     </TouchableOpacity>
   )
 }
+
+const styles = StyleSheet.create({
+  buttonStyle: {
+    width: "100%",
+    height: 60,
+    justifyContent: "center",
+    borderTopWidth: 1,
+    borderBlockColor: "gray",
+  },
+  completedBackground: {
+    backgroundColor: "#121212",
+  },
+  uncompletedBackground: {
+    backgroundColor: "#2e2e2e",
+  },
+  baseText: {
+    left: 50,
+  },
+  completedText: {
+    color: "#00400b",
+    textDecorationLine: "line-through",
+  },
+  defaultText: {
+    color: "white",
+    textDecorationLine: "none",
+  },
+})

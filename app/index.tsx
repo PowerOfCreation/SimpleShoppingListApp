@@ -41,14 +41,11 @@ export default function Index() {
             isCompleted={prop.completed}
             onToggleComplete={() => toggleIngredientCompletion(key)}
             key={key}
-          ></Entry>
+          />
         )
       })}
 
-      <ActionButton
-        symbol="+"
-        onPress={() => router.push("/new_ingredient")}
-      ></ActionButton>
+      <ActionButton symbol="+" onPress={() => router.push("/new_ingredient")} />
     </View>
   )
 }
