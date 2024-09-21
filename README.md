@@ -22,3 +22,13 @@ In the output, you'll find options to open the app in a
 - [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
 - [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
 - [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+
+# Get Release Build
+
+```bash
+npx expo run:android --variant release
+```
+
+Interesting links:
+- https://reactnative.dev/docs/signed-apk-android
+- https://github.com/expo/eas-cli/issues/1300#issuecomment-1834275766
