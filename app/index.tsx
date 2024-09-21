@@ -4,8 +4,8 @@ import React from "react"
 import { View } from "react-native"
 import { router } from "expo-router"
 
-import { ingredientService } from "./ingredientService"
-import Ingredient from "./Ingredient"
+import { ingredientService } from "../api/ingredient-service"
+import Ingredient from "../types/Ingredient"
 
 export default function Index() {
   const [ingredients, setIngredients] = React.useState<Ingredient[]>([])

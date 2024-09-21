@@ -1,5 +1,5 @@
-import { getItem, setItem } from "@/utils/AsyncStorage"
-import Ingredient from "./Ingredient"
+import { getItem, setItem } from "./common/async-storage"
+import Ingredient from "../types/Ingredient"
 
 class IngredientService {
   ingredients: Ingredient[] = []

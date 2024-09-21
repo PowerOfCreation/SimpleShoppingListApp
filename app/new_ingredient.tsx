@@ -4,7 +4,7 @@ import { Pressable, View } from "react-native"
 import { SafeAreaView } from "react-native"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedTextInput } from "@/components/ThemedTextInput"
-import { ingredientService } from "./ingredientService"
+import { ingredientService } from "../api/ingredient-service"
 
 export default function NewIngredient() {
   const [text, onChangeText] = React.useState("")
