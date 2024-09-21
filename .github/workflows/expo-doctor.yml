@@ -1,0 +1,26 @@
+name: Expo Doctor (expo)
+
+on:
+  push:
+    branches:
+      - main
+      - master
+    paths:
+      - "package.json"
+      - "pnpm-lock.yaml"
+  pull_request:
+    paths:
+      - "package.json"
+      - "pnpm-lock.yaml"
+
+jobs:
+  doctor:
+    name: Expo Doctor (expo)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📦 Setup Node + PNPM + install deps
+        uses: ./.github/actions/setup-node-pnpm-install
+
+      - name: 🚑 Run Doctor Checks
+        run: npx expo-doctor@latest
