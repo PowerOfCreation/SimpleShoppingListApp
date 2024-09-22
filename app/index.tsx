@@ -1,7 +1,7 @@
 import { ActionButton } from "@/components/ActionButton"
 import { Entry } from "@/components/Entry"
 import React from "react"
-import { FlatList, SafeAreaView } from "react-native"
+import { FlatList, SafeAreaView, StyleSheet } from "react-native"
 import { router } from "expo-router"
 
 import { ingredientService } from "../api/ingredient-service"
@@ -38,11 +38,7 @@ export default function Index() {
   }
 
   return (
-    <SafeAreaView
-      style={{
-        flex: 1,
-      }}
-    >
+    <SafeAreaView style={styles.container}>
       <FlatList
         data={ingredients}
         renderItem={renderEntry}
@@ -53,3 +49,9 @@ export default function Index() {
     </SafeAreaView>
   )
 }
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+})
