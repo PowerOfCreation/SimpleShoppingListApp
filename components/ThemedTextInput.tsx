@@ -4,6 +4,7 @@ import React from "react"
 
 export type ThemedTextInput = {
   onChangeText: (text: string) => void
+  onSubmit: (text: string) => void
   value: string
   placeholder: string
 }
@@ -21,6 +22,7 @@ export function ThemedTextInput(params: ThemedTextInput) {
       value={params.value}
       placeholder={params.placeholder}
       placeholderTextColor={useThemeColor({}, "icon")}
+      onSubmitEditing={(event) => params.onSubmit(event.nativeEvent.text)}
     />
   )
 }

@@ -9,6 +9,11 @@ import { ingredientService } from "../api/ingredient-service"
 export default function NewIngredient() {
   const [text, onChangeText] = React.useState("")
 
+  const addIngredient = (ingredientName: string) => {
+    ingredientService.AddIngredients(ingredientName)
+    router.navigate("/")
+  }
+
   return (
     <SafeAreaView
       style={{
@@ -23,6 +28,7 @@ export default function NewIngredient() {
         }}
       >
         <ThemedTextInput
+          onSubmit={() => addIngredient(text)}
           onChangeText={onChangeText}
           value={text}
           placeholder="Ingredient name"
@@ -30,10 +36,7 @@ export default function NewIngredient() {
 
         <Pressable
           style={{ margin: 5, marginRight: 15 }}
-          onPress={() => {
-            ingredientService.AddIngredients(text)
-            router.navigate("/")
-          }}
+          onPress={() => addIngredient(text)}
         >
           <ThemedText>Add</ThemedText>
         </Pressable>
