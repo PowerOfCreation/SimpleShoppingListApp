@@ -7,17 +7,20 @@ export type ThemedTextInput = {
   onSubmit: (text: string) => void
   value: string
   placeholder: string
+  borderColor?: string
 }
 
 export function ThemedTextInput(params: ThemedTextInput) {
-  const color = {
-    borderColor: useThemeColor({}, "text"),
+  const defaultBorderColor = useThemeColor({}, "text")
+
+  const colorStyles = {
+    borderColor: params.borderColor ?? defaultBorderColor,
     color: useThemeColor({}, "text"),
   }
 
   return (
     <TextInput
-      style={[styles.input, color]}
+      style={[styles.input, colorStyles]}
       onChangeText={params.onChangeText}
       value={params.value}
       placeholder={params.placeholder}

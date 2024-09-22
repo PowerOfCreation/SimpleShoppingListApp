@@ -18,7 +18,14 @@ class IngredientService {
     return this.ingredients
   }
 
-  AddIngredients(ingredientName: string) {
+  AddIngredients(ingredientName: string): {
+    isSuccessful: boolean
+    error: string
+  } {
+    if (!ingredientName.trim()) {
+      return { isSuccessful: false, error: "Ingredient name can't be empty" }
+    }
+
     this.ingredients.push({
       name: ingredientName,
       completed: false,
@@ -27,7 +34,7 @@ class IngredientService {
 
     setItem("ingredients", this.ingredients)
 
-    return this.ingredients
+    return { isSuccessful: true, error: "" }
   }
 
   Update(ingredients: Ingredient[]) {
