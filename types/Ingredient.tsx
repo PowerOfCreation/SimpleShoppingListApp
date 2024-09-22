@@ -1,9 +1,5 @@
-export default class Ingredient {
+export type Ingredient = {
+  id: string
   name: string
   completed: boolean
-
-  constructor(name: string, completed: boolean = false) {
-    this.name = name
-    this.completed = completed
-  }
 }

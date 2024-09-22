@@ -1,11 +1,11 @@
 import { ActionButton } from "@/components/ActionButton"
 import { Entry } from "@/components/Entry"
 import React from "react"
-import { View } from "react-native"
+import { FlatList, SafeAreaView } from "react-native"
 import { router } from "expo-router"
 
 import { ingredientService } from "../api/ingredient-service"
-import Ingredient from "../types/Ingredient"
+import { Ingredient } from "@/types/Ingredient"
 
 export default function Index() {
   const [ingredients, setIngredients] = React.useState<Ingredient[]>([])
@@ -14,9 +14,9 @@ export default function Index() {
     ingredientService.GetIngredients().then((x) => setIngredients(x))
   }, [])
 
-  const toggleIngredientCompletion = (index: number) => {
-    const updatedIngredients = ingredients.map((element, i) => {
-      if (i === index) {
+  const toggleIngredientCompletion = (id: string) => {
+    const updatedIngredients = ingredients.map((element, _) => {
+      if (element.id === id) {
         return { ...element, completed: !element.completed }
       }
       return element
@@ -27,25 +27,29 @@ export default function Index() {
     setIngredients(updatedIngredients)
   }
 
+  const renderEntry = ({ item }: { item: Ingredient }) => {
+    return (
+      <Entry
+        ingredientName={item.name}
+        isCompleted={item.completed}
+        onToggleComplete={() => toggleIngredientCompletion(item.id)}
+      />
+    )
+  }
+
   return (
-    <View
+    <SafeAreaView
       style={{
         flex: 1,
-        alignItems: "center",
       }}
     >
-      {ingredients.map((prop, key) => {
-        return (
-          <Entry
-            ingredientName={prop.name}
-            isCompleted={prop.completed}
-            onToggleComplete={() => toggleIngredientCompletion(key)}
-            key={key}
-          />
-        )
-      })}
+      <FlatList
+        data={ingredients}
+        renderItem={renderEntry}
+        keyExtractor={(item) => item.id}
+      />
 
       <ActionButton symbol="+" onPress={() => router.push("/new_ingredient")} />
-    </View>
+    </SafeAreaView>
   )
 }

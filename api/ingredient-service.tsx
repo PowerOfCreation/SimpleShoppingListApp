@@ -1,5 +1,7 @@
+import { Ingredient } from "@/types/Ingredient"
 import { getItem, setItem } from "./common/async-storage"
-import Ingredient from "../types/Ingredient"
+import "react-native-get-random-values"
+import { v4 as uuidv4 } from "uuid"
 
 class IngredientService {
   ingredients: Ingredient[] = []
@@ -17,7 +19,11 @@ class IngredientService {
   }
 
   AddIngredients(ingredientName: string) {
-    this.ingredients.push(new Ingredient(ingredientName))
+    this.ingredients.push({
+      name: ingredientName,
+      completed: false,
+      id: uuidv4(),
+    })
 
     setItem("ingredients", this.ingredients)
 
