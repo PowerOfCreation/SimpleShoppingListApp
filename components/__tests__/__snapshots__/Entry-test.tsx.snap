@@ -31,16 +31,20 @@ exports[`renders correctly 1`] = `
   onStartShouldSetResponder={[Function]}
   style={
     {
+      "alignItems": "center",
       "backgroundColor": "#2e2e2e",
       "borderBlockColor": "gray",
       "borderTopWidth": 1,
+      "display": "flex",
+      "flexDirection": "row",
       "height": 60,
-      "justifyContent": "center",
       "opacity": 1,
+      "paddingLeft": 15,
       "width": "100%",
     }
   }
 >
+  <Text />
   <Text
     style={
       [
@@ -54,7 +58,8 @@ exports[`renders correctly 1`] = `
         },
         [
           {
-            "left": 50,
+            "flex": 1,
+            "left": 20,
           },
           [
             {

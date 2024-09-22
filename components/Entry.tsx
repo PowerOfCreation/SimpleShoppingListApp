@@ -5,6 +5,7 @@ import {
 } from "react-native"
 import { ThemedText } from "./ThemedText"
 import React from "react"
+import Feather from "@expo/vector-icons/Feather"
 
 type EntryProps = {
   ingredientName: string
@@ -28,6 +29,12 @@ export function Entry(props: EntryProps) {
       style={[getBackgroundColor(), styles.buttonStyle]}
       onPress={props.onToggleComplete}
     >
+      <Feather
+        name={props.isCompleted ? "check-circle" : "circle"}
+        size={26}
+        color="#1999b3"
+      />
+
       <ThemedText
         style={[styles.baseText, getTextStyles()]}
         type="defaultSemiBold"
@@ -40,11 +47,14 @@ export function Entry(props: EntryProps) {
 
 const styles = StyleSheet.create({
   buttonStyle: {
+    paddingLeft: 15,
     width: "100%",
     height: 60,
-    justifyContent: "center",
     borderTopWidth: 1,
     borderBlockColor: "gray",
+    display: "flex",
+    flexDirection: "row",
+    alignItems: "center",
   },
   completedBackground: {
     backgroundColor: "#121212",
@@ -53,7 +63,8 @@ const styles = StyleSheet.create({
     backgroundColor: "#2e2e2e",
   },
   baseText: {
-    left: 50,
+    left: 20,
+    flex: 1,
   },
   completedText: {
     color: "#00400b",
