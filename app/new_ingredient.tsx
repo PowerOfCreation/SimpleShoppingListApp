@@ -36,6 +36,7 @@ export default function NewIngredient() {
           value={text}
           placeholder="Ingredient name"
           borderColor={invalidInputExplanation ? "red" : undefined}
+          autoFocus={true}
         />
 
         <Pressable
