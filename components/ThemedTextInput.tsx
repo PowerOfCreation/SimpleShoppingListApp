@@ -5,6 +5,7 @@ import React from "react"
 export type ThemedTextInput = {
   onChangeText: (text: string) => void
   onSubmit: (text: string) => void
+  onBlur?: () => void
   value: string
   placeholder: string
   borderColor?: string
@@ -26,6 +27,7 @@ export function ThemedTextInput({
     <TextInput
       style={[styles.input, colorStyles]}
       onChangeText={props.onChangeText}
+      onBlur={props.onBlur}
       value={props.value}
       placeholder={props.placeholder}
       placeholderTextColor={useThemeColor({}, "icon")}
