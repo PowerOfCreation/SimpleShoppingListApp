@@ -11,6 +11,7 @@ type EntryProps = {
   ingredientName: string
   isCompleted: boolean
   onToggleComplete: (event: GestureResponderEvent) => void
+  onLongPress: (event: GestureResponderEvent) => void
 }
 
 export function Entry(props: EntryProps) {
@@ -28,6 +29,7 @@ export function Entry(props: EntryProps) {
     <TouchableOpacity
       style={[getBackgroundColor(), styles.buttonStyle]}
       onPress={props.onToggleComplete}
+      onLongPress={props.onLongPress}
     >
       <Feather
         name={props.isCompleted ? "check-circle" : "circle"}
