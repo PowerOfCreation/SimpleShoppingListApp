@@ -8,24 +8,29 @@ export type ThemedTextInput = {
   value: string
   placeholder: string
   borderColor?: string
+  autoFocus?: boolean
 }
 
-export function ThemedTextInput(params: ThemedTextInput) {
+export function ThemedTextInput({
+  autoFocus = false, // Default value of false
+  ...props
+}: ThemedTextInput) {
   const defaultBorderColor = useThemeColor({}, "text")
 
   const colorStyles = {
-    borderColor: params.borderColor ?? defaultBorderColor,
+    borderColor: props.borderColor ?? defaultBorderColor,
     color: useThemeColor({}, "text"),
   }
 
   return (
     <TextInput
       style={[styles.input, colorStyles]}
-      onChangeText={params.onChangeText}
-      value={params.value}
-      placeholder={params.placeholder}
+      onChangeText={props.onChangeText}
+      value={props.value}
+      placeholder={props.placeholder}
       placeholderTextColor={useThemeColor({}, "icon")}
-      onSubmitEditing={(event) => params.onSubmit(event.nativeEvent.text)}
+      onSubmitEditing={(event) => props.onSubmit(event.nativeEvent.text)}
+      autoFocus={autoFocus}
     />
   )
 }
