@@ -2,19 +2,12 @@ import { ActionButton } from "@/components/ActionButton"
 import { Entry } from "@/components/Entry"
 import React from "react"
 import { FlatList, SafeAreaView, StyleSheet } from "react-native"
-import { router, useNavigation } from "expo-router"
+import { router } from "expo-router"
 
 import { ingredientService } from "../api/ingredient-service"
 import { Ingredient } from "@/types/Ingredient"
-import { ThemedText } from "@/components/ThemedText"
-
-function SaveButton() {
-  return <ThemedText>Save</ThemedText>
-}
 
 export default function Index() {
-  const navigation = useNavigation()
-
   const [ingredients, setIngredients] = React.useState<Ingredient[]>([])
   const [ingredientToEdit, setIngredientToEdit] = React.useState<string>("")
 
@@ -35,6 +28,19 @@ export default function Index() {
     setIngredients(updatedIngredients)
   }
 
+  const changeIngredientName = (id: string, newName: string) => {
+    const updatedIngredients = ingredients.map((element, _) => {
+      if (element.id === id) {
+        return { ...element, name: newName }
+      }
+      return element
+    })
+
+    ingredientService.Update(updatedIngredients)
+
+    setIngredients(updatedIngredients)
+  }
+
   const entryLongPress = (id: string) => {
     setIngredientToEdit(id)
   }
@@ -46,21 +52,12 @@ export default function Index() {
         isCompleted={item.completed}
         onToggleComplete={() => toggleIngredientCompletion(item.id)}
         onLongPress={() => entryLongPress(item.id)}
+        isEdited={ingredientToEdit === item.id}
+        onCancelEditing={() => setIngredientToEdit("")}
+        onSaveEditing={(text) => changeIngredientName(item.id, text)}
       />
     )
   }
-
-  React.useEffect(() => {
-    if (ingredientToEdit) {
-      navigation.setOptions({
-        headerRight: () => SaveButton(),
-      })
-    } else {
-      navigation.setOptions({
-        headerRight: () => null,
-      })
-    }
-  }, [navigation, ingredientToEdit])
 
   return (
     <SafeAreaView style={styles.container}>
