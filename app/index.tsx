@@ -6,6 +6,7 @@ import { router } from "expo-router"
 
 import { ingredientService } from "../api/ingredient-service"
 import { Ingredient } from "@/types/Ingredient"
+import { ThemedText } from "@/components/ThemedText"
 
 export default function Index() {
   const [ingredients, setIngredients] = React.useState<Ingredient[]>([])
@@ -61,12 +62,18 @@ export default function Index() {
 
   return (
     <SafeAreaView style={styles.container}>
-      <FlatList
-        data={ingredients}
-        renderItem={renderEntry}
-        keyExtractor={(item) => item.id}
-        extraData={ingredientToEdit}
-      />
+      {ingredients.length === 0 ? (
+        <ThemedText style={styles.emptyListInfoTextStyle} type="default">
+          Press the '+' button at the bottom right to add your first product.
+        </ThemedText>
+      ) : (
+        <FlatList
+          data={ingredients}
+          renderItem={renderEntry}
+          keyExtractor={(item) => item.id}
+          extraData={ingredientToEdit}
+        />
+      )}
 
       <ActionButton symbol="+" onPress={() => router.push("/new_ingredient")} />
     </SafeAreaView>
@@ -76,5 +83,9 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  emptyListInfoTextStyle: {
+    padding: 20,
+    height: "100%",
   },
 })
