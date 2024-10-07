@@ -32,3 +32,9 @@ npx expo run:android --variant release
 Interesting links:
 - https://reactnative.dev/docs/signed-apk-android
 - https://github.com/expo/eas-cli/issues/1300#issuecomment-1834275766
+
+# Running tests locally
+
+```bash
+npm run test
+```
