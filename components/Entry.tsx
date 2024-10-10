@@ -53,7 +53,8 @@ export function Entry(props: EntryProps) {
           onSubmit={props.onSaveEditing}
           value={text}
           placeholder={""}
-          autoFocus={true}
+          // Auto focus is problematic since the user is already holding down on the input when the editing starts
+          autoFocus={false}
           onBlur={props.onCancelEditing}
         />
       ) : (
