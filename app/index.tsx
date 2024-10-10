@@ -72,6 +72,7 @@ export default function Index() {
           renderItem={renderEntry}
           keyExtractor={(item) => item.id}
           extraData={ingredientToEdit}
+          // Needed to allow input field in flat list at bottom of the screen: https://stackoverflow.com/a/76225338
           removeClippedSubviews={false}
         />
       )}
