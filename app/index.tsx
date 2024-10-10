@@ -72,7 +72,7 @@ export default function Index() {
           renderItem={renderEntry}
           keyExtractor={(item) => item.id}
           extraData={ingredientToEdit}
-removeClippedSubviews={false}
+          removeClippedSubviews={false}
         />
       )}
 
