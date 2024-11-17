@@ -1,8 +1,8 @@
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { StyleSheet, TextInput } from "react-native"
-import React from "react"
+import React, { forwardRef, LegacyRef } from "react"
 
-export type ThemedTextInput = {
+export type ThemedTextInputParams = {
   onChangeText: (text: string) => void
   onSubmit: (text: string) => void
   onBlur?: () => void
@@ -10,32 +10,42 @@ export type ThemedTextInput = {
   placeholder: string
   borderColor?: string
   autoFocus?: boolean
+  showSoftInputOnFocus?: boolean
+  ref?: LegacyRef<TextInput>
 }
 
-export function ThemedTextInput({
-  autoFocus = false, // Default value of false
-  ...props
-}: ThemedTextInput) {
-  const defaultBorderColor = useThemeColor({}, "text")
+export const ThemedTextInput = forwardRef<TextInput, ThemedTextInputParams>(
+  function ThemedTextInput(
+    {
+      autoFocus = false, // Default value of false
+      showSoftInputOnFocus = true,
+      ...props
+    }: ThemedTextInputParams,
+    ref
+  ) {
+    const defaultBorderColor = useThemeColor({}, "text")
 
-  const colorStyles = {
-    borderColor: props.borderColor ?? defaultBorderColor,
-    color: useThemeColor({}, "text"),
+    const colorStyles = {
+      borderColor: props.borderColor ?? defaultBorderColor,
+      color: useThemeColor({}, "text"),
+    }
+
+    return (
+      <TextInput
+        style={[styles.input, colorStyles]}
+        onChangeText={props.onChangeText}
+        onBlur={props.onBlur}
+        value={props.value}
+        placeholder={props.placeholder}
+        placeholderTextColor={useThemeColor({}, "icon")}
+        onSubmitEditing={(event) => props.onSubmit(event.nativeEvent.text)}
+        autoFocus={autoFocus}
+        showSoftInputOnFocus={showSoftInputOnFocus}
+        ref={ref}
+      />
+    )
   }
-
-  return (
-    <TextInput
-      style={[styles.input, colorStyles]}
-      onChangeText={props.onChangeText}
-      onBlur={props.onBlur}
-      value={props.value}
-      placeholder={props.placeholder}
-      placeholderTextColor={useThemeColor({}, "icon")}
-      onSubmitEditing={(event) => props.onSubmit(event.nativeEvent.text)}
-      autoFocus={autoFocus}
-    />
-  )
-}
+)
 
 const styles = StyleSheet.create({
   input: {

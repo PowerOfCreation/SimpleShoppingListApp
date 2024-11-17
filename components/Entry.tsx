@@ -2,9 +2,10 @@ import {
   GestureResponderEvent,
   TouchableOpacity,
   StyleSheet,
+  TextInput,
 } from "react-native"
 import { ThemedText } from "./ThemedText"
-import React from "react"
+import React, { forwardRef } from "react"
 import Feather from "@expo/vector-icons/Feather"
 import { ThemedTextInput } from "./ThemedTextInput"
 
@@ -13,12 +14,16 @@ type EntryProps = {
   isCompleted: boolean
   onToggleComplete: (event: GestureResponderEvent) => void
   onLongPress: (event: GestureResponderEvent) => void
+  onPressOut?: (event: GestureResponderEvent) => void
   isEdited: boolean
   onCancelEditing: () => void
   onSaveEditing: (text: string) => void
 }
 
-export function Entry(props: EntryProps) {
+export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
+  props: EntryProps,
+  ref
+) {
   const [text, onChangeText] = React.useState(props.ingredientName)
 
   const getBackgroundColor = () => {
@@ -40,6 +45,7 @@ export function Entry(props: EntryProps) {
       style={[getBackgroundColor(), styles.buttonStyle]}
       onPress={props.onToggleComplete}
       onLongPress={props.onLongPress}
+      onPressOut={props.onPressOut}
     >
       <Feather
         name={props.isCompleted ? "check-circle" : "circle"}
@@ -55,6 +61,7 @@ export function Entry(props: EntryProps) {
           placeholder={""}
           autoFocus={true}
           onBlur={props.onCancelEditing}
+          ref={ref}
         />
       ) : (
         <ThemedText
@@ -66,7 +73,7 @@ export function Entry(props: EntryProps) {
       )}
     </TouchableOpacity>
   )
-}
+})
 
 const styles = StyleSheet.create({
   buttonStyle: {

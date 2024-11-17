@@ -11,8 +11,14 @@ class IngredientService {
     if (this.initialLoad) {
       this.initialLoad = false
 
-      const loadedIngredients = await getItem("ingredients")
-      this.ingredients = loadedIngredients ?? []
+      const loadedIngredients: Ingredient[] =
+        (await getItem("ingredients")) ?? []
+
+      const sortedByCompleted = loadedIngredients.sort(
+        (a, b) => Number(a.completed) - Number(b.completed)
+      )
+
+      this.ingredients = sortedByCompleted
     }
 
     return this.ingredients
