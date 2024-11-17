@@ -32,7 +32,7 @@ class IngredientService {
       return { isSuccessful: false, error: "Ingredient name can't be empty" }
     }
 
-    this.ingredients.push({
+    this.ingredients.unshift({
       name: ingredientName,
       completed: false,
       id: uuidv4(),
