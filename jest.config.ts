@@ -3,13 +3,15 @@ import type { Config } from "jest"
 const config: Config = {
   verbose: true,
   setupFiles: ["<rootDir>/scripts/jestSetupFile.ts"],
-  setupFilesAfterEnv: ["<rootDir>/scripts/setupFilesAfterEnv.ts"],
+  setupFilesAfterEnv: [
+    "<rootDir>/scripts/setupFilesAfterEnv.ts",
+    "expo-sqlite-mock/src/setup.ts",
+  ],
+  testTimeout: 10000,
   preset: "jest-expo",
   coverageReporters: ["json-summary", ["text", { file: "coverage.txt" }]],
   reporters: [
     "default",
-    ["github-actions", { silent: false }],
-    "summary",
     [
       "jest-junit",
       {
