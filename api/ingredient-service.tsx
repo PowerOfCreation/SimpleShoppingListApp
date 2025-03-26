@@ -1,52 +1,75 @@
 import { Ingredient } from "@/types/Ingredient"
-import { getItem, setItem } from "./common/async-storage"
 import "react-native-get-random-values"
 import { v4 as uuidv4 } from "uuid"
+import { IngredientRepository } from "@/database/ingredient-repository"
+import { getDatabase } from "@/database/database"
 
-class IngredientService {
+export class IngredientService {
   ingredients: Ingredient[] = []
   initialLoad = true
+  private repository: IngredientRepository
 
-  async GetIngredients() {
-    if (this.initialLoad) {
-      this.initialLoad = false
-
-      const loadedIngredients: Ingredient[] =
-        (await getItem("ingredients")) ?? []
-
-      const sortedByCompleted = loadedIngredients.sort(
-        (a, b) => Number(a.completed) - Number(b.completed)
-      )
-
-      this.ingredients = sortedByCompleted
-    }
-
-    return this.ingredients
+  constructor(repository?: IngredientRepository) {
+    this.repository = repository || new IngredientRepository(getDatabase())
   }
 
-  AddIngredients(ingredientName: string): {
+  async GetIngredients() {
+    try {
+      if (this.initialLoad) {
+        this.initialLoad = false
+        this.ingredients = await this.repository.getAll()
+      }
+
+      return this.ingredients
+    } catch (error) {
+      console.error("Error fetching ingredients:", error)
+      return []
+    }
+  }
+
+  async AddIngredients(ingredientName: string): Promise<{
     isSuccessful: boolean
     error: string
-  } {
+  }> {
     if (!ingredientName.trim()) {
       return { isSuccessful: false, error: "Ingredient name can't be empty" }
     }
 
-    this.ingredients.unshift({
-      name: ingredientName,
-      completed: false,
-      id: uuidv4(),
-    })
+    try {
+      const now = Date.now()
+      const newIngredient: Ingredient = {
+        name: ingredientName,
+        completed: false,
+        id: uuidv4(),
+        created_at: now,
+        updated_at: now,
+      }
 
-    setItem("ingredients", this.ingredients)
+      // Add to repository
+      await this.repository.add(newIngredient)
 
-    return { isSuccessful: true, error: "" }
+      // Add to local cache
+      this.ingredients.unshift(newIngredient)
+
+      return { isSuccessful: true, error: "" }
+    } catch (error) {
+      console.error("Error adding ingredient:", error)
+      return { isSuccessful: false, error: "Failed to add ingredient" }
+    }
   }
 
-  Update(ingredients: Ingredient[]) {
-    this.ingredients = ingredients
+  async Update(ingredients: Ingredient[]) {
+    try {
+      // Update each ingredient in the repository
+      for (const ingredient of ingredients) {
+        await this.repository.update(ingredient)
+      }
 
-    setItem("ingredients", this.ingredients)
+      // Update local cache
+      this.ingredients = ingredients
+    } catch (error) {
+      console.error("Error updating ingredients:", error)
+    }
   }
 }
 
