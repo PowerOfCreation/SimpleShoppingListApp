@@ -69,8 +69,8 @@ export default function RootLayout() {
     >
       <Stack.Screen
         options={{
-          // Hide the header for this route
           headerTitle: "Shopping List",
+          headerBackVisible: false,
         }}
         name="index"
       />
