@@ -11,9 +11,9 @@ export default function NewIngredient() {
   const [invalidInputExplanation, setInvalidInputExplanation] =
     React.useState("")
 
-  const addIngredient = (ingredientName: string) => {
+  const addIngredient = async (ingredientName: string) => {
     const { isSuccessful, error } =
-      ingredientService.AddIngredients(ingredientName)
+      await ingredientService.AddIngredients(ingredientName)
 
     if (!isSuccessful) {
       setInvalidInputExplanation(error)
