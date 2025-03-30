@@ -2,6 +2,7 @@ import { IngredientRepository } from "@/database/ingredient-repository"
 import { getDatabase } from "@/database/database"
 import { IngredientService } from "@/api/ingredient-service"
 import { Ingredient } from "@/types/Ingredient"
+import * as SQLite from "expo-sqlite"
 
 // Mock the repository
 jest.mock("@/database/ingredient-repository")
@@ -37,7 +38,7 @@ describe("IngredientService", () => {
     MockIngredientRepository.mockImplementation(() => mockRepository)
 
     // Mock getDatabase
-    const mockDb = {} as any
+    const mockDb = {} as SQLite.SQLiteDatabase
     ;(getDatabase as jest.Mock).mockReturnValue(mockDb)
 
     // Create a new service instance for each test
