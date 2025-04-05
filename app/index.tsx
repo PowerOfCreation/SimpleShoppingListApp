@@ -1,49 +1,37 @@
 import { ActionButton } from "@/components/ActionButton"
 import { Entry } from "@/components/Entry"
 import React from "react"
-import { FlatList, SafeAreaView, StyleSheet } from "react-native"
+import {
+  FlatList,
+  SafeAreaView,
+  StyleSheet,
+  ActivityIndicator,
+  View,
+} from "react-native"
 import { router } from "expo-router"
 
-import { ingredientService } from "../api/ingredient-service"
 import { Ingredient } from "@/types/Ingredient"
 import { ThemedText } from "@/components/ThemedText"
+import { useIngredients } from "@/hooks/useIngredients"
 
 export default function Index() {
-  const [ingredients, setIngredients] = React.useState<Ingredient[]>([])
+  const {
+    ingredients,
+    isLoading,
+    error,
+    toggleIngredientCompletion,
+    changeIngredientName,
+  } = useIngredients()
+
   const [ingredientToEdit, setIngredientToEdit] = React.useState<string>("")
-
-  React.useEffect(() => {
-    ingredientService.GetIngredients().then((x) => setIngredients(x))
-  }, [])
-
-  const toggleIngredientCompletion = (id: string) => {
-    const updatedIngredients = ingredients.map((element, _) => {
-      if (element.id === id) {
-        return { ...element, completed: !element.completed }
-      }
-      return element
-    })
-
-    ingredientService.Update(updatedIngredients)
-
-    setIngredients(updatedIngredients)
-  }
-
-  const changeIngredientName = (id: string, newName: string) => {
-    const updatedIngredients = ingredients.map((element, _) => {
-      if (element.id === id) {
-        return { ...element, name: newName }
-      }
-      return element
-    })
-
-    ingredientService.Update(updatedIngredients)
-
-    setIngredients(updatedIngredients)
-  }
 
   const entryLongPress = (id: string) => {
     setIngredientToEdit(id)
+  }
+
+  const handleSaveEditing = async (id: string, text: string) => {
+    await changeIngredientName(id, text)
+    setIngredientToEdit("")
   }
 
   const renderEntry = ({ item }: { item: Ingredient }) => {
@@ -55,28 +43,50 @@ export default function Index() {
         onLongPress={() => entryLongPress(item.id)}
         isEdited={ingredientToEdit === item.id}
         onCancelEditing={() => setIngredientToEdit("")}
-        onSaveEditing={(text) => changeIngredientName(item.id, text)}
+        onSaveEditing={(text) => handleSaveEditing(item.id, text)}
+      />
+    )
+  }
+
+  const renderContent = () => {
+    if (isLoading) {
+      return (
+        <View style={styles.centered}>
+          <ActivityIndicator size="large" />
+        </View>
+      )
+    }
+
+    if (error) {
+      return (
+        <View style={styles.centered}>
+          <ThemedText style={styles.errorTextStyle}>{error}</ThemedText>
+        </View>
+      )
+    }
+
+    if (ingredients.length === 0) {
+      return (
+        <ThemedText style={styles.emptyListInfoTextStyle} type="default">
+          Press the '+' button at the bottom right to add your first product.
+        </ThemedText>
+      )
+    }
+
+    return (
+      <FlatList
+        data={ingredients}
+        renderItem={renderEntry}
+        keyExtractor={(item) => item.id}
+        extraData={`${ingredientToEdit}-${error}`}
+        removeClippedSubviews={false}
       />
     )
   }
 
   return (
     <SafeAreaView style={styles.container}>
-      {ingredients.length === 0 ? (
-        <ThemedText style={styles.emptyListInfoTextStyle} type="default">
-          Press the '+' button at the bottom right to add your first product.
-        </ThemedText>
-      ) : (
-        <FlatList
-          data={ingredients}
-          renderItem={renderEntry}
-          keyExtractor={(item) => item.id}
-          extraData={ingredientToEdit}
-          // Needed to allow input field in flat list at bottom of the screen: https://stackoverflow.com/a/76225338
-          removeClippedSubviews={false}
-        />
-      )}
-
+      {renderContent()}
       <ActionButton symbol="+" onPress={() => router.push("/new_ingredient")} />
     </SafeAreaView>
   )
@@ -86,8 +96,18 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
+  centered: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    padding: 20,
+  },
   emptyListInfoTextStyle: {
     padding: 20,
-    height: "100%",
+    textAlign: "center",
+  },
+  errorTextStyle: {
+    color: "red",
+    textAlign: "center",
   },
 })
