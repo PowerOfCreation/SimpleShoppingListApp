@@ -10,16 +10,17 @@ This roadmap outlines the plan to evolve ShoList from a simple shopping list app
 
 ## Milestone 1: Database Migration (AsyncStorage to SQLite)
 
+### Status: Completed
 ### Goal
 Replace the current AsyncStorage implementation with a SQLite database to enable more complex data operations and relationships.
 
 ### Tasks
-- Set up SQLite database using `expo-sqlite`
-- Create database schema for ingredients table
-- Migrate existing data from AsyncStorage to SQLite
-- Update `ingredient-service.tsx` to use SQLite instead of AsyncStorage
-- Implement database versioning for future migrations
-- Add unit tests for database operations
+- [X] Set up SQLite database using `expo-sqlite`
+- [X] Create database schema for ingredients table
+- [X] Migrate existing data from AsyncStorage to SQLite
+- [X] Update `ingredient-service.tsx` to use SQLite instead of AsyncStorage
+- [X] Implement database versioning for future migrations
+- [X] Add unit tests for database operations
 
 ### Technical Changes
 - Add `expo-sqlite` dependency
