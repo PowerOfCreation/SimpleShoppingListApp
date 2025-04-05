@@ -3,6 +3,7 @@ import { StyleSheet, TextInput } from "react-native"
 import React, { forwardRef, LegacyRef } from "react"
 
 export type ThemedTextInputParams = {
+  testID?: string
   onChangeText: (text: string) => void
   onSubmit: (text: string) => void
   onBlur?: () => void
@@ -32,13 +33,14 @@ export const ThemedTextInput = forwardRef<TextInput, ThemedTextInputParams>(
 
     return (
       <TextInput
+        testID={props.testID}
         style={[styles.input, colorStyles]}
         onChangeText={props.onChangeText}
         onBlur={props.onBlur}
         value={props.value}
         placeholder={props.placeholder}
         placeholderTextColor={useThemeColor({}, "icon")}
-        onSubmitEditing={(event) => props.onSubmit(event.nativeEvent.text)}
+        onSubmitEditing={() => props.onSubmit(props.value)}
         autoFocus={autoFocus}
         showSoftInputOnFocus={showSoftInputOnFocus}
         ref={ref}
