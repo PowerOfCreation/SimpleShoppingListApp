@@ -39,7 +39,10 @@ export default function Index() {
         onLongPress={() => entryLongPress(item.id)}
         isEdited={ingredientToEdit === item.id}
         onCancelEditing={() => setIngredientToEdit("")}
-        onSaveEditing={(text) => changeIngredientName(item.id, text)}
+        onSaveEditing={async (text) => {
+          setIngredientToEdit("")
+          await changeIngredientName(item.id, text)
+        }}
       />
     )
   }
