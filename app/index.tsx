@@ -29,11 +29,6 @@ export default function Index() {
     setIngredientToEdit(id)
   }
 
-  const handleSaveEditing = async (id: string, text: string) => {
-    await changeIngredientName(id, text)
-    setIngredientToEdit("")
-  }
-
   const renderEntry = ({ item }: { item: Ingredient }) => {
     return (
       <Entry
@@ -43,7 +38,7 @@ export default function Index() {
         onLongPress={() => entryLongPress(item.id)}
         isEdited={ingredientToEdit === item.id}
         onCancelEditing={() => setIngredientToEdit("")}
-        onSaveEditing={(text) => handleSaveEditing(item.id, text)}
+        onSaveEditing={(text) => changeIngredientName(item.id, text)}
       />
     )
   }
