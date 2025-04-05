@@ -10,6 +10,7 @@ import Feather from "@expo/vector-icons/Feather"
 import { ThemedTextInput } from "./ThemedTextInput"
 
 type EntryProps = {
+  id: string
   ingredientName: string
   isCompleted: boolean
   onToggleComplete: (event: GestureResponderEvent) => void
@@ -42,6 +43,7 @@ export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
 
   return (
     <TouchableOpacity
+      testID={`entry-component-${props.id}`}
       style={[getBackgroundColor(), styles.buttonStyle]}
       onPress={props.onToggleComplete}
       onLongPress={props.onLongPress}
@@ -55,6 +57,7 @@ export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
 
       {props.isEdited ? (
         <ThemedTextInput
+          testID={`entry-input-${props.id}`}
           onChangeText={onChangeText}
           onSubmit={props.onSaveEditing}
           value={text}

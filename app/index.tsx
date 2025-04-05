@@ -32,6 +32,7 @@ export default function Index() {
   const renderEntry = ({ item }: { item: Ingredient }) => {
     return (
       <Entry
+        id={item.id}
         ingredientName={item.name}
         isCompleted={item.completed}
         onToggleComplete={() => toggleIngredientCompletion(item.id)}

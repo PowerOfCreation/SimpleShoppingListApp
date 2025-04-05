@@ -5,6 +5,7 @@ import { Entry } from "../Entry"
 it(`renders correctly`, () => {
   const { toJSON } = render(
     <Entry
+      id={"1"}
       ingredientName={""}
       isCompleted={false}
       onToggleComplete={() => {}}
@@ -17,6 +18,7 @@ it(`renders correctly`, () => {
 it("applies correct style when isCompleted is true", () => {
   const { getByText } = render(
     <Entry
+      id={"1"}
       ingredientName={"Tomato"}
       isCompleted={true}
       onToggleComplete={() => {}}
@@ -33,6 +35,7 @@ it("applies correct style when isCompleted is true", () => {
 it("applies correct style when isCompleted is false", () => {
   const { getByText } = render(
     <Entry
+      id={"1"}
       ingredientName={"Tomato"}
       isCompleted={false}
       onToggleComplete={() => {}}

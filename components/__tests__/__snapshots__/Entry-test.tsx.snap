@@ -43,6 +43,7 @@ exports[`renders correctly 1`] = `
       "width": "100%",
     }
   }
+  testID="entry-component-1"
 >
   <Text />
   <Text
