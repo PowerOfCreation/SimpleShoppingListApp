@@ -83,7 +83,11 @@ export default function Index() {
   return (
     <SafeAreaView style={styles.container}>
       {renderContent()}
-      <ActionButton symbol="+" onPress={() => router.push("/new_ingredient")} />
+      <ActionButton
+        testID="add-button"
+        symbol="+"
+        onPress={() => router.push("/new_ingredient")}
+      />
     </SafeAreaView>
   )
 }

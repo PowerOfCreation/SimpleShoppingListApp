@@ -2,6 +2,7 @@ import { GestureResponderEvent, Text, TouchableOpacity } from "react-native"
 import React from "react"
 
 type ActionProps = {
+  testID?: string
   symbol: string
   onPress: (event: GestureResponderEvent) => void
 }
@@ -9,6 +10,7 @@ type ActionProps = {
 export function ActionButton(props: ActionProps) {
   return (
     <TouchableOpacity
+      testID={props.testID}
       style={{
         borderWidth: 1,
         borderColor: "rgba(0,0,0,0.2)",
