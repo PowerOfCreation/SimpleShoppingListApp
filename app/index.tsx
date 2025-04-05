@@ -48,7 +48,7 @@ export default function Index() {
     if (isLoading) {
       return (
         <View style={styles.centered}>
-          <ActivityIndicator size="large" />
+          <ActivityIndicator size="large" accessibilityHint="loading data" />
         </View>
       )
     }
