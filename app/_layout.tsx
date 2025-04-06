@@ -3,6 +3,7 @@ import { Stack } from "expo-router"
 import { useColorScheme } from "react-native"
 import React, { useEffect, useState } from "react"
 import { Text, View, ActivityIndicator, StyleSheet } from "react-native"
+import { initializeAndMigrateDatabase } from "@/database/data-migration"
 
 export default function RootLayout() {
   useColorScheme()
@@ -14,7 +15,7 @@ export default function RootLayout() {
   useEffect(() => {
     async function initializeDatabase() {
       try {
-        await initializeWithoutMigration()
+        await initializeAndMigrateDatabase()
         setIsInitialized(true)
       } catch (err) {
         console.error("Failed to initialize database:", err)
