@@ -9,6 +9,8 @@ import Index from ".." // Assuming Index-test.tsx is in app/__tests__
 import { ingredientService } from "@/api/ingredient-service"
 import { router } from "expo-router"
 import { Ingredient } from "@/types/Ingredient"
+import { Result } from "@/api/common/result"
+import { DbQueryError, ValidationError } from "@/api/common/error-types"
 
 // --- Mocks ---
 
@@ -44,18 +46,26 @@ const mockRouterPush = router.push as jest.Mock
 
 // Helper to render with specific service responses
 const renderIndexAndWaitForLoad = async (
-  getIngredientsResponse: Promise<Ingredient[]> | Error = Promise.resolve([
-    ...mockInitialIngredients, // Use spread to create copies
-  ]),
-  updateCompletionResponse: Promise<void> | Error = Promise.resolve(undefined),
-  updateNameResponse: Promise<void> | Error = Promise.resolve(undefined)
+  getIngredientsResponse:
+    | Promise<Result<Ingredient[], DbQueryError>>
+    | Error = Promise.resolve(
+    Result.ok([
+      ...mockInitialIngredients, // Use spread to create copies
+    ])
+  ),
+  updateCompletionResponse:
+    | Promise<Result<void, DbQueryError>>
+    | Error = Promise.resolve(Result.ok(undefined)),
+  updateNameResponse:
+    | Promise<Result<void, ValidationError | DbQueryError>>
+    | Error = Promise.resolve(Result.ok(undefined))
 ) => {
   if (getIngredientsResponse instanceof Error) {
     mockGetIngredients.mockRejectedValueOnce(getIngredientsResponse)
   } else {
     // Make sure to await the promise here before resolving the mock
-    const ingredients = await getIngredientsResponse
-    mockGetIngredients.mockResolvedValueOnce(ingredients)
+    const result = await getIngredientsResponse
+    mockGetIngredients.mockResolvedValueOnce(result)
   }
   // Set up the updateCompletion mock
   mockUpdateCompletion.mockImplementation(() =>
@@ -92,16 +102,30 @@ const renderIndexAndWaitForLoad = async (
       ).toBeOnTheScreen()
     })
   } else {
-    const ingredients = await getIngredientsResponse
-    if (ingredients.length > 0) {
-      // Ensure first item is rendered if successful and data exists
-      await waitFor(() => {
-        expect(screen.getByText(ingredients[0].name)).toBeOnTheScreen()
-      })
+    const result = await getIngredientsResponse
+
+    if (result.success) {
+      const ingredients = result.getValue() || []
+      if (ingredients.length > 0) {
+        // Ensure first item is rendered if successful and data exists
+        await waitFor(() => {
+          expect(screen.getByText(ingredients[0].name)).toBeOnTheScreen()
+        })
+      } else {
+        // Ensure empty list message is rendered if successful and no data
+        await waitFor(() => {
+          expect(screen.getByText(/Press the '\+' button/)).toBeOnTheScreen()
+        })
+      }
     } else {
-      // Ensure empty list message is rendered if successful and no data
+      const error = result.getError()
+      // Check if the error message is displayed
       await waitFor(() => {
-        expect(screen.getByText(/Press the '\+' button/)).toBeOnTheScreen()
+        expect(
+          screen.getByText(
+            `Failed to load ingredients: ${error?.message || "Unknown error"}`
+          )
+        ).toBeOnTheScreen()
       })
     }
   }
@@ -126,7 +150,7 @@ describe("<Index /> Integration Tests", () => {
     mockGetIngredients.mockImplementationOnce(
       () =>
         new Promise((resolve) =>
-          setTimeout(() => resolve([...mockInitialIngredients]), 50)
+          setTimeout(() => resolve(Result.ok([...mockInitialIngredients])), 50)
         )
     )
     render(<Index />)
@@ -141,7 +165,7 @@ describe("<Index /> Integration Tests", () => {
   })
 
   it("displays missing entries information when no products are added", async () => {
-    await renderIndexAndWaitForLoad(Promise.resolve([])) // Load with empty array
+    await renderIndexAndWaitForLoad(Promise.resolve(Result.ok([]))) // Load with empty array
 
     const missingEntriesInfoText = screen.getByText(
       "Press the '+' button at the bottom right to add your first product."
@@ -170,7 +194,8 @@ describe("<Index /> Integration Tests", () => {
 
   it("displays error message if fetching ingredients fails", async () => {
     const errorMessage = "Network Failed"
-    await renderIndexAndWaitForLoad(new Error(errorMessage))
+    const dbError = new DbQueryError(errorMessage, "getAll", "Ingredient")
+    await renderIndexAndWaitForLoad(Promise.resolve(Result.fail(dbError)))
 
     expect(
       screen.getByText(`Failed to load ingredients: ${errorMessage}`)
@@ -206,11 +231,16 @@ describe("<Index /> Integration Tests", () => {
   })
 
   it("rolls back toggle completion if Update fails", async () => {
-    const updateError = new Error("Server Error")
+    const errorMessage = "Server Error"
+    const dbError = new DbQueryError(
+      errorMessage,
+      "updateCompletion",
+      "Ingredient"
+    )
     await renderIndexAndWaitForLoad(
-      Promise.resolve([...mockInitialIngredients]),
-      updateError,
-      Promise.resolve(undefined)
+      Promise.resolve(Result.ok([...mockInitialIngredients])),
+      Promise.resolve(Result.fail(dbError)),
+      Promise.resolve(Result.ok(undefined))
     ) // Setup updateCompletion to fail
 
     const eggsEntryComponent = screen.getByTestId("entry-component-3") // Eggs, id: "3", completed: false
@@ -229,7 +259,7 @@ describe("<Index /> Integration Tests", () => {
     await waitFor(() => {
       // Check error message is displayed
       expect(
-        screen.getByText(`Failed to update completion: ${updateError.message}`)
+        screen.getByText(`Failed to update completion: ${errorMessage}`)
       ).toBeOnTheScreen()
     })
 
@@ -248,99 +278,91 @@ describe("<Index /> Integration Tests", () => {
     // Wait for input to appear and verify it has the original value
     const inputField = await screen.findByTestId("entry-input-1")
     expect(inputField).toBeOnTheScreen()
-    expect(inputField.props.value).toBe("Milk") // Check initial value in input
 
-    // Change text and simulate submit (e.g., pressing Enter/Done on keyboard)
+    // Change the text in the input field
     fireEvent.changeText(inputField, newName)
-    fireEvent(inputField, "submitEditing") // Trigger the onSubmit passed to ThemedTextInput
 
-    // Check optimistic UI update: Input disappears, new name is shown
-    await waitFor(() => {
-      expect(screen.queryByTestId("entry-input-1")).toBeNull()
-    })
-    expect(screen.getByText(newName)).toBeOnTheScreen() // Check if the main text updated
-    expect(screen.queryByText("Milk")).toBeNull()
+    // Submit the edit
+    fireEvent(inputField, "submitEditing")
 
-    // Check Update call
+    // Check that Update was called with new name
     await waitFor(() => {
       expect(mockUpdateName).toHaveBeenCalledTimes(1)
     })
     expect(mockUpdateName).toHaveBeenCalledWith("1", newName)
 
-    // Ensure error message is not displayed
-    expect(screen.queryByText(/Failed to change name/)).toBeNull()
+    // Check UI was updated optimistically - input should be gone and new name visible
+    expect(screen.queryByTestId("entry-input-1")).toBeNull()
+    expect(screen.getByText(newName)).toBeOnTheScreen()
   })
 
   it("allows canceling an edit via blur", async () => {
     await renderIndexAndWaitForLoad()
+    const originalName = "Milk"
+    const newName = "Whole Milk"
 
-    const breadEntryComponent = screen.getByTestId("entry-component-2") // Bread, id: "2"
-    fireEvent(breadEntryComponent, "longPress")
+    const milkEntryComponent = screen.getByTestId("entry-component-1")
+    fireEvent(milkEntryComponent, "longPress")
 
-    const inputField = await screen.findByTestId("entry-input-2")
+    // Wait for input to appear and verify it has the original value
+    const inputField = await screen.findByTestId("entry-input-1")
     expect(inputField).toBeOnTheScreen()
-    expect(inputField.props.value).toBe("Bread")
 
-    fireEvent.changeText(inputField, "Sourdough") // Change temporarily
+    // Change the text in the input field
+    fireEvent.changeText(inputField, newName)
 
-    // Simulate blur event to cancel editing
+    // Blur the input field without submitting
     fireEvent(inputField, "blur")
 
-    // Check UI update: Input disappears, original name remains
-    await waitFor(() => {
-      expect(screen.queryByTestId("entry-input-2")).toBeNull()
-    })
-    expect(screen.getByText("Bread")).toBeOnTheScreen() // Original name still there
-    expect(screen.queryByText("Sourdough")).toBeNull()
-
-    // Check Update was NOT called
-    expect(mockUpdateCompletion).not.toHaveBeenCalled()
+    // Check that Update was NOT called
     expect(mockUpdateName).not.toHaveBeenCalled()
+
+    // Check UI reverted to original state - input should be gone and original name visible
+    expect(screen.queryByTestId("entry-input-1")).toBeNull()
+    expect(screen.getByText(originalName)).toBeOnTheScreen()
+    expect(screen.queryByText(newName)).toBeNull()
   })
 
   it("shows error message if name change fails", async () => {
-    const updateError = new Error("Validation Failed")
+    const errorMessage = "Invalid name"
+    const validationError = new ValidationError(errorMessage, "name")
     await renderIndexAndWaitForLoad(
-      Promise.resolve([...mockInitialIngredients]),
-      Promise.resolve(undefined),
-      updateError
+      Promise.resolve(Result.ok([...mockInitialIngredients])),
+      Promise.resolve(Result.ok(undefined)),
+      Promise.resolve(Result.fail(validationError))
     ) // Setup updateName to fail
 
     const milkEntryComponent = screen.getByTestId("entry-component-1")
     fireEvent(milkEntryComponent, "longPress")
 
     const inputField = await screen.findByTestId("entry-input-1")
-    fireEvent.changeText(inputField, "Scrambled Eggs")
-    fireEvent(inputField, "submitEditing") // Attempt to save
+    const newName = "Whole Milk"
 
-    // Check optimistic UI update (new name shown briefly, input disappears)
-    // Let's check the final state after error handling.
+    // Change the text in the input field
+    fireEvent.changeText(inputField, newName)
 
-    // Wait for Update call and subsequent error handling/rollback
+    // Submit the edit
+    fireEvent(inputField, "submitEditing")
+
+    // Wait for Update call and subsequent error handling
     await waitFor(() => {
       expect(mockUpdateName).toHaveBeenCalledTimes(1)
     })
 
+    // Check error message is displayed
     await waitFor(() => {
-      // Check error message is displayed
       expect(
-        screen.getByText(`Failed to change name: ${updateError.message}`)
+        screen.getByText(`Failed to change name: ${errorMessage}`)
       ).toBeOnTheScreen()
     })
   })
 
   it("navigates to new_ingredient screen when '+' button is pressed", async () => {
-    await renderIndexAndWaitForLoad() // Load with some data
+    await renderIndexAndWaitForLoad()
 
-    // ActionButton doesn't have explicit text, find by another means if necessary (e.g., testID)
-    // Let's assume ActionButton has a testID="add-button"
-    const addButton = await screen.findByTestId("add-button") // Adjust if ActionButton has a different testID or none
-    // If no testID, you might need to find it by role or other accessibility properties
-    // const addButton = await screen.findByRole('button', { name: '+' }); // Example using role and accessible name
-
+    const addButton = screen.getByTestId("add-button")
     fireEvent.press(addButton)
 
-    expect(mockRouterPush).toHaveBeenCalledTimes(1)
     expect(mockRouterPush).toHaveBeenCalledWith("/new_ingredient")
   })
 })

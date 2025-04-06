@@ -1,12 +1,14 @@
 import {
   getDatabase,
-  initializeDatabase,
+  checkDatabaseInitialized,
   getDatabaseVersion,
   updateDatabaseVersion,
   DB_VERSION,
 } from "../database"
 import * as SQLite from "expo-sqlite"
 import * as databaseModule from "../database"
+import { Result } from "@/api/common/result"
+import { DbMigrationError } from "@/api/common/error-types"
 
 // Mock DB_NAME without breaking function exports
 jest.mock("../database", () => {
@@ -17,132 +19,151 @@ jest.mock("../database", () => {
   }
 })
 
-// Mock migrations to avoid circular dependencies
-jest.mock("../migrations", () => ({
-  executeMigrations: jest.fn(async () => Promise.resolve()),
-}))
-
 describe("Database Module", () => {
+  let db: SQLite.SQLiteDatabase
+
+  beforeEach(async () => {
+    // Get a fresh database connection for each test
+    db = getDatabase()
+
+    // Clear any existing tables and ensure database_version exists for most tests
+    await db.execAsync(`
+      DROP TABLE IF EXISTS database_version;
+      CREATE TABLE database_version (
+        version INTEGER PRIMARY KEY,
+        migration_date INTEGER NOT NULL
+      );
+    `)
+  })
+
   describe("getDatabase", () => {
     it("should get a database connection with the correct name", () => {
-      const db = getDatabase()
-      expect(db).toBeTruthy()
+      const dbConnection = getDatabase()
+      expect(dbConnection).toBeTruthy()
     })
   })
 
-  describe("initializeDatabase", () => {
+  describe("checkDatabaseInitialized", () => {
     it("should detect first run when database_version table does not exist", async () => {
-      // Get a database connection and pass it to initializeDatabase
-      const db = getDatabase()
-      const result = await initializeDatabase(db)
-      expect(result.isFirstRun).toBe(true)
+      // Explicitly drop the table created in beforeEach for this specific test
+      await db.execAsync(`DROP TABLE IF EXISTS database_version;`)
+      const result = await checkDatabaseInitialized(db)
+      expect(result.success).toBe(true)
+      const value = result.getValue()
+      expect(value).not.toBeNull()
+      expect(value!.isFirstRun).toBe(true)
     })
 
     it("should detect existing database when database_version table exists", async () => {
-      // Create the database_version table
-      const db = getDatabase()
-
+      // Table is created in beforeEach, just insert data
       await db.execAsync(`
-        CREATE TABLE database_version (
-          version INTEGER PRIMARY KEY,
-          migration_date INTEGER NOT NULL
-        );
         INSERT INTO database_version (version, migration_date) VALUES (1, ${Date.now()});
       `)
 
-      // Now test initializeDatabase with the db connection
-      const result = await initializeDatabase(db)
-      expect(result.isFirstRun).toBe(false)
+      const result = await checkDatabaseInitialized(db)
+      expect(result.success).toBe(true)
+      const value = result.getValue()
+      expect(value).not.toBeNull()
+      expect(value!.isFirstRun).toBe(false)
+    })
+
+    it("should return isFirstRun: true when database query throws an error", async () => {
+      // Mock an error by using a corrupted/non-existent database
+      // Drop the table first to simulate the state where the query might fail
+      await db.execAsync(`DROP TABLE IF EXISTS database_version;`)
+      jest.spyOn(db, "getAllAsync").mockImplementationOnce(() => {
+        throw new Error("no such table: sqlite_master")
+      })
+
+      const result = await checkDatabaseInitialized(db)
+      expect(result.success).toBe(true)
+      const value = result.getValue()
+      expect(value).not.toBeNull()
+      expect(value!.isFirstRun).toBe(true)
     })
   })
 
   describe("getDatabaseVersion", () => {
     it("should return the current database version", async () => {
-      // Create the database_version table and insert a version
-      const db = getDatabase()
+      // Table created in beforeEach, just insert data
       await db.execAsync(`
-        CREATE TABLE IF NOT EXISTS database_version (
-          version INTEGER PRIMARY KEY,
-          migration_date INTEGER NOT NULL
-        );
         INSERT INTO database_version (version, migration_date) VALUES (${DB_VERSION}, ${Date.now()});
       `)
 
-      // Test getDatabaseVersion with the db connection
-      const version = await getDatabaseVersion(db)
-      expect(version).toBe(DB_VERSION)
+      const result = await getDatabaseVersion(db)
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toBe(DB_VERSION)
     })
 
     it("should return 0 when no version is found", async () => {
-      // Create an empty database_version table
-      const db = getDatabase()
-
-      await db.execAsync(`
-        CREATE TABLE IF NOT EXISTS database_version (
-          version INTEGER PRIMARY KEY,
-          migration_date INTEGER NOT NULL
-        );
-      `)
-
-      // Test getDatabaseVersion with the db connection
-      const version = await getDatabaseVersion(db)
-      expect(version).toBe(0)
+      // Table is created empty in beforeEach
+      const result = await getDatabaseVersion(db)
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toBe(0)
     })
 
     it("should return 0 when database_version table does not exist", async () => {
-      // Test with a fresh database where the table doesn't exist
-      const db = getDatabase()
-      const version = await getDatabaseVersion(db)
-      expect(version).toBe(0)
+      // Explicitly drop the table created in beforeEach
+      await db.execAsync(`DROP TABLE IF EXISTS database_version;`)
+      const result = await getDatabaseVersion(db)
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toBe(0)
     })
   })
 
   describe("updateDatabaseVersion", () => {
     it("should insert a new database version record", async () => {
-      // Create the database_version table
-      const db = getDatabase()
-      await db.execAsync(`
-        CREATE TABLE IF NOT EXISTS database_version (
-          version INTEGER PRIMARY KEY,
-          migration_date INTEGER NOT NULL
-        );
-      `)
-
-      // Run the function we're testing with the db connection
-      await updateDatabaseVersion(DB_VERSION, db)
+      // Table is created in beforeEach
+      const result = await updateDatabaseVersion(DB_VERSION, db)
+      expect(result.success).toBe(true)
 
       // Verify the version was inserted
-      const result = await db.getFirstAsync<{ version: number }>(
+      const dbResult = await db.getFirstAsync<{ version: number }>(
         `SELECT version FROM database_version WHERE version = ?`,
         DB_VERSION
       )
 
-      expect(result?.version).toBe(DB_VERSION)
+      expect(dbResult && dbResult.version).toBe(DB_VERSION)
     })
 
-    it("should throw an error when table does not exist", async () => {
-      // Get a fresh database connection
-      const db = getDatabase()
+    it("should create the table if it doesn't exist", async () => {
+      // Drop the table first to test creation logic
+      await db.execAsync(`DROP TABLE IF EXISTS database_version;`)
+      const result = await updateDatabaseVersion(DB_VERSION, db)
+      expect(result.success).toBe(true)
 
-      // Mock updateDatabaseVersion to skip table creation
+      // Check if the table exists now
+      const tableExists = await db.getFirstAsync<{ cnt: number }>(
+        `SELECT COUNT(*) as cnt FROM sqlite_master WHERE type='table' AND name='database_version';`
+      )
+
+      expect(tableExists && tableExists.cnt).toBe(1)
+
+      // Verify the version was inserted
+      const dbResult = await db.getFirstAsync<{ version: number }>(
+        `SELECT version FROM database_version WHERE version = ?`,
+        DB_VERSION
+      )
+
+      expect(dbResult && dbResult.version).toBe(DB_VERSION)
+    })
+
+    it("should handle database errors properly", async () => {
+      // Table is created in beforeEach
+      // Mock updateDatabaseVersion to force an error
       jest
         .spyOn(databaseModule, "updateDatabaseVersion")
-        .mockImplementationOnce(async function mockUpdateDbVersion(
-          ...args: unknown[]
-        ) {
-          const version = args[0] as number
-          const database = (args[1] as SQLite.SQLiteDatabase) || getDatabase()
-          const migrationDate = Date.now()
+        .mockImplementationOnce(
+          async (): Promise<Result<void, DbMigrationError>> => {
+            return Result.fail(
+              new DbMigrationError("Mock error", DB_VERSION, new Error())
+            )
+          }
+        )
 
-          // Skip table creation step - directly insert, which will fail
-          await database.runAsync(
-            `INSERT INTO database_version (version, migration_date) VALUES (?, ?);`,
-            [version, migrationDate] as const
-          )
-        })
-
-      // The test expects an error when table doesn't exist
-      await expect(updateDatabaseVersion(DB_VERSION, db)).rejects.toThrow()
+      const result = await updateDatabaseVersion(DB_VERSION, db)
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBeTruthy()
     })
   })
 })

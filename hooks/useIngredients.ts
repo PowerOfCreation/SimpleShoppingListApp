@@ -70,8 +70,17 @@ export function useIngredients() {
     const fetchIngredients = async () => {
       dispatch({ type: "FETCH_START" })
       try {
-        const fetchedIngredients = await ingredientService.GetIngredients()
-        dispatch({ type: "FETCH_SUCCESS", payload: fetchedIngredients })
+        const result = await ingredientService.GetIngredients()
+
+        if (result.success) {
+          dispatch({ type: "FETCH_SUCCESS", payload: result.getValue() || [] })
+        } else {
+          const error = result.getError()
+          dispatch({
+            type: "FETCH_ERROR",
+            payload: `Failed to load ingredients: ${error?.message || "Unknown error"}`,
+          })
+        }
       } catch (err: unknown) {
         let errorMessage = "Unknown error"
         if (err instanceof Error) {
@@ -90,6 +99,19 @@ export function useIngredients() {
   // Action: Toggle completion
   const toggleIngredientCompletion = async (id: string) => {
     const originalIngredients = [...state.ingredients] // Keep original state for potential rollback
+    const ingredientToUpdate = originalIngredients.find((ing) => ing.id === id)
+
+    if (!ingredientToUpdate) {
+      dispatch({
+        type: "UPDATE_ERROR_ROLLBACK",
+        payload: {
+          originalIngredients,
+          error: `Failed to update completion: Ingredient not found`,
+        },
+      })
+      return
+    }
+
     const updatedIngredients = state.ingredients.map((element) => {
       if (element.id === id) {
         return { ...element, completed: !element.completed }
@@ -100,12 +122,24 @@ export function useIngredients() {
     dispatch({ type: "OPTIMISTIC_UPDATE", payload: updatedIngredients }) // Optimistic update
 
     try {
-      await ingredientService.updateCompletion(
+      const result = await ingredientService.updateCompletion(
         id,
-        !originalIngredients.find((ing) => ing.id === id)?.completed
+        !ingredientToUpdate.completed
       )
-      // dispatch({ type: 'UPDATE_SUCCESS' }); // Optional: dispatch success if needed
+
+      if (!result.success) {
+        const error = result.getError()
+        dispatch({
+          type: "UPDATE_ERROR_ROLLBACK",
+          payload: {
+            originalIngredients,
+            error: `Failed to update completion: ${error?.message || "Unknown error"}`,
+          },
+        })
+      }
+      // If successful, we keep the optimistic update
     } catch (err: unknown) {
+      // Fallback for unexpected errors
       let errorMessage = "Unknown error"
       if (err instanceof Error) {
         errorMessage = err.message
@@ -133,10 +167,21 @@ export function useIngredients() {
     dispatch({ type: "OPTIMISTIC_UPDATE", payload: updatedIngredients }) // Optimistic update
 
     try {
-      // await ingredientService.Update(updatedIngredients)
-      await ingredientService.updateName(id, newName)
-      // dispatch({ type: 'UPDATE_SUCCESS' }); // Optional: dispatch success if needed
+      const result = await ingredientService.updateName(id, newName)
+
+      if (!result.success) {
+        const error = result.getError()
+        dispatch({
+          type: "UPDATE_ERROR_ROLLBACK",
+          payload: {
+            originalIngredients,
+            error: `Failed to change name: ${error?.message || "Unknown error"}`,
+          },
+        })
+      }
+      // If successful, we keep the optimistic update
     } catch (err: unknown) {
+      // Fallback for unexpected errors
       let errorMessage = "Unknown error"
       if (err instanceof Error) {
         errorMessage = err.message
@@ -148,8 +193,6 @@ export function useIngredients() {
           error: `Failed to change name: ${errorMessage}`,
         },
       })
-      // Note: The original code reset ingredientToEdit here on error.
-      // This logic might need to be handled in the component consuming the hook.
     }
   }
 

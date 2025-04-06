@@ -4,6 +4,10 @@ import { useColorScheme } from "react-native"
 import React, { useEffect, useState } from "react"
 import { Text, View, ActivityIndicator, StyleSheet } from "react-native"
 import { initializeAndMigrateDatabase } from "@/database/data-migration"
+import { createLogger } from "@/api/common/logger"
+import { getDatabase } from "@/database/database"
+
+const logger = createLogger("RootLayout")
 
 export default function RootLayout() {
   useColorScheme()
@@ -15,10 +19,20 @@ export default function RootLayout() {
   useEffect(() => {
     async function initializeDatabase() {
       try {
-        await initializeAndMigrateDatabase()
-        setIsInitialized(true)
+        const db = getDatabase()
+        const result = await initializeAndMigrateDatabase(db)
+
+        if (result.success) {
+          setIsInitialized(true)
+        } else {
+          const dbError = result.getError()
+          logger.error("Failed to initialize database", dbError)
+          setError(
+            `Database initialization failed: ${dbError?.message || "Unknown error"}`
+          )
+        }
       } catch (err) {
-        console.error("Failed to initialize database:", err)
+        logger.error("Unexpected error initializing database", err)
         setError(`Database initialization failed: ${err}`)
       }
     }

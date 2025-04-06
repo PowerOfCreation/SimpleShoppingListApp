@@ -3,6 +3,11 @@ import "react-native-get-random-values"
 import { v4 as uuidv4 } from "uuid"
 import { IngredientRepository } from "@/database/ingredient-repository"
 import { getDatabase } from "@/database/database"
+import { createLogger } from "@/api/common/logger"
+import { Result } from "@/api/common/result"
+import { DbQueryError, ValidationError } from "@/api/common/error-types"
+
+const logger = createLogger("IngredientService")
 
 export class IngredientService {
   ingredients: Ingredient[] = []
@@ -13,26 +18,43 @@ export class IngredientService {
     this.repository = repository || new IngredientRepository(getDatabase())
   }
 
-  async GetIngredients() {
+  async GetIngredients(): Promise<Result<Ingredient[], DbQueryError>> {
     try {
       if (this.initialLoad) {
         this.initialLoad = false
-        this.ingredients = await this.repository.getAll()
+        const result = await this.repository.getAll()
+
+        if (result.success) {
+          this.ingredients = result.getValue()!
+        } else {
+          logger.error("Error fetching ingredients", result.getError())
+          return result
+        }
       }
 
-      return this.ingredients
+      return Result.ok(this.ingredients)
     } catch (error) {
-      console.error("Error fetching ingredients:", error)
-      return []
+      logger.error("Error fetching ingredients", error)
+      return Result.fail(
+        new DbQueryError(
+          "Failed to get ingredients",
+          "GetIngredients",
+          "Ingredient",
+          error
+        )
+      )
     }
   }
 
-  async AddIngredients(ingredientName: string): Promise<{
-    isSuccessful: boolean
-    error: string
-  }> {
+  async AddIngredients(
+    ingredientName: string
+  ): Promise<Result<void, ValidationError | DbQueryError>> {
     if (!ingredientName.trim()) {
-      return { isSuccessful: false, error: "Ingredient name can't be empty" }
+      const error = new ValidationError(
+        "Ingredient name can't be empty",
+        "name"
+      )
+      return Result.fail(error)
     }
 
     try {
@@ -46,45 +68,107 @@ export class IngredientService {
       }
 
       // Add to repository
-      await this.repository.add(newIngredient)
+      const result = await this.repository.add(newIngredient)
+
+      if (!result.success) {
+        logger.error("Error adding ingredient", result.getError())
+        return result
+      }
 
       // Add to local cache
       this.ingredients.unshift(newIngredient)
 
-      return { isSuccessful: true, error: "" }
+      return Result.ok(undefined)
     } catch (error) {
-      console.error("Error adding ingredient:", error)
-      return { isSuccessful: false, error: "Failed to add ingredient" }
+      logger.error("Error adding ingredient", error)
+      return Result.fail(
+        new DbQueryError(
+          "Failed to add ingredient",
+          "AddIngredients",
+          "Ingredient",
+          error
+        )
+      )
     }
   }
 
-  async updateCompletion(id: string, completed: boolean): Promise<void> {
+  async updateCompletion(
+    id: string,
+    completed: boolean
+  ): Promise<Result<void, DbQueryError>> {
     try {
-      await this.repository.updateCompletion(id, completed)
+      const result = await this.repository.updateCompletion(id, completed)
+
+      if (!result.success) {
+        logger.error(
+          `Error updating completion for ingredient ${id}`,
+          result.getError()
+        )
+        return result
+      }
+
       // Update local cache
       const index = this.ingredients.findIndex((ing) => ing.id === id)
       if (index !== -1) {
         this.ingredients[index].completed = completed
         this.ingredients[index].updated_at = Date.now()
       }
+
+      return Result.ok(undefined)
     } catch (error) {
-      console.error(`Error updating completion for ingredient ${id}:`, error)
-      throw error // Re-throw the error to be caught by the hook
+      logger.error(`Error updating completion for ingredient ${id}`, error)
+      return Result.fail(
+        new DbQueryError(
+          `Failed to update completion for ingredient ${id}`,
+          "updateCompletion",
+          "Ingredient",
+          error
+        )
+      )
     }
   }
 
-  async updateName(id: string, name: string): Promise<void> {
+  async updateName(
+    id: string,
+    name: string
+  ): Promise<Result<void, ValidationError | DbQueryError>> {
+    if (!name.trim()) {
+      const error = new ValidationError(
+        "Ingredient name can't be empty",
+        "name"
+      )
+      return Result.fail(error)
+    }
+
     try {
-      await this.repository.updateName(id, name)
+      const result = await this.repository.updateName(id, name)
+
+      if (!result.success) {
+        logger.error(
+          `Error updating name for ingredient ${id}`,
+          result.getError()
+        )
+        return result
+      }
+
       // Update local cache
       const index = this.ingredients.findIndex((ing) => ing.id === id)
       if (index !== -1) {
         this.ingredients[index].name = name
         this.ingredients[index].updated_at = Date.now()
       }
+
+      return Result.ok(undefined)
     } catch (error) {
-      console.error(`Error updating name for ingredient ${id}:`, error)
-      throw error // Re-throw the error to be caught by the hook
+      logger.error(`Error updating name for ingredient ${id}`, error)
+      return Result.fail(
+        new DbQueryError(
+          `Failed to update name for ingredient ${id}`,
+          "updateName",
+          "Ingredient",
+          error
+        )
+      )
     }
   }
 }

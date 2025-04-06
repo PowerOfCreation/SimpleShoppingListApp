@@ -3,6 +3,18 @@ import { getDatabase } from "@/database/database"
 import { IngredientService } from "@/api/ingredient-service"
 import { Ingredient } from "@/types/Ingredient"
 import * as SQLite from "expo-sqlite"
+import { DbQueryError, ValidationError } from "@/api/common/error-types"
+import { Result } from "@/api/common/result"
+
+// Mock the logger to avoid console output during tests
+jest.mock("@/api/common/logger", () => ({
+  createLogger: jest.fn(() => ({
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  })),
+}))
 
 // Mock the repository
 jest.mock("@/database/ingredient-repository")
@@ -67,7 +79,7 @@ describe("IngredientService", () => {
       ]
 
       // Set up repository mock
-      mockRepository.getAll.mockResolvedValue(mockIngredients)
+      mockRepository.getAll.mockResolvedValue(Result.ok(mockIngredients))
 
       // Call the method
       const result = await service.GetIngredients()
@@ -76,7 +88,8 @@ describe("IngredientService", () => {
       expect(mockRepository.getAll).toHaveBeenCalledTimes(1)
 
       // Verify result
-      expect(result).toEqual(mockIngredients)
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toEqual(mockIngredients)
     })
   })
 
@@ -88,6 +101,9 @@ describe("IngredientService", () => {
 
       // Mock Date.now
       jest.spyOn(Date, "now").mockReturnValue(nowMock)
+
+      // Configure repository to return success
+      mockRepository.add.mockResolvedValue(Result.ok(undefined))
 
       // Call the method
       const result = await service.AddIngredients(ingredientName)
@@ -104,10 +120,7 @@ describe("IngredientService", () => {
       expect(addedIngredient.updated_at).toBe(nowMock)
 
       // Verify result
-      expect(result).toEqual({
-        isSuccessful: true,
-        error: "",
-      })
+      expect(result.success).toBe(true)
     })
 
     it("should return error for empty ingredient name", async () => {
@@ -118,10 +131,9 @@ describe("IngredientService", () => {
       expect(mockRepository.add).not.toHaveBeenCalled()
 
       // Verify error result
-      expect(result).toEqual({
-        isSuccessful: false,
-        error: "Ingredient name can't be empty",
-      })
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBeInstanceOf(ValidationError)
+      expect(result.getError()?.message).toBe("Ingredient name can't be empty")
     })
   })
 
@@ -143,7 +155,10 @@ describe("IngredientService", () => {
       const nowMock = 1000
       jest.spyOn(Date, "now").mockReturnValue(nowMock)
 
-      await service.updateCompletion(ingredientId, completed)
+      // Configure repository to return success
+      mockRepository.updateCompletion.mockResolvedValue(Result.ok(undefined))
+
+      const result = await service.updateCompletion(ingredientId, completed)
 
       expect(mockRepository.updateCompletion).toHaveBeenCalledTimes(1)
       expect(mockRepository.updateCompletion).toHaveBeenCalledWith(
@@ -151,27 +166,29 @@ describe("IngredientService", () => {
         completed
       )
 
+      expect(result.success).toBe(true)
+
       // Verify cache update
       expect(service.ingredients[0].completed).toBe(completed)
       expect(service.ingredients[0].updated_at).toBe(nowMock)
     })
 
-    it("should throw error if repository fails", async () => {
+    it("should return error if repository fails", async () => {
       const ingredientId = "1"
       const completed = true
       const errorMessage = "DB error"
-      mockRepository.updateCompletion.mockRejectedValue(new Error(errorMessage))
+      const dbError = new DbQueryError(
+        errorMessage,
+        "updateCompletion",
+        "Ingredient"
+      )
 
-      const consoleErrorSpy = jest
-        .spyOn(console, "error")
-        .mockImplementation(() => {})
+      mockRepository.updateCompletion.mockResolvedValue(Result.fail(dbError))
 
-      await expect(
-        service.updateCompletion(ingredientId, completed)
-      ).rejects.toThrow(errorMessage)
+      const result = await service.updateCompletion(ingredientId, completed)
 
-      expect(consoleErrorSpy).toHaveBeenCalled()
-      consoleErrorSpy.mockRestore()
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBe(dbError)
     })
   })
 
@@ -193,7 +210,12 @@ describe("IngredientService", () => {
       const nowMock = 1000
       jest.spyOn(Date, "now").mockReturnValue(nowMock)
 
-      await service.updateName(ingredientId, newName)
+      // Configure repository to return success
+      mockRepository.updateName.mockResolvedValue(Result.ok(undefined))
+
+      const result = await service.updateName(ingredientId, newName)
+
+      expect(result.success).toBe(true)
 
       expect(mockRepository.updateName).toHaveBeenCalledTimes(1)
       expect(mockRepository.updateName).toHaveBeenCalledWith(
@@ -206,42 +228,34 @@ describe("IngredientService", () => {
       expect(service.ingredients[0].updated_at).toBe(nowMock)
     })
 
-    it("should throw error if repository fails", async () => {
+    it("should return error if repository fails", async () => {
       const ingredientId = "1"
       const newName = "Almond Milk"
       const errorMessage = "DB error"
-      mockRepository.updateName.mockRejectedValue(new Error(errorMessage))
+      const dbError = new DbQueryError(errorMessage, "updateName", "Ingredient")
 
-      const consoleErrorSpy = jest
-        .spyOn(console, "error")
-        .mockImplementation(() => {})
+      mockRepository.updateName.mockResolvedValue(Result.fail(dbError))
 
-      await expect(service.updateName(ingredientId, newName)).rejects.toThrow(
-        errorMessage
-      )
+      const result = await service.updateName(ingredientId, newName)
 
-      expect(consoleErrorSpy).toHaveBeenCalled()
-      consoleErrorSpy.mockRestore()
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBe(dbError)
     })
   })
 
   describe("error handling", () => {
     it("should handle repository errors gracefully", async () => {
-      // Set up repository to throw an error
+      // Set up repository to return an error result
       const errorMessage = "Database error"
-      mockRepository.getAll.mockRejectedValue(new Error(errorMessage))
-
-      // Check if console.error is called
-      const consoleErrorSpy = jest.spyOn(console, "error")
+      const dbError = new DbQueryError(errorMessage, "getAll", "Ingredient")
+      mockRepository.getAll.mockResolvedValue(Result.fail(dbError))
 
       // Call the method
       const result = await service.GetIngredients()
 
-      // Verify error was logged
-      expect(consoleErrorSpy).toHaveBeenCalled()
-
-      // Should return empty array on error
-      expect(result).toEqual([])
+      // Verify we get a failed result with the error
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBe(dbError)
     })
   })
 })
