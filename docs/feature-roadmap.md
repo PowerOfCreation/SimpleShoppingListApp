@@ -17,7 +17,7 @@ Replace the current AsyncStorage implementation with a SQLite database to enable
 ### Tasks
 - [X] Set up SQLite database using `expo-sqlite`
 - [X] Create database schema for ingredients table
-- [X] Migrate existing data from AsyncStorage to SQLite
+- [X] Migrate existing data from AsyncStorage to SQLite (Runs automatically on first launch)
 - [X] Update `ingredient-service.tsx` to use SQLite instead of AsyncStorage
 - [X] Implement database versioning for future migrations
 - [X] Add unit tests for database operations

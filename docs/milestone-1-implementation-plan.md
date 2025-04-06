@@ -79,8 +79,8 @@ Modify `api/ingredient-service.tsx` to:
 #### Create Migration Module
 Create `database/data-migration.ts` to:
 - [X] Detect if migration from AsyncStorage is needed
-- [X] Read all data from AsyncStorage (omitted)
-- [X] Convert and write to SQLite (omitted)
+- [X] Read all data from AsyncStorage
+- [X] Convert and write to SQLite
 - [X] Mark migration as complete
 
 #### Migration Process
@@ -143,7 +143,7 @@ Implement standardized error handling:
 ## Current Status
 - Steps 1-6 have been completed
 - The app now initializes the SQLite database correctly
-- We've implemented a simplified migration approach that skips AsyncStorage data migration
+- The data migration from AsyncStorage is now implemented and runs automatically on first launch
 - All database and repository tests are passing
 - UI components now interact with the SQLite database via the service layer
 - Milestone 1 is complete. Next steps involve starting Milestone 2 (Event Tracking).
