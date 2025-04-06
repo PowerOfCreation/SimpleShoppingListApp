@@ -2,7 +2,6 @@ import { useThemeColor } from "@/hooks/useThemeColor"
 import { Stack } from "expo-router"
 import { useColorScheme } from "react-native"
 import React, { useEffect, useState } from "react"
-import { initializeWithoutMigration } from "@/database/data-migration"
 import { Text, View, ActivityIndicator, StyleSheet } from "react-native"
 
 export default function RootLayout() {
