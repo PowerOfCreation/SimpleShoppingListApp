@@ -13,7 +13,7 @@ ShoList is a mobile application built with React Native and Expo that helps user
 
 ### State Management & Data Storage
 - Local state management with React hooks
-- AsyncStorage for persistent data storage
+- SQLite (via `expo-sqlite`) for persistent data storage
 - UUID for generating unique identifiers
 
 ### UI Components

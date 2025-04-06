@@ -1,4 +1,4 @@
-import { initializeWithoutMigration } from "../data-migration"
+import { initializeAndMigrateDatabase } from "../data-migration"
 import { getDatabase } from "../database"
 import { executeMigrations } from "../migrations"
 import * as SQLite from "expo-sqlite"
@@ -52,8 +52,8 @@ describe("Data Migration Module", () => {
       .mockImplementation(mockGetDatabaseVersion)
   })
 
-  describe("initializeWithoutMigration", () => {
-    it("should initialize database without migrating AsyncStorage data on first run", async () => {
+  describe("initializeAndMigrateDatabase", () => {
+    it("should initialize database and attempt migration on first run", async () => {
       // Mock initializeDatabase to return isFirstRun = true
       mockInitializeDatabase.mockResolvedValue({ isFirstRun: true })
 
@@ -61,14 +61,14 @@ describe("Data Migration Module", () => {
       mockGetDatabaseVersion.mockResolvedValue(0)
 
       // Call function
-      await initializeWithoutMigration()
+      await initializeAndMigrateDatabase()
 
       // Verify database was initialized
       expect(getDatabase).toHaveBeenCalled()
       expect(mockInitializeDatabase).toHaveBeenCalledWith(mockDb)
 
-      // Verify migrations were executed with isFirstRun = false to skip AsyncStorage migration
-      expect(executeMigrations).toHaveBeenCalledWith(mockDb, false)
+      // Verify migrations were executed with isFirstRun = true to attempt AsyncStorage migration
+      expect(executeMigrations).toHaveBeenCalledWith(mockDb, true)
     })
 
     it("should skip migrations if database is already at current version", async () => {
@@ -79,7 +79,7 @@ describe("Data Migration Module", () => {
       mockGetDatabaseVersion.mockResolvedValue(1) // DB_VERSION
 
       // Call function
-      await initializeWithoutMigration()
+      await initializeAndMigrateDatabase()
 
       // Verify database was initialized
       expect(getDatabase).toHaveBeenCalled()
@@ -97,7 +97,7 @@ describe("Data Migration Module", () => {
       mockGetDatabaseVersion.mockResolvedValue(0)
 
       // Call function
-      await initializeWithoutMigration()
+      await initializeAndMigrateDatabase()
 
       // Verify migrations were executed
       expect(executeMigrations).toHaveBeenCalledWith(mockDb, false)
@@ -108,7 +108,7 @@ describe("Data Migration Module", () => {
       mockInitializeDatabase.mockRejectedValue(new Error("Test error"))
 
       // Call function and expect error
-      await expect(initializeWithoutMigration()).rejects.toThrow(
+      await expect(initializeAndMigrateDatabase()).rejects.toThrow(
         "Failed to initialize database"
       )
 
@@ -129,7 +129,7 @@ describe("Data Migration Module", () => {
       )
 
       // Call function and expect error
-      await expect(initializeWithoutMigration()).rejects.toThrow(
+      await expect(initializeAndMigrateDatabase()).rejects.toThrow(
         "Failed to initialize database"
       )
     })
