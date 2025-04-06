@@ -10,6 +10,7 @@
     "web": "expo start --web",
     "test": "jest --coverage --silent",
     "test:ci": "jest --coverage --silent --ci",
+    "test:debug": "jest --coverage",
     "lint": "expo lint && tsc --noEmit"
   },
   "dependencies": {
