@@ -30,6 +30,7 @@ describe("IngredientService", () => {
       add: jest.fn(),
       update: jest.fn(),
       updateCompletion: jest.fn(),
+      updateName: jest.fn(),
       remove: jest.fn(),
       reorderIngredients: jest.fn(),
     } as unknown as jest.Mocked<IngredientRepository>
@@ -124,21 +125,103 @@ describe("IngredientService", () => {
     })
   })
 
-  describe("Update", () => {
-    it("should update ingredients using transactions", async () => {
-      // Set up mock data
-      const ingredients: Ingredient[] = [
-        { id: "1", name: "Milk", completed: false },
-        { id: "2", name: "Eggs", completed: true },
+  describe("updateCompletion", () => {
+    it("should call repository updateCompletion and update cache", async () => {
+      const ingredientId = "1"
+      const completed = true
+      const initialIngredients: Ingredient[] = [
+        {
+          id: "1",
+          name: "Milk",
+          completed: false,
+          created_at: 1,
+          updated_at: 1,
+        },
       ]
+      service.ingredients = initialIngredients // Set initial cache
 
-      // Call the method
-      await service.Update(ingredients)
+      const nowMock = 1000
+      jest.spyOn(Date, "now").mockReturnValue(nowMock)
 
-      // Verify that update was called for each ingredient
-      expect(mockRepository.update).toHaveBeenCalledTimes(2)
-      expect(mockRepository.update).toHaveBeenCalledWith(ingredients[0])
-      expect(mockRepository.update).toHaveBeenCalledWith(ingredients[1])
+      await service.updateCompletion(ingredientId, completed)
+
+      expect(mockRepository.updateCompletion).toHaveBeenCalledTimes(1)
+      expect(mockRepository.updateCompletion).toHaveBeenCalledWith(
+        ingredientId,
+        completed
+      )
+
+      // Verify cache update
+      expect(service.ingredients[0].completed).toBe(completed)
+      expect(service.ingredients[0].updated_at).toBe(nowMock)
+    })
+
+    it("should throw error if repository fails", async () => {
+      const ingredientId = "1"
+      const completed = true
+      const errorMessage = "DB error"
+      mockRepository.updateCompletion.mockRejectedValue(new Error(errorMessage))
+
+      const consoleErrorSpy = jest
+        .spyOn(console, "error")
+        .mockImplementation(() => {})
+
+      await expect(
+        service.updateCompletion(ingredientId, completed)
+      ).rejects.toThrow(errorMessage)
+
+      expect(consoleErrorSpy).toHaveBeenCalled()
+      consoleErrorSpy.mockRestore()
+    })
+  })
+
+  describe("updateName", () => {
+    it("should call repository updateName and update cache", async () => {
+      const ingredientId = "1"
+      const newName = "Almond Milk"
+      const initialIngredients: Ingredient[] = [
+        {
+          id: "1",
+          name: "Milk",
+          completed: false,
+          created_at: 1,
+          updated_at: 1,
+        },
+      ]
+      service.ingredients = initialIngredients // Set initial cache
+
+      const nowMock = 1000
+      jest.spyOn(Date, "now").mockReturnValue(nowMock)
+
+      await service.updateName(ingredientId, newName)
+
+      expect(mockRepository.updateName).toHaveBeenCalledTimes(1)
+      expect(mockRepository.updateName).toHaveBeenCalledWith(
+        ingredientId,
+        newName
+      )
+
+      // Verify cache update
+      expect(service.ingredients[0].name).toBe(newName)
+      expect(service.ingredients[0].updated_at).toBe(nowMock)
+    })
+
+    it("should throw error if repository fails", async () => {
+      const ingredientId = "1"
+      const newName = "Almond Milk"
+      const errorMessage = "DB error"
+      mockRepository.updateName.mockRejectedValue(new Error(errorMessage))
+
+      const consoleErrorSpy = jest
+        .spyOn(console, "error")
+        .mockImplementation(() => {})
+
+      await expect(service.updateName(ingredientId, newName)).rejects.toThrow(
+        errorMessage
+      )
+
+      expect(consoleErrorSpy).toHaveBeenCalled()
+      consoleErrorSpy.mockRestore()
     })
   })
 

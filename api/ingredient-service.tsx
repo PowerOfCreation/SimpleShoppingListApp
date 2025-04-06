@@ -58,17 +58,33 @@ export class IngredientService {
     }
   }
 
-  async Update(ingredients: Ingredient[]) {
+  async updateCompletion(id: string, completed: boolean): Promise<void> {
     try {
-      // Update each ingredient in the repository
-      for (const ingredient of ingredients) {
-        await this.repository.update(ingredient)
-      }
-
+      await this.repository.updateCompletion(id, completed)
       // Update local cache
-      this.ingredients = ingredients
+      const index = this.ingredients.findIndex((ing) => ing.id === id)
+      if (index !== -1) {
+        this.ingredients[index].completed = completed
+        this.ingredients[index].updated_at = Date.now()
+      }
     } catch (error) {
-      console.error("Error updating ingredients:", error)
+      console.error(`Error updating completion for ingredient ${id}:`, error)
+      throw error // Re-throw the error to be caught by the hook
+    }
+  }
+
+  async updateName(id: string, name: string): Promise<void> {
+    try {
+      await this.repository.updateName(id, name)
+      // Update local cache
+      const index = this.ingredients.findIndex((ing) => ing.id === id)
+      if (index !== -1) {
+        this.ingredients[index].name = name
+        this.ingredients[index].updated_at = Date.now()
+      }
+    } catch (error) {
+      console.error(`Error updating name for ingredient ${id}:`, error)
+      throw error // Re-throw the error to be caught by the hook
     }
   }
 }

@@ -100,8 +100,10 @@ export function useIngredients() {
     dispatch({ type: "OPTIMISTIC_UPDATE", payload: updatedIngredients }) // Optimistic update
 
     try {
-      // TODO: Refactor to use granular update (Point 3)
-      await ingredientService.Update(updatedIngredients)
+      await ingredientService.updateCompletion(
+        id,
+        !originalIngredients.find((ing) => ing.id === id)?.completed
+      )
       // dispatch({ type: 'UPDATE_SUCCESS' }); // Optional: dispatch success if needed
     } catch (err: unknown) {
       let errorMessage = "Unknown error"
@@ -131,7 +133,8 @@ export function useIngredients() {
     dispatch({ type: "OPTIMISTIC_UPDATE", payload: updatedIngredients }) // Optimistic update
 
     try {
-      await ingredientService.Update(updatedIngredients)
+      // await ingredientService.Update(updatedIngredients)
+      await ingredientService.updateName(id, newName)
       // dispatch({ type: 'UPDATE_SUCCESS' }); // Optional: dispatch success if needed
     } catch (err: unknown) {
       let errorMessage = "Unknown error"
