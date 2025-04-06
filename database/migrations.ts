@@ -81,7 +81,7 @@ export async function executeMigrations(
  * Create database tables
  * @returns Result containing void on success or DbMigrationError on failure
  */
-async function createTables(
+export async function createTables(
   db: SQLite.SQLiteDatabase
 ): Promise<Result<void, DbMigrationError>> {
   try {
@@ -110,7 +110,7 @@ async function createTables(
  * Migrate data from AsyncStorage to SQLite
  * @returns Result containing void on success or DbMigrationError on failure
  */
-async function migrateFromAsyncStorage(
+export async function migrateFromAsyncStorage(
   db: SQLite.SQLiteDatabase
 ): Promise<Result<void, DbMigrationError>> {
   try {
