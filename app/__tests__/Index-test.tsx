@@ -17,7 +17,8 @@ jest.mock("@/api/ingredient-service", () => ({
   ingredientService: {
     GetIngredients: jest.fn(),
     // We don't need AddIngredients for Index tests
-    Update: jest.fn(),
+    updateCompletion: jest.fn(),
+    updateName: jest.fn(),
   },
 }))
 
@@ -37,7 +38,8 @@ const mockInitialIngredients: Ingredient[] = [
 
 // --- Helpers ---
 const mockGetIngredients = ingredientService.GetIngredients as jest.Mock
-const mockUpdate = ingredientService.Update as jest.Mock
+const mockUpdateCompletion = ingredientService.updateCompletion as jest.Mock
+const mockUpdateName = ingredientService.updateName as jest.Mock
 const mockRouterPush = router.push as jest.Mock
 
 // Helper to render with specific service responses
@@ -45,7 +47,8 @@ const renderIndexAndWaitForLoad = async (
   getIngredientsResponse: Promise<Ingredient[]> | Error = Promise.resolve([
     ...mockInitialIngredients, // Use spread to create copies
   ]),
-  updateResponse: Promise<void> | Error = Promise.resolve(undefined)
+  updateCompletionResponse: Promise<void> | Error = Promise.resolve(undefined),
+  updateNameResponse: Promise<void> | Error = Promise.resolve(undefined)
 ) => {
   if (getIngredientsResponse instanceof Error) {
     mockGetIngredients.mockRejectedValueOnce(getIngredientsResponse)
@@ -54,11 +57,17 @@ const renderIndexAndWaitForLoad = async (
     const ingredients = await getIngredientsResponse
     mockGetIngredients.mockResolvedValueOnce(ingredients)
   }
-  // Set up the Update mock to return the specified response potentially failing
-  mockUpdate.mockImplementation(() =>
-    updateResponse instanceof Error
-      ? Promise.reject(updateResponse)
-      : Promise.resolve(updateResponse)
+  // Set up the updateCompletion mock
+  mockUpdateCompletion.mockImplementation(() =>
+    updateCompletionResponse instanceof Error
+      ? Promise.reject(updateCompletionResponse)
+      : Promise.resolve(updateCompletionResponse)
+  )
+  // Set up the updateName mock
+  mockUpdateName.mockImplementation(() =>
+    updateNameResponse instanceof Error
+      ? Promise.reject(updateNameResponse)
+      : Promise.resolve(updateNameResponse)
   )
 
   render(<Index />)
@@ -187,12 +196,10 @@ describe("<Index /> Integration Tests", () => {
 
     // Check that Update was called with toggled state
     await waitFor(() => {
-      expect(mockUpdate).toHaveBeenCalledTimes(1)
+      expect(mockUpdateCompletion).toHaveBeenCalledTimes(1)
     })
 
-    const expectedPayload = [...mockInitialIngredients]
-    expectedPayload[0].completed = true // Milk (id: "1") is toggled
-    expect(mockUpdate).toHaveBeenCalledWith(expectedPayload)
+    expect(mockUpdateCompletion).toHaveBeenCalledWith("1", true)
 
     // Ensure error message is not displayed
     expect(screen.queryByText(/Failed to update completion/)).toBeNull()
@@ -202,8 +209,9 @@ describe("<Index /> Integration Tests", () => {
     const updateError = new Error("Server Error")
     await renderIndexAndWaitForLoad(
       Promise.resolve([...mockInitialIngredients]),
-      updateError
-    ) // Setup Update to fail
+      updateError,
+      Promise.resolve(undefined)
+    ) // Setup updateCompletion to fail
 
     const eggsEntryComponent = screen.getByTestId("entry-component-3") // Eggs, id: "3", completed: false
 
@@ -215,7 +223,7 @@ describe("<Index /> Integration Tests", () => {
 
     // Wait for Update call and subsequent error handling/rollback
     await waitFor(() => {
-      expect(mockUpdate).toHaveBeenCalledTimes(1)
+      expect(mockUpdateCompletion).toHaveBeenCalledTimes(1)
     })
 
     await waitFor(() => {
@@ -255,11 +263,9 @@ describe("<Index /> Integration Tests", () => {
 
     // Check Update call
     await waitFor(() => {
-      expect(mockUpdate).toHaveBeenCalledTimes(1)
+      expect(mockUpdateName).toHaveBeenCalledTimes(1)
     })
-    const expectedPayload = [...mockInitialIngredients]
-    expectedPayload[0].name = newName // Milk (id: "1") name changed
-    expect(mockUpdate).toHaveBeenCalledWith(expectedPayload)
+    expect(mockUpdateName).toHaveBeenCalledWith("1", newName)
 
     // Ensure error message is not displayed
     expect(screen.queryByText(/Failed to change name/)).toBeNull()
@@ -288,23 +294,23 @@ describe("<Index /> Integration Tests", () => {
     expect(screen.queryByText("Sourdough")).toBeNull()
 
     // Check Update was NOT called
-    expect(mockUpdate).not.toHaveBeenCalled()
+    expect(mockUpdateCompletion).not.toHaveBeenCalled()
+    expect(mockUpdateName).not.toHaveBeenCalled()
   })
 
   it("shows error message if name change fails", async () => {
-    const updateError = new Error("Save Failed")
-    // Need to resolve GetIngredients first, then set up failing Update
+    const updateError = new Error("Validation Failed")
     await renderIndexAndWaitForLoad(
       Promise.resolve([...mockInitialIngredients]),
+      Promise.resolve(undefined),
       updateError
-    )
-    const failedName = "Scrambled Eggs"
+    ) // Setup updateName to fail
 
-    const eggsEntryComponent = screen.getByTestId("entry-component-3") // Eggs, id: "3"
-    fireEvent(eggsEntryComponent, "longPress")
+    const milkEntryComponent = screen.getByTestId("entry-component-1")
+    fireEvent(milkEntryComponent, "longPress")
 
-    const inputField = await screen.findByTestId("entry-input-3")
-    fireEvent.changeText(inputField, failedName)
+    const inputField = await screen.findByTestId("entry-input-1")
+    fireEvent.changeText(inputField, "Scrambled Eggs")
     fireEvent(inputField, "submitEditing") // Attempt to save
 
     // Check optimistic UI update (new name shown briefly, input disappears)
@@ -312,7 +318,7 @@ describe("<Index /> Integration Tests", () => {
 
     // Wait for Update call and subsequent error handling/rollback
     await waitFor(() => {
-      expect(mockUpdate).toHaveBeenCalledTimes(1)
+      expect(mockUpdateName).toHaveBeenCalledTimes(1)
     })
 
     await waitFor(() => {

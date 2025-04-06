@@ -159,6 +159,29 @@ export class IngredientRepository {
   }
 
   /**
+   * Update ingredient name
+   * @param id Ingredient ID
+   * @param name New name
+   */
+  async updateName(id: string, name: string): Promise<void> {
+    const now = Date.now()
+
+    try {
+      await this.db.runAsync(
+        `UPDATE ingredients
+         SET name = ?, updated_at = ?
+         WHERE id = ?`,
+        name,
+        now,
+        id
+      )
+    } catch (error) {
+      console.error(`Error updating name for ingredient with ID ${id}:`, error)
+      throw error
+    }
+  }
+
+  /**
    * Delete ingredient
    * @param id Ingredient ID
    */
