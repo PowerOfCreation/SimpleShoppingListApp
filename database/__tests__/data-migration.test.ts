@@ -25,16 +25,6 @@ jest.mock("../migrations", () => ({
   executeMigrations: jest.fn(),
 }))
 
-// Mock logger
-jest.mock("@/api/common/logger", () => ({
-  createLogger: jest.fn(() => ({
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  })),
-}))
-
 describe("Data Migration", () => {
   let db: SQLite.SQLiteDatabase
 
