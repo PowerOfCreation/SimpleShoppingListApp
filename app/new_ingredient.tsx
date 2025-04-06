@@ -12,11 +12,11 @@ export default function NewIngredient() {
     React.useState("")
 
   const addIngredient = async (ingredientName: string) => {
-    const { isSuccessful, error } =
-      await ingredientService.AddIngredients(ingredientName)
+    const result = await ingredientService.AddIngredients(ingredientName)
 
-    if (!isSuccessful) {
-      setInvalidInputExplanation(error)
+    if (!result.success) {
+      const error = result.getError()
+      setInvalidInputExplanation(error?.message || "Failed to add ingredient")
       return
     }
 

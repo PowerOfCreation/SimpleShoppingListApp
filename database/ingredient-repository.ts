@@ -1,5 +1,10 @@
 import * as SQLite from "expo-sqlite"
 import { Ingredient } from "../types/Ingredient"
+import { createLogger } from "@/api/common/logger"
+import { DbQueryError, NotImplementedError } from "@/api/common/error-types"
+import { Result } from "@/api/common/result"
+
+const logger = createLogger("IngredientRepository")
 
 /**
  * Repository for ingredient operations
@@ -17,9 +22,9 @@ export class IngredientRepository {
 
   /**
    * Get all ingredients
-   * @returns Array of ingredients
+   * @returns Result containing array of ingredients or error
    */
-  async getAll(): Promise<Ingredient[]> {
+  async getAll(): Promise<Result<Ingredient[], DbQueryError>> {
     try {
       const result = await this.db.getAllAsync<{
         id: string
@@ -33,25 +38,33 @@ export class IngredientRepository {
          ORDER BY completed ASC, created_at DESC`
       )
 
-      return result.map((row) => ({
-        id: row.id,
-        name: row.name,
-        completed: row.completed === 1,
-        created_at: row.created_at,
-        updated_at: row.updated_at,
-      }))
+      return Result.ok(
+        result.map((row) => ({
+          id: row.id,
+          name: row.name,
+          completed: row.completed === 1,
+          created_at: row.created_at,
+          updated_at: row.updated_at,
+        }))
+      )
     } catch (error) {
-      console.error("Error getting all ingredients:", error)
-      throw error
+      const dbError = new DbQueryError(
+        "Failed to get all ingredients",
+        "getAll",
+        "Ingredient",
+        error
+      )
+      logger.error("Error getting all ingredients", dbError)
+      return Result.fail(dbError)
     }
   }
 
   /**
    * Get ingredient by ID
    * @param id Ingredient ID
-   * @returns Ingredient or null if not found
+   * @returns Result containing ingredient or error
    */
-  async getById(id: string): Promise<Ingredient | null> {
+  async getById(id: string): Promise<Result<Ingredient | null, DbQueryError>> {
     try {
       const result = await this.db.getFirstAsync<{
         id: string
@@ -67,27 +80,34 @@ export class IngredientRepository {
       )
 
       if (!result) {
-        return null
+        return Result.ok(null)
       }
 
-      return {
+      return Result.ok({
         id: result.id,
         name: result.name,
         completed: result.completed === 1,
         created_at: result.created_at,
         updated_at: result.updated_at,
-      }
+      })
     } catch (error) {
-      console.error(`Error getting ingredient with ID ${id}:`, error)
-      throw error
+      const dbError = new DbQueryError(
+        `Failed to get ingredient with ID ${id}`,
+        "getById",
+        "Ingredient",
+        error
+      )
+      logger.error(`Error getting ingredient with ID ${id}`, dbError)
+      return Result.fail(dbError)
     }
   }
 
   /**
    * Add new ingredient
    * @param ingredient Ingredient to add
+   * @returns Result indicating success or error
    */
-  async add(ingredient: Ingredient): Promise<void> {
+  async add(ingredient: Ingredient): Promise<Result<void, DbQueryError>> {
     const now = Date.now()
 
     try {
@@ -100,17 +120,25 @@ export class IngredientRepository {
         ingredient.created_at || now,
         ingredient.updated_at || now
       )
+      return Result.ok(undefined)
     } catch (error) {
-      console.error("Error adding ingredient:", error)
-      throw error
+      const dbError = new DbQueryError(
+        "Failed to add ingredient",
+        "add",
+        "Ingredient",
+        error
+      )
+      logger.error("Error adding ingredient", dbError)
+      return Result.fail(dbError)
     }
   }
 
   /**
    * Update existing ingredient
    * @param ingredient Ingredient to update
+   * @returns Result indicating success or error
    */
-  async update(ingredient: Ingredient): Promise<void> {
+  async update(ingredient: Ingredient): Promise<Result<void, DbQueryError>> {
     const now = Date.now()
 
     try {
@@ -123,12 +151,19 @@ export class IngredientRepository {
         now,
         ingredient.id
       )
+      return Result.ok(undefined)
     } catch (error) {
-      console.error(
-        `Error updating ingredient with ID ${ingredient.id}:`,
+      const dbError = new DbQueryError(
+        `Failed to update ingredient with ID ${ingredient.id}`,
+        "update",
+        "Ingredient",
         error
       )
-      throw error
+      logger.error(
+        `Error updating ingredient with ID ${ingredient.id}`,
+        dbError
+      )
+      return Result.fail(dbError)
     }
   }
 
@@ -136,8 +171,12 @@ export class IngredientRepository {
    * Update ingredient completion status
    * @param id Ingredient ID
    * @param completed Completion status
+   * @returns Result indicating success or error
    */
-  async updateCompletion(id: string, completed: boolean): Promise<void> {
+  async updateCompletion(
+    id: string,
+    completed: boolean
+  ): Promise<Result<void, DbQueryError>> {
     const now = Date.now()
 
     try {
@@ -149,12 +188,19 @@ export class IngredientRepository {
         now,
         id
       )
+      return Result.ok(undefined)
     } catch (error) {
-      console.error(
-        `Error updating completion status for ingredient with ID ${id}:`,
+      const dbError = new DbQueryError(
+        `Failed to update completion status for ingredient with ID ${id}`,
+        "updateCompletion",
+        "Ingredient",
         error
       )
-      throw error
+      logger.error(
+        `Error updating completion status for ingredient with ID ${id}`,
+        dbError
+      )
+      return Result.fail(dbError)
     }
   }
 
@@ -162,8 +208,12 @@ export class IngredientRepository {
    * Update ingredient name
    * @param id Ingredient ID
    * @param name New name
+   * @returns Result indicating success or error
    */
-  async updateName(id: string, name: string): Promise<void> {
+  async updateName(
+    id: string,
+    name: string
+  ): Promise<Result<void, DbQueryError>> {
     const now = Date.now()
 
     try {
@@ -175,32 +225,54 @@ export class IngredientRepository {
         now,
         id
       )
+      return Result.ok(undefined)
     } catch (error) {
-      console.error(`Error updating name for ingredient with ID ${id}:`, error)
-      throw error
+      const dbError = new DbQueryError(
+        `Failed to update name for ingredient with ID ${id}`,
+        "updateName",
+        "Ingredient",
+        error
+      )
+      logger.error(`Error updating name for ingredient with ID ${id}`, dbError)
+      return Result.fail(dbError)
     }
   }
 
   /**
    * Delete ingredient
    * @param id Ingredient ID
+   * @returns Result indicating success or error
    */
-  async remove(id: string): Promise<void> {
+  async remove(id: string): Promise<Result<void, DbQueryError>> {
     try {
       await this.db.runAsync(`DELETE FROM ingredients WHERE id = ?`, id)
+      return Result.ok(undefined)
     } catch (error) {
-      console.error(`Error removing ingredient with ID ${id}:`, error)
-      throw error
+      const dbError = new DbQueryError(
+        `Failed to remove ingredient with ID ${id}`,
+        "remove",
+        "Ingredient",
+        error
+      )
+      logger.error(`Error removing ingredient with ID ${id}`, dbError)
+      return Result.fail(dbError)
     }
   }
 
   /**
    * Reorder ingredients
    * @param orderedIds Array of ingredient IDs in desired order
+   * @returns Result with not implemented error
    */
-  async reorderIngredients(orderedIds: string[]): Promise<void> {
+  async reorderIngredients(
+    orderedIds: string[]
+  ): Promise<Result<void, NotImplementedError>> {
     // This will be implemented later when we add support for ordering
-    // For now, we'll just log a message
-    console.log("Reordering not yet implemented:", orderedIds)
+    const error = new NotImplementedError(
+      "Ingredient reordering not yet implemented",
+      "reorderIngredients"
+    )
+    logger.info("Reordering not yet implemented", orderedIds)
+    return Result.fail(error)
   }
 }

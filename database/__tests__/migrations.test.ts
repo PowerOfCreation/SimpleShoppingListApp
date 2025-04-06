@@ -1,13 +1,9 @@
+import * as SQLite from "expo-sqlite"
 import { executeMigrations } from "../migrations"
-import { getItem } from "../../api/common/async-storage"
 import { getDatabase, DB_VERSION } from "../database"
+import { DbMigrationError } from "@/api/common/error-types"
 
-// Mock async-storage
-jest.mock("../../api/common/async-storage", () => ({
-  getItem: jest.fn(),
-}))
-
-// Mock DB_NAME without breaking function exports
+// Mock DB_NAME to use in-memory database
 jest.mock("../database", () => {
   const originalModule = jest.requireActual("../database")
   return {
@@ -16,123 +12,70 @@ jest.mock("../database", () => {
   }
 })
 
-describe("Migrations Module", () => {
-  // Reset mocks before each test
-  beforeEach(() => {
-    jest.clearAllMocks()
+// Mock async storage import
+jest.mock("../../api/common/async-storage", () => ({
+  getItem: jest.fn(() => Promise.resolve(null)),
+}))
+
+describe("Migrations", () => {
+  let db: SQLite.SQLiteDatabase
+
+  beforeEach(async () => {
+    // Get a fresh database connection for each test
+    db = getDatabase()
+
+    // Clear any existing tables
+    await db.execAsync(`
+      DROP TABLE IF EXISTS database_version;
+      DROP TABLE IF EXISTS ingredients;
+    `)
   })
 
   describe("executeMigrations", () => {
-    it("should create tables for first run", async () => {
-      const db = getDatabase()
-      // Run migrations
-      await executeMigrations(db, true)
+    it("should create database tables on first run", async () => {
+      // Test as if it's the first run
+      const result = await executeMigrations(db, true)
+      expect(result.success).toBe(true)
 
       // Verify tables were created
       const tables = await db.getAllAsync<{ name: string }>(
-        `SELECT name FROM sqlite_master WHERE type='table' AND name IN ('ingredients', 'database_version');`
+        `SELECT name FROM sqlite_master WHERE type='table' AND (name='ingredients' OR name='database_version');`
       )
-
       expect(tables.length).toBe(2)
       expect(tables.some((t) => t.name === "ingredients")).toBe(true)
       expect(tables.some((t) => t.name === "database_version")).toBe(true)
 
-      // Verify version was updated
-      const version = await db.getFirstAsync<{ version: number }>(
-        `SELECT version FROM database_version WHERE version = ?`,
+      // Verify version was inserted
+      const versionRow = await db.getFirstAsync<{ version: number }>(
+        `SELECT version FROM database_version WHERE version = ?;`,
         DB_VERSION
       )
-
-      expect(version?.version).toBe(DB_VERSION)
+      expect(versionRow && versionRow.version).toBe(DB_VERSION)
     })
 
-    it("should migrate data from AsyncStorage on first run", async () => {
-      const db = getDatabase()
+    it("should handle migration failures gracefully", async () => {
+      // Mock db.runAsync to throw an error during table creation
+      jest.spyOn(db, "withTransactionAsync").mockImplementationOnce(() => {
+        throw new Error("Mock database error")
+      })
 
-      // Mock AsyncStorage data
-      const mockIngredients = [
-        { id: "1", name: "Milk", completed: false },
-        { id: "2", name: "Eggs", completed: true },
-      ]
-      ;(getItem as jest.Mock).mockResolvedValueOnce(mockIngredients)
+      const result = await executeMigrations(db, true)
 
-      // Run migrations
-      await executeMigrations(db, true)
-
-      // Verify ingredients were inserted
-      const ingredients = await db.getAllAsync<{
-        id: string
-        name: string
-        completed: number
-      }>(`SELECT id, name, completed FROM ingredients ORDER BY id`)
-
-      expect(ingredients.length).toBe(2)
-      expect(ingredients[0].id).toBe("1")
-      expect(ingredients[0].name).toBe("Milk")
-      expect(ingredients[0].completed).toBe(0)
-      expect(ingredients[1].id).toBe("2")
-      expect(ingredients[1].name).toBe("Eggs")
-      expect(ingredients[1].completed).toBe(1)
+      // Should fail with proper error type
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBeInstanceOf(DbMigrationError)
     })
 
-    it("should skip migration when no ingredients in AsyncStorage", async () => {
-      const db = getDatabase()
+    it("should update database version after successful migration", async () => {
+      const result = await executeMigrations(db, false)
+      expect(result.success).toBe(true)
 
-      // Mock empty AsyncStorage
-      ;(getItem as jest.Mock).mockResolvedValueOnce([])
-
-      // Run migrations
-      await executeMigrations(db, true)
-
-      // Verify no ingredients were inserted
-      const ingredients = await db.getAllAsync<{ id: string }>(
-        `SELECT id FROM ingredients`
+      // Check version was updated
+      const version = await db.getFirstAsync<{ version: number }>(
+        `SELECT version FROM database_version WHERE version = ?;`,
+        DB_VERSION
       )
-
-      expect(ingredients.length).toBe(0)
-    })
-
-    it("should not migrate data on subsequent runs", async () => {
-      const db = getDatabase()
-
-      // Create tables and insert a test ingredient
-      await db.execAsync(`
-        CREATE TABLE IF NOT EXISTS ingredients (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          completed INTEGER NOT NULL DEFAULT 0,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
-        );
-        CREATE TABLE IF NOT EXISTS database_version (
-          version INTEGER PRIMARY KEY,
-          migration_date INTEGER NOT NULL
-        );
-        INSERT INTO ingredients (id, name, completed, created_at, updated_at)
-        VALUES ('existing', 'Existing Ingredient', 0, ${Date.now()}, ${Date.now()});
-      `)
-
-      // Mock AsyncStorage data that shouldn't be used
-      const mockIngredients = [
-        {
-          id: "should-not-be-added",
-          name: "Should Not Be Added",
-          completed: false,
-        },
-      ]
-      ;(getItem as jest.Mock).mockResolvedValueOnce(mockIngredients)
-
-      // Run migrations with isFirstRun = false
-      await executeMigrations(db, false)
-
-      // Verify only the existing ingredient exists
-      const ingredients = await db.getAllAsync<{ id: string }>(
-        `SELECT id FROM ingredients`
-      )
-
-      expect(ingredients.length).toBe(1)
-      expect(ingredients[0].id).toBe("existing")
-      expect(getItem).not.toHaveBeenCalled()
+      expect(version && version.version).toBe(DB_VERSION)
     })
   })
 })

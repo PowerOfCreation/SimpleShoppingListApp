@@ -2,6 +2,17 @@ import * as SQLite from "expo-sqlite"
 import { IngredientRepository } from "../ingredient-repository"
 import { getDatabase } from "../database"
 import { Ingredient } from "../../types/Ingredient"
+import { NotImplementedError } from "@/api/common/error-types"
+
+// Mock the logger to avoid console output during tests
+jest.mock("@/api/common/logger", () => ({
+  createLogger: jest.fn(() => ({
+    debug: jest.fn(),
+    info: jest.fn(),
+    warn: jest.fn(),
+    error: jest.fn(),
+  })),
+}))
 
 // Mock DB_NAME without breaking function exports
 jest.mock("../database", () => {
@@ -54,21 +65,24 @@ describe("IngredientRepository", () => {
 
       // Call the method
       const result = await repository.getAll()
+      expect(result.success).toBe(true)
 
+      const ingredients = result.getValue()!
       // Verify results - should be sorted by completed ASC (0 first), then created_at DESC (newest first)
-      expect(result.length).toBe(3)
-      expect(result[0].id).toBe("1") // Milk (not completed, newer)
-      expect(result[1].id).toBe("3") // Bread (not completed, older)
-      expect(result[2].id).toBe("2") // Eggs (completed)
+      expect(ingredients.length).toBe(3)
+      expect(ingredients[0].id).toBe("1") // Milk (not completed, newer)
+      expect(ingredients[1].id).toBe("3") // Bread (not completed, older)
+      expect(ingredients[2].id).toBe("2") // Eggs (completed)
 
       // Verify boolean conversion
-      expect(result[0].completed).toBe(false)
-      expect(result[2].completed).toBe(true)
+      expect(ingredients[0].completed).toBe(false)
+      expect(ingredients[2].completed).toBe(true)
     })
 
     it("should return empty array when no ingredients exist", async () => {
       const result = await repository.getAll()
-      expect(result).toEqual([])
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toEqual([])
     })
   })
 
@@ -82,9 +96,10 @@ describe("IngredientRepository", () => {
 
       // Call the method
       const result = await repository.getById("1")
+      expect(result.success).toBe(true)
 
       // Verify results
-      expect(result).toEqual({
+      expect(result.getValue()).toEqual({
         id: "1",
         name: "Milk",
         completed: false,
@@ -95,7 +110,9 @@ describe("IngredientRepository", () => {
 
     it("should return null when ingredient not found", async () => {
       const result = await repository.getById("nonexistent")
-      expect(result).toBeNull()
+      expect(result.success).toBe(true)
+      const value = result.getValue()
+      expect(value).toBeNull()
     })
   })
 
@@ -113,10 +130,11 @@ describe("IngredientRepository", () => {
       }
 
       // Call the method
-      await repository.add(ingredient)
+      const result = await repository.add(ingredient)
+      expect(result.success).toBe(true)
 
       // Verify the ingredient was added
-      const result = await db.getFirstAsync<{
+      const dbResult = await db.getFirstAsync<{
         id: string
         name: string
         completed: number
@@ -124,7 +142,7 @@ describe("IngredientRepository", () => {
         updated_at: number
       }>(`SELECT * FROM ingredients WHERE id = ?`, "1")
 
-      expect(result).toEqual({
+      expect(dbResult).toEqual({
         id: "1",
         name: "Milk",
         completed: 0,
@@ -144,10 +162,11 @@ describe("IngredientRepository", () => {
       }
 
       // Call the method
-      await repository.add(ingredient)
+      const result = await repository.add(ingredient)
+      expect(result.success).toBe(true)
 
       // Verify the ingredient was added with the provided timestamps
-      const result = await db.getFirstAsync<{
+      const dbResult = await db.getFirstAsync<{
         id: string
         name: string
         completed: number
@@ -155,7 +174,7 @@ describe("IngredientRepository", () => {
         updated_at: number
       }>(`SELECT * FROM ingredients WHERE id = ?`, "1")
 
-      expect(result).toEqual({
+      expect(dbResult).toEqual({
         id: "1",
         name: "Milk",
         completed: 0,
@@ -185,10 +204,11 @@ describe("IngredientRepository", () => {
       }
 
       // Call the method
-      await repository.update(ingredient)
+      const result = await repository.update(ingredient)
+      expect(result.success).toBe(true)
 
       // Verify the ingredient was updated
-      const result = await db.getFirstAsync<{
+      const dbResult = await db.getFirstAsync<{
         id: string
         name: string
         completed: number
@@ -196,7 +216,7 @@ describe("IngredientRepository", () => {
         updated_at: number
       }>(`SELECT * FROM ingredients WHERE id = ?`, "1")
 
-      expect(result).toEqual({
+      expect(dbResult).toEqual({
         id: "1",
         name: "Milk Updated",
         completed: 1,
@@ -219,10 +239,11 @@ describe("IngredientRepository", () => {
       jest.spyOn(Date, "now").mockReturnValue(now)
 
       // Call the method
-      await repository.updateCompletion("1", true)
+      const result = await repository.updateCompletion("1", true)
+      expect(result.success).toBe(true)
 
       // Verify the completion status was updated
-      const result = await db.getFirstAsync<{
+      const dbResult = await db.getFirstAsync<{
         id: string
         name: string
         completed: number
@@ -230,7 +251,7 @@ describe("IngredientRepository", () => {
         updated_at: number
       }>(`SELECT * FROM ingredients WHERE id = ?`, "1")
 
-      expect(result).toEqual({
+      expect(dbResult).toEqual({
         id: "1",
         name: "Milk",
         completed: 1, // Should change
@@ -252,12 +273,12 @@ describe("IngredientRepository", () => {
       const now = 1234567890
       jest.spyOn(Date, "now").mockReturnValue(now)
 
-      const newName = "Almond Milk"
       // Call the method
-      await repository.updateName("1", newName)
+      const result = await repository.updateName("1", "Almond Milk")
+      expect(result.success).toBe(true)
 
       // Verify the name was updated
-      const result = await db.getFirstAsync<{
+      const dbResult = await db.getFirstAsync<{
         id: string
         name: string
         completed: number
@@ -265,40 +286,27 @@ describe("IngredientRepository", () => {
         updated_at: number
       }>(`SELECT * FROM ingredients WHERE id = ?`, "1")
 
-      expect(result).toEqual({
+      expect(dbResult).toEqual({
         id: "1",
-        name: newName, // Should change
-        completed: 0, // Should not change
+        name: "Almond Milk", // Should change
+        completed: 0,
         created_at: 1000, // Should not change
         updated_at: now, // Should update
       })
     })
 
-    it("should throw an error if the update fails", async () => {
-      // Mock db.runAsync to throw an error
-      const dbError = new Error("DB write error")
-      const mockRunAsync = jest.spyOn(db, "runAsync").mockRejectedValue(dbError)
-
+    it("should return an error if the update fails", async () => {
       const ingredientId = "1"
       const newName = "Almond Milk"
+      const dbError = new Error("Database error")
 
-      // Set up the spy *before* the call
-      const consoleErrorSpy = jest
-        .spyOn(console, "error")
-        .mockImplementation(() => {})
+      // Mock db.runAsync to throw an error
+      jest.spyOn(db, "runAsync").mockRejectedValueOnce(dbError)
 
-      // Expect the method to throw when runAsync fails
-      await expect(
-        repository.updateName(ingredientId, newName)
-      ).rejects.toThrow(dbError)
-
-      // Ensure console.error was called *after* the execution
-      expect(consoleErrorSpy).toHaveBeenCalledWith(
-        `Error updating name for ingredient with ID ${ingredientId}:`,
-        dbError
-      )
-      mockRunAsync.mockRestore()
-      consoleErrorSpy.mockRestore() // Restore console.error
+      // Call the method and expect it to return a failure result
+      const result = await repository.updateName(ingredientId, newName)
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBeTruthy()
     })
   })
 
@@ -310,35 +318,34 @@ describe("IngredientRepository", () => {
         ('1', 'Milk', 0, 1000, 1000);
       `)
 
+      // Verify the ingredient exists
+      let result = await db.getFirstAsync<{ id: string }>(
+        `SELECT id FROM ingredients WHERE id = ?`,
+        "1"
+      )
+      expect(result).not.toBeNull()
+
       // Call the method
-      await repository.remove("1")
+      const removeResult = await repository.remove("1")
+      expect(removeResult.success).toBe(true)
 
       // Verify the ingredient was removed
-      const result = await db.getFirstAsync<{
-        id: string
-        name: string
-        completed: number
-        created_at: number
-        updated_at: number
-      }>(`SELECT * FROM ingredients WHERE id = ?`, "1")
-
+      result = await db.getFirstAsync<{ id: string }>(
+        `SELECT id FROM ingredients WHERE id = ?`,
+        "1"
+      )
       expect(result).toBeNull()
     })
   })
 
   describe("reorderIngredients", () => {
-    it("should log a message that reordering is not yet implemented", async () => {
-      // Spy on console.log
-      const consoleSpy = jest.spyOn(console, "log")
-
+    it("should return not implemented error", async () => {
       // Call the method
-      await repository.reorderIngredients(["1", "2", "3"])
+      const result = await repository.reorderIngredients(["1", "2", "3"])
 
-      // Verify that console.log was called with the expected message
-      expect(consoleSpy).toHaveBeenCalledWith(
-        "Reordering not yet implemented:",
-        ["1", "2", "3"]
-      )
+      // Verify the result is a Not Implemented error
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBeInstanceOf(NotImplementedError)
     })
   })
 })
