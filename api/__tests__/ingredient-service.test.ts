@@ -6,16 +6,6 @@ import * as SQLite from "expo-sqlite"
 import { DbQueryError, ValidationError } from "@/api/common/error-types"
 import { Result } from "@/api/common/result"
 
-// Mock the logger to avoid console output during tests
-jest.mock("@/api/common/logger", () => ({
-  createLogger: jest.fn(() => ({
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  })),
-}))
-
 // Mock the repository
 jest.mock("@/database/ingredient-repository")
 const MockIngredientRepository = IngredientRepository as jest.MockedClass<

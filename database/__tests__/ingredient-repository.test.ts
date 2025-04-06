@@ -4,16 +4,6 @@ import { getDatabase } from "../database"
 import { Ingredient } from "../../types/Ingredient"
 import { NotImplementedError } from "@/api/common/error-types"
 
-// Mock the logger to avoid console output during tests
-jest.mock("@/api/common/logger", () => ({
-  createLogger: jest.fn(() => ({
-    debug: jest.fn(),
-    info: jest.fn(),
-    warn: jest.fn(),
-    error: jest.fn(),
-  })),
-}))
-
 // Mock DB_NAME without breaking function exports
 jest.mock("../database", () => {
   const originalModule = jest.requireActual("../database")
