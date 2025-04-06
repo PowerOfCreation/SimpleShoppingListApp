@@ -9,7 +9,7 @@ import React, { forwardRef } from "react"
 import Feather from "@expo/vector-icons/Feather"
 import { ThemedTextInput } from "./ThemedTextInput"
 
-type EntryProps = {
+export type EntryProps = {
   id: string
   ingredientName: string
   isCompleted: boolean
