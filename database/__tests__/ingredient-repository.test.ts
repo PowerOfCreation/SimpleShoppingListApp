@@ -240,6 +240,68 @@ describe("IngredientRepository", () => {
     })
   })
 
+  describe("updateName", () => {
+    it("should update an ingredient name", async () => {
+      // Insert a test ingredient
+      await db.execAsync(`
+        INSERT INTO ingredients (id, name, completed, created_at, updated_at) VALUES
+        ('1', 'Milk', 0, 1000, 1000);
+      `)
+
+      // Mock Date.now for consistent testing
+      const now = 1234567890
+      jest.spyOn(Date, "now").mockReturnValue(now)
+
+      const newName = "Almond Milk"
+      // Call the method
+      await repository.updateName("1", newName)
+
+      // Verify the name was updated
+      const result = await db.getFirstAsync<{
+        id: string
+        name: string
+        completed: number
+        created_at: number
+        updated_at: number
+      }>(`SELECT * FROM ingredients WHERE id = ?`, "1")
+
+      expect(result).toEqual({
+        id: "1",
+        name: newName, // Should change
+        completed: 0, // Should not change
+        created_at: 1000, // Should not change
+        updated_at: now, // Should update
+      })
+    })
+
+    it("should throw an error if the update fails", async () => {
+      // Mock db.runAsync to throw an error
+      const dbError = new Error("DB write error")
+      const mockRunAsync = jest.spyOn(db, "runAsync").mockRejectedValue(dbError)
+
+      const ingredientId = "1"
+      const newName = "Almond Milk"
+
+      // Set up the spy *before* the call
+      const consoleErrorSpy = jest
+        .spyOn(console, "error")
+        .mockImplementation(() => {})
+
+      // Expect the method to throw when runAsync fails
+      await expect(
+        repository.updateName(ingredientId, newName)
+      ).rejects.toThrow(dbError)
+
+      // Ensure console.error was called *after* the execution
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        `Error updating name for ingredient with ID ${ingredientId}:`,
+        dbError
+      )
+      mockRunAsync.mockRestore()
+      consoleErrorSpy.mockRestore() // Restore console.error
+    })
+  })
+
   describe("remove", () => {
     it("should remove an ingredient from the database", async () => {
       // Insert a test ingredient
