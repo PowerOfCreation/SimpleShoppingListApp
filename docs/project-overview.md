@@ -38,7 +38,7 @@ Contains the main screens and application layout using Expo Router.
 #### `/api`
 Services for data management.
 - `ingredient-service.tsx`: Service for CRUD operations on ingredients
-- `/common`: Common utilities for API services
+- `/common`: Common utilities for API services (logger, errors, result type)
 
 #### `/components`
 Reusable UI components.
@@ -48,10 +48,20 @@ Reusable UI components.
 - `ThemedTextInput.tsx`: Text input with theme support
 - `ThemedView.tsx`: View component with theme support
 
+#### `/database`
+Handles SQLite database operations, migrations, and data persistence.
+- `database.ts`: Core database connection and version management.
+- `migrations.ts`: Defines database schema and migration steps.
+- `data-migration.ts`: Orchestrates initialization and migration execution.
+- `base-repository.ts`: Abstract base class for repositories, providing common logic (error handling, transactions).
+- `ingredient-repository.ts`: Repository for ingredient-specific database operations (extends `BaseRepository`).
+
 #### `/hooks`
 Custom React hooks.
 - `useThemeColor.ts`: Hook for accessing theme colors
-- `useColorScheme.ts`: Hook for detecting device color scheme
+- `useColorScheme.ts`: Hook for detecting device color scheme (native)
+- `useColorScheme.web.ts`: Hook for detecting device color scheme (web)
+- `useIngredients.ts`: Hook for managing ingredient data and state.
 
 #### `/assets`
 Static assets like images and fonts.
@@ -67,11 +77,14 @@ Application constants.
 - `app/new_ingredient.tsx`: Screen for adding new ingredients with validation
 
 ### Data Management
-- `api/ingredient-service.tsx`: Service class that handles:
-  - Loading ingredients from persistent storage
-  - Saving ingredients
-  - Adding new ingredients with validation
-  - Updating existing ingredients
+- `api/ingredient-service.tsx`: Service class that orchestrates ingredient operations, interacting with the `IngredientRepository`.
+- `api/common/*`: Contains shared utilities like `logger`, custom `Error` types, and the `Result` type for consistent error handling.
+
+### Database Layer (`/database`)
+- `database.ts`: Manages the SQLite connection and database versioning.
+- `migrations.ts` & `data-migration.ts`: Handle schema creation and data migration, including migrating from potential older storage methods (like AsyncStorage) on first run.
+- `base-repository.ts`: Provides a foundation for all data repositories, encapsulating common database interaction patterns like transaction handling, error logging, and returning standardized `Result` objects.
+- `ingredient-repository.ts`: Implements specific CRUD operations for ingredients against the database, leveraging the `BaseRepository` for consistency and reduced boilerplate.
 
 ### Core Components
 - `components/Entry.tsx`: Displays an individual ingredient with toggle and edit capabilities
