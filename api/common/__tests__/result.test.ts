@@ -49,9 +49,10 @@ describe("Result", () => {
     })
 
     it("should throw a generic error if failed result has no specific error", () => {
-      // This case shouldn't happen with the current static constructors
-      // but testing for completeness based on internal implementation
-      const result = new (Result as any)(null, null, false)
+      // Mock the implementation of Result class directly to test private logic
+      // @ts-expect-error We're accessing private constructor for testing edge cases
+      const result = new Result(null, null, false)
+
       expect(() => result.getValue()).toThrow(
         "Cannot get value from a failed Result"
       )
