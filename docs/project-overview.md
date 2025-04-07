@@ -124,3 +124,117 @@ You can execute tests in non-interactive mode with
 ```bash
 npm run test:ci
 ```
+
+## Core Abstractions
+
+### Result Pattern (`api/common/result.ts`)
+
+The `Result<T, E>` type is a fundamental abstraction used throughout the application to handle operations that can succeed or fail, avoiding exceptions and providing typed error handling.
+
+#### Key features:
+- Generic type that wraps either a success value or an error
+- Methods for safely transforming and accessing result values
+- Support for both synchronous and asynchronous operations
+- Static helpers for creating Results from Promises
+
+#### Usage examples:
+
+**Creating Results:**
+```typescript
+// Success case
+const successResult = Result.ok<string, Error>("Success value")
+
+// Error case
+const errorResult = Result.fail<string, Error>(new Error("Something went wrong"))
+
+// From a Promise
+const asyncResult = await Result.fromPromise(fetchData())
+```
+
+**Working with Results:**
+```typescript
+// Safe value access with pattern matching
+if (result.success) {
+  const value = result.getValue() // Safe to call here
+  // Handle success case
+} else {
+  const error = result.getError()
+  // Handle error case
+}
+
+// Transforming values with map
+const transformedResult = result.map(value => transformValue(value))
+
+// Async transformations
+const asyncTransformedResult = await result.asyncMap(async value => {
+  return await someAsyncOperation(value)
+})
+```
+
+**Best practices:**
+- Always check `result.success` before accessing values
+- Use the Result type for any operation that might fail
+- Leverage the transformation methods to maintain the Result wrapper
+- Avoid throwing exceptions in business logic; use Result instead
+
+### Repository Pattern (`database/base-repository.ts`)
+
+The `BaseRepository` abstract class provides a foundation for database interactions, encapsulating common patterns like error handling, logging, and transaction management.
+
+#### Key features:
+- Standardized error handling with the Result type
+- Built-in transaction support
+- Consistent logging
+- Abstraction of SQL execution details
+
+#### Usage example:
+
+**Creating a new repository:**
+```typescript
+export class ProductRepository extends BaseRepository {
+  protected readonly entityName = "product"
+
+  constructor(db: SQLite.SQLiteDatabase) {
+    super(db, "ProductRepository")
+  }
+
+  async getAll(): Promise<Result<Product[], DbQueryError>> {
+    return this._executeQuery(async () => {
+      const { rows } = await this.db.execAsync<Product>(`
+        SELECT * FROM products ORDER BY name
+      `)
+      return rows._array
+    }, "getAll")
+  }
+
+  async add(product: Product): Promise<Result<void, DbQueryError>> {
+    return this._executeTransaction(async () => {
+      await this.db.execAsync(`
+        INSERT INTO products (id, name, price)
+        VALUES (?, ?, ?)
+      `, [product.id, product.name, product.price])
+    }, "add")
+  }
+}
+```
+
+**Using repositories with Result pattern:**
+```typescript
+// In a service or hook
+const result = await productRepository.getAll()
+
+if (result.success) {
+  const products = result.getValue()
+  // Use products
+} else {
+  const error = result.getError()
+  // Handle error, e.g., show user-friendly message
+}
+```
+
+**Best practices:**
+- Always extend BaseRepository for database access
+- Use the protected _executeQuery and _executeTransaction methods
+- Keep SQL queries in the repository layer only
+- Return Results, never throw exceptions from repositories
+- Use typed entities as the return values
