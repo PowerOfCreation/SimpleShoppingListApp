@@ -1,7 +1,7 @@
 import { router } from "expo-router"
 import React from "react"
 import { Pressable, View, StyleSheet } from "react-native"
-import { SafeAreaView } from "react-native"
+import { SafeAreaView } from "react-native-safe-area-context"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedTextInput } from "@/components/ThemedTextInput"
 import { ingredientService } from "../api/ingredient-service"

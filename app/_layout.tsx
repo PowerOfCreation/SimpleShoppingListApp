@@ -1,11 +1,12 @@
 import { useThemeColor } from "@/hooks/useThemeColor"
-import { Stack } from "expo-router"
+import { Drawer } from 'expo-router/drawer';
 import { useColorScheme } from "react-native"
 import React, { useEffect, useState } from "react"
 import { Text, View, ActivityIndicator, StyleSheet } from "react-native"
 import { initializeAndMigrateDatabase } from "@/database/data-migration"
 import { createLogger } from "@/api/common/logger"
 import { getDatabase } from "@/database/database"
+import { SafeAreaProvider } from "react-native-safe-area-context"
 
 const logger = createLogger("RootLayout")
 
@@ -60,30 +61,33 @@ export default function RootLayout() {
   }
 
   return (
-    <Stack
-      screenOptions={{
-        contentStyle: { backgroundColor },
-        headerTintColor: color,
-        headerStyle: {
-          backgroundColor,
-        },
-      }}
-    >
-      <Stack.Screen
-        options={{
-          headerTitle: "Shopping List",
-          headerBackVisible: false,
+    <SafeAreaProvider>
+      <Drawer
+        screenOptions={{
+          drawerStyle: { backgroundColor },
+          drawerLabelStyle: { color },
+          headerStyle: { backgroundColor },
+          headerTintColor: color,
+          sceneStyle: { backgroundColor },
         }}
-        name="index"
-      />
-      <Stack.Screen
-        options={{
-          headerTitle: "Add new ingredient",
-          // Hide the header for this route
-        }}
-        name="new_ingredient"
-      />
-    </Stack>
+      >
+        <Drawer.Screen
+          name="index"
+          options={{
+            drawerLabel: "Shopping List",
+            headerTitle: "Shopping List",
+          }}
+        />
+        <Drawer.Screen
+          name="new_ingredient"
+          options={{
+            drawerLabel: "Add Ingredient",
+            headerTitle: "Add new ingredient",
+            drawerItemStyle: { display: 'none' },
+          }}
+        />
+      </Drawer>
+    </SafeAreaProvider>
   )
 }
 
