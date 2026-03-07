@@ -1,6 +1,6 @@
 import { router, useFocusEffect } from "expo-router"
 import React from "react"
-import { Pressable, View, StyleSheet, Keyboard } from "react-native"
+import { Pressable, View, StyleSheet, Keyboard, TextInput } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedTextInput } from "@/components/ThemedTextInput"
@@ -10,13 +10,13 @@ export default function NewIngredient() {
   const [text, onChangeText] = React.useState("")
   const [invalidInputExplanation, setInvalidInputExplanation] =
     React.useState("")
-  const inputRef = React.useRef<any>(null)
+  const inputRef = React.useRef<TextInput>(null)
 
   useFocusEffect(
     React.useCallback(() => {
       const id = setTimeout(() => {
         inputRef.current?.focus()
-      }, 100) // minimal viable delay — tune down if your device allows
+      }, 100) // we don't know when page is fully loaded on android, so we just wait a bit before focusing
       return () => clearTimeout(id)
     }, [])
   )
