@@ -1,5 +1,5 @@
 import { useThemeColor } from "@/hooks/useThemeColor"
-import { Drawer } from 'expo-router/drawer';
+import { Drawer } from "expo-router/drawer"
 import { useColorScheme } from "react-native"
 import React, { useEffect, useState } from "react"
 import { Text, View, ActivityIndicator, StyleSheet } from "react-native"
