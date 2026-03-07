@@ -11,6 +11,7 @@ import { router } from "expo-router"
 import { Ingredient } from "@/types/Ingredient"
 import { Result } from "@/api/common/result"
 import { DbQueryError, ValidationError } from "@/api/common/error-types"
+import { SafeAreaProvider } from "react-native-safe-area-context"
 
 // --- Mocks ---
 
@@ -80,7 +81,7 @@ const renderIndexAndWaitForLoad = async (
       : Promise.resolve(updateNameResponse)
   )
 
-  render(<Index />)
+  render(<Index />, { wrapper: SafeAreaProvider })
 
   // Wait for loading to finish (or error to appear)
   await waitFor(
@@ -153,7 +154,7 @@ describe("<Index /> Integration Tests", () => {
           setTimeout(() => resolve(Result.ok([...mockInitialIngredients])), 50)
         )
     )
-    render(<Index />)
+    render(<Index />, { wrapper: SafeAreaProvider })
     // Check loading indicator is present initially using findByAccessibilityHint
     await screen.findByAccessibilityHint("loading data")
 
