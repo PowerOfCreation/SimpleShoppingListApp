@@ -83,7 +83,7 @@ export default function RootLayout() {
           options={{
             drawerLabel: "Add Ingredient",
             headerTitle: "Add new ingredient",
-            drawerItemStyle: { display: 'none' },
+            drawerItemStyle: { display: "none" },
           }}
         />
       </Drawer>
