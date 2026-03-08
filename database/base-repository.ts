@@ -145,4 +145,3 @@ export abstract class BaseRepository {
     return new Promise((resolve) => setTimeout(resolve, ms))
   }
 }
-
