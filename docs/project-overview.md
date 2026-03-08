@@ -12,7 +12,7 @@ ShoList is a mobile application built with React Native and Expo that helps user
 - **React Navigation/Expo Router**: Navigation management
 
 ### State Management & Data Storage
-- Local state management with React hooks
+- **Global state management with Zustand** for single source of truth
 - SQLite (via `expo-sqlite`) for persistent data storage
 - UUID for generating unique identifiers
 
@@ -61,7 +61,11 @@ Custom React hooks.
 - `useThemeColor.ts`: Hook for accessing theme colors
 - `useColorScheme.ts`: Hook for detecting device color scheme (native)
 - `useColorScheme.web.ts`: Hook for detecting device color scheme (web)
-- `useIngredients.ts`: Hook for managing ingredient data and state.
+- `useIngredients.ts`: Hook for accessing global ingredients state from Zustand store
+
+#### `/store`
+Global state management using Zustand.
+- `ingredientStore.ts`: Global Zustand store managing all ingredient state, fetching, and optimistic updates
 
 #### `/assets`
 Static assets like images and fonts.
@@ -93,6 +97,58 @@ Application constants.
 - `components/ThemedTextInput.tsx`: Input component that adapts to the current theme
 
 ### Type Definitions
+
+## Architecture
+
+### Data Flow Layers
+
+The application follows a layered architecture with clear separation of concerns:
+
+```
+┌─────────────────────────────────────────┐
+│      React Components (UI Layer)         │
+│   (index.tsx, new_ingredient.tsx, etc)  │
+└──────────────────┬──────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────┐
+│   useIngredients Hook (UI Adapter)      │
+│  - Connects components to store         │
+│  - Exposes store state & actions        │
+└──────────────────┬──────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────┐
+│   Zustand Store (Global State)          │
+│  - Single source of truth               │
+│  - All ingredient mutations             │
+│  - Optimistic updates with rollback     │
+└──────────────────┬──────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────┐
+│  IngredientService (Data Access)        │
+│  - Network/DB operations only           │
+│  - No state management                  │
+│  - Pure business logic                  │
+└──────────────────┬──────────────────────┘
+                   │
+                   ▼
+┌─────────────────────────────────────────┐
+│ IngredientRepository (Data Persistence) │
+│  - Database operations (SQLite)         │
+└─────────────────────────────────────────┘
+```
+
+### Key Design Principles
+
+- **Single Source of Truth**: Zustand store manages all ingredient state globally
+- **No Navigation Refetches**: Data persists across screen navigation (no `useFocusEffect` hacks)
+- **Optimistic Updates**: UI updates immediately; rolled back on failure
+- **Lazy Initialization**: Store initializes on first use, not on app startup
+- **Testable Layers**: Each layer can be tested independently by mocking the layer below
+
+See [docs/testing-strategy.md](testing-strategy.md) for testing patterns at each layer.
 - `types/Ingredient.ts`: Defines the structure of ingredient objects with:
   - id: Unique identifier
   - name: Ingredient name
