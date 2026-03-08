@@ -22,6 +22,9 @@ describe("IngredientRepository", () => {
     db = getDatabase()
     repository = new IngredientRepository(db)
 
+    // Clear the ingredients table before each test
+    await db.execAsync(`DROP TABLE IF EXISTS ingredients;`)
+
     // Set up database schema for each test
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS ingredients (
