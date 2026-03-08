@@ -79,4 +79,69 @@ export abstract class BaseRepository {
       return Result.fail(dbError)
     }
   }
+
+  /**
+   * Executes a database query with automatic retry logic for transient errors (database locked).
+   * Retries with exponential backoff for SQLITE_BUSY errors.
+   * Non-transient errors fail immediately without retries.
+   * @param queryFn A function that performs the database operation.
+   * @param operationName The name of the operation being performed.
+   * @param maxRetries Maximum number of retry attempts (default: 3).
+   * @returns A Promise resolving to a Result object containing the query result or a DbQueryError.
+   */
+  protected async _executeQueryWithRetry<T>(
+    queryFn: () => Promise<T>,
+    operationName: string,
+    maxRetries: number = 3
+  ): Promise<Result<T, DbQueryError>> {
+    let lastError: Error | null = null
+
+    for (let attempt = 0; attempt < maxRetries; attempt++) {
+      try {
+        const data = await queryFn()
+        return Result.ok(data)
+      } catch (error) {
+        lastError = error as Error
+
+        // Check if it's a transient database lock error
+        const isLockedError =
+          lastError?.message?.includes("database is locked") ||
+          lastError?.message?.includes("SQLITE_BUSY")
+
+        if (isLockedError && attempt < maxRetries - 1) {
+          // Exponential backoff: 100ms, 200ms, 400ms, etc.
+          const backoffMs = Math.min(1000, Math.pow(2, attempt) * 100)
+          this.logger.debug(
+            `Database locked, retrying ${operationName} after ${backoffMs}ms (attempt ${attempt + 1}/${maxRetries})`
+          )
+          await this._sleep(backoffMs)
+          continue
+        }
+
+        // For non-transient errors or final attempt, fail immediately
+        break
+      }
+    }
+
+    // All retries exhausted or non-transient error occurred
+    const dbError = new DbQueryError(
+      `Failed to ${operationName} ${this.entityName}(s)`,
+      operationName,
+      this.entityName,
+      lastError
+    )
+    this.logger.error(
+      `Error during ${operationName} ${this.entityName}(s) after retries`,
+      dbError
+    )
+    return Result.fail(dbError)
+  }
+
+  /**
+   * Sleep utility for retry backoff
+   * @param ms Milliseconds to sleep
+   */
+  private _sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms))
+  }
 }

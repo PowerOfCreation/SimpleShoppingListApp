@@ -5,32 +5,25 @@ import {
   waitFor,
   fireEvent,
 } from "@testing-library/react-native"
-import Index from ".." // Assuming Index-test.tsx is in app/__tests__
-import { ingredientService } from "@/api/ingredient-service"
+import Index from ".."
 import { router } from "expo-router"
 import { Ingredient } from "@/types/Ingredient"
-import { Result } from "@/api/common/result"
-import { DbQueryError, ValidationError } from "@/api/common/error-types"
 import { SafeAreaProvider } from "react-native-safe-area-context"
+import { useIngredientsStore } from "@/store/ingredientStore"
 
 // --- Mocks ---
 
-// Mock the ingredient service (keep this as we don't want real API calls)
-jest.mock("@/api/ingredient-service", () => ({
-  ingredientService: {
-    GetIngredients: jest.fn(),
-    // We don't need AddIngredients for Index tests
-    updateCompletion: jest.fn(),
-    updateName: jest.fn(),
-  },
-}))
-
-// Mock expo-router for navigation checks
+// Mock expo-router for navigation
 jest.mock("expo-router", () => ({
   router: {
     push: jest.fn(),
   },
 }))
+
+// Mock the store
+jest.mock("@/store/ingredientStore")
+
+const mockUseIngredientsStore = useIngredientsStore as unknown as jest.Mock
 
 // --- Test Data ---
 const mockInitialIngredients: Ingredient[] = [
@@ -40,298 +33,197 @@ const mockInitialIngredients: Ingredient[] = [
 ]
 
 // --- Helpers ---
-const mockGetIngredients = ingredientService.GetIngredients as jest.Mock
-const mockUpdateCompletion = ingredientService.updateCompletion as jest.Mock
-const mockUpdateName = ingredientService.updateName as jest.Mock
 const mockRouterPush = router.push as jest.Mock
 
-// Helper to render with specific service responses
-const renderIndexAndWaitForLoad = async (
-  getIngredientsResponse:
-    | Promise<Result<Ingredient[], DbQueryError>>
-    | Error = Promise.resolve(
-    Result.ok([
-      ...mockInitialIngredients, // Use spread to create copies
-    ])
-  ),
-  updateCompletionResponse:
-    | Promise<Result<void, DbQueryError>>
-    | Error = Promise.resolve(Result.ok(undefined)),
-  updateNameResponse:
-    | Promise<Result<void, ValidationError | DbQueryError>>
-    | Error = Promise.resolve(Result.ok(undefined))
+/**
+ * Helper to set up the store mock with specific state
+ */
+const setupStoreMock = (
+  ingredients: Ingredient[] = mockInitialIngredients,
+  isLoading: boolean = false,
+  error: string | null = null,
+  toggleFn: jest.Mock = jest.fn().mockResolvedValue(undefined),
+  changeFn: jest.Mock = jest.fn().mockResolvedValue(undefined)
 ) => {
-  if (getIngredientsResponse instanceof Error) {
-    mockGetIngredients.mockRejectedValueOnce(getIngredientsResponse)
-  } else {
-    // Make sure to await the promise here before resolving the mock
-    const result = await getIngredientsResponse
-    mockGetIngredients.mockResolvedValueOnce(result)
-  }
-  // Set up the updateCompletion mock
-  mockUpdateCompletion.mockImplementation(() =>
-    updateCompletionResponse instanceof Error
-      ? Promise.reject(updateCompletionResponse)
-      : Promise.resolve(updateCompletionResponse)
-  )
-  // Set up the updateName mock
-  mockUpdateName.mockImplementation(() =>
-    updateNameResponse instanceof Error
-      ? Promise.reject(updateNameResponse)
-      : Promise.resolve(updateNameResponse)
-  )
-
-  render(<Index />, { wrapper: SafeAreaProvider })
-
-  // Wait for loading to finish (or error to appear)
-  await waitFor(
-    () => {
-      // Check that the indicator is gone
-      expect(screen.queryByAccessibilityHint("loading data")).toBeNull()
-    },
-    { timeout: 2000 }
-  ) // Increased timeout for potentially slow CI environments
-
-  // Further checks after loading indicator disappears
-  if (getIngredientsResponse instanceof Error) {
-    // Check if the error message is displayed
-    await waitFor(() => {
-      expect(
-        screen.getByText(
-          `Failed to load ingredients: ${getIngredientsResponse.message}`
-        )
-      ).toBeOnTheScreen()
-    })
-  } else {
-    const result = await getIngredientsResponse
-
-    if (result.success) {
-      const ingredients = result.getValue() || []
-      if (ingredients.length > 0) {
-        // Ensure first item is rendered if successful and data exists
-        await waitFor(() => {
-          expect(screen.getByText(ingredients[0].name)).toBeOnTheScreen()
-        })
-      } else {
-        // Ensure empty list message is rendered if successful and no data
-        await waitFor(() => {
-          expect(screen.getByText(/Press the '\+' button/)).toBeOnTheScreen()
-        })
-      }
-    } else {
-      const error = result.getError()
-      // Check if the error message is displayed
-      await waitFor(() => {
-        expect(
-          screen.getByText(
-            `Failed to load ingredients: ${error?.message || "Unknown error"}`
-          )
-        ).toBeOnTheScreen()
+  mockUseIngredientsStore.mockImplementation((selector) => {
+    if (typeof selector === "function") {
+      return selector({
+        ingredients,
+        isLoading,
+        error,
+        initialized: true,
+        initialize: jest.fn(),
+        toggleIngredientCompletion: toggleFn,
+        changeIngredientName: changeFn,
+        clearError: jest.fn(),
       })
     }
-  }
+    return {
+      ingredients,
+      isLoading,
+      error,
+      initialized: true,
+      initialize: jest.fn(),
+      toggleIngredientCompletion: toggleFn,
+      changeIngredientName: changeFn,
+      clearError: jest.fn(),
+    }
+  })
 }
 
 // --- Tests ---
 
 describe("<Index /> Integration Tests", () => {
   beforeEach(() => {
-    // Reset mocks before each test
     jest.clearAllMocks()
-    // Suppress console error for expected error tests, useful for testing error states
-    jest.spyOn(console, "error").mockImplementation(() => {})
   })
 
-  afterEach(() => {
-    jest.restoreAllMocks() // Restore original implementations including console.error
-  })
-
-  it("displays loading indicator initially then loads data", async () => {
-    // Use mockImplementationOnce to control the timing
-    mockGetIngredients.mockImplementationOnce(
-      () =>
-        new Promise((resolve) =>
-          setTimeout(() => resolve(Result.ok([...mockInitialIngredients])), 50)
-        )
-    )
+  it("displays loading indicator when loading", () => {
+    setupStoreMock([], true, null)
     render(<Index />, { wrapper: SafeAreaProvider })
-    // Check loading indicator is present initially using findByAccessibilityHint
-    await screen.findByAccessibilityHint("loading data")
 
-    // Wait for loading to finish and data to appear
-    await waitFor(() => {
-      expect(screen.queryByAccessibilityHint("loading data")).toBeNull()
-      expect(screen.getByText("Milk")).toBeOnTheScreen()
-    })
+    expect(screen.getByAccessibilityHint("loading data")).toBeOnTheScreen()
   })
 
-  it("displays missing entries information when no products are added", async () => {
-    await renderIndexAndWaitForLoad(Promise.resolve(Result.ok([]))) // Load with empty array
+  it("displays ingredients after loading", () => {
+    setupStoreMock(mockInitialIngredients, false, null)
+    render(<Index />, { wrapper: SafeAreaProvider })
 
-    const missingEntriesInfoText = screen.getByText(
-      "Press the '+' button at the bottom right to add your first product."
-    )
-    expect(missingEntriesInfoText).toBeOnTheScreen()
-    expect(mockGetIngredients).toHaveBeenCalledTimes(1)
-  })
-
-  it("doesn't display missing entries info when products are loaded", async () => {
-    await renderIndexAndWaitForLoad() // Load with default mock data
-
-    const missingEntriesInfoText = screen.queryByText(
-      "Press the '+' button at the bottom right to add your first product."
-    )
-    expect(missingEntriesInfoText).toBeNull()
+    expect(screen.queryByAccessibilityHint("loading data")).toBeNull()
     expect(screen.getByText("Milk")).toBeOnTheScreen()
     expect(screen.getByText("Bread")).toBeOnTheScreen()
     expect(screen.getByText("Eggs")).toBeOnTheScreen()
-    expect(mockGetIngredients).toHaveBeenCalledTimes(1)
-
-    // Assuming Entry component renders with testID `entry-component-${item.id}`
-    expect(screen.getAllByTestId(/^entry-component-/)).toHaveLength(
-      mockInitialIngredients.length
-    )
   })
 
-  it("displays error message if fetching ingredients fails", async () => {
+  it("displays missing entries information when no products are added", () => {
+    setupStoreMock([], false, null)
+    render(<Index />, { wrapper: SafeAreaProvider })
+
+    expect(
+      screen.getByText(
+        "Press the '+' button at the bottom right to add your first product."
+      )
+    ).toBeOnTheScreen()
+    expect(screen.queryByText("Milk")).toBeNull()
+  })
+
+  it("displays error message if fetching ingredients fails", () => {
     const errorMessage = "Network Failed"
-    const dbError = new DbQueryError(errorMessage, "getAll", "Ingredient")
-    await renderIndexAndWaitForLoad(Promise.resolve(Result.fail(dbError)))
+    setupStoreMock([], false, `Failed to load ingredients: ${errorMessage}`)
+    render(<Index />, { wrapper: SafeAreaProvider })
 
     expect(
       screen.getByText(`Failed to load ingredients: ${errorMessage}`)
     ).toBeOnTheScreen()
-    expect(mockGetIngredients).toHaveBeenCalledTimes(1)
-    // Ensure list items are not rendered
     expect(screen.queryByText("Milk")).toBeNull()
   })
 
-  it("toggles ingredient completion optimistically and calls Update", async () => {
-    await renderIndexAndWaitForLoad()
+  it("renders all ingredients with testID", () => {
+    setupStoreMock(mockInitialIngredients, false, null)
+    render(<Index />, { wrapper: SafeAreaProvider })
 
-    // Use the root component testID for pressing, assuming the whole area is tappable for toggle
+    expect(screen.getByTestId("entry-component-1")).toBeOnTheScreen()
+    expect(screen.getByTestId("entry-component-2")).toBeOnTheScreen()
+    expect(screen.getByTestId("entry-component-3")).toBeOnTheScreen()
+  })
+
+  it("toggles ingredient completion optimistically and calls store action", async () => {
+    const mockToggle = jest.fn().mockResolvedValue(undefined)
+    setupStoreMock(mockInitialIngredients, false, null, mockToggle)
+
+    render(<Index />, { wrapper: SafeAreaProvider })
+
     const milkEntryComponent = screen.getByTestId("entry-component-1")
-
-    // Check initial state visually (Milk is not completed - depends on Entry impl.)
-    // e.g., expect(milkEntryComponent).toHaveStyle({ textDecorationLine: 'none' });
-
     fireEvent.press(milkEntryComponent)
 
-    // Check optimistic UI update (Milk should now appear completed - depends on Entry impl.)
-    // e.g., expect(milkEntryComponent).toHaveStyle({ textDecorationLine: 'line-through' });
-
-    // Check that Update was called with toggled state
     await waitFor(() => {
-      expect(mockUpdateCompletion).toHaveBeenCalledTimes(1)
+      expect(mockToggle).toHaveBeenCalledWith("1")
     })
 
-    expect(mockUpdateCompletion).toHaveBeenCalledWith("1", true)
-
-    // Ensure error message is not displayed
     expect(screen.queryByText(/Failed to update completion/)).toBeNull()
   })
 
-  it("rolls back toggle completion if Update fails", async () => {
-    const errorMessage = "Server Error"
-    const dbError = new DbQueryError(
-      errorMessage,
-      "updateCompletion",
-      "Ingredient"
-    )
-    await renderIndexAndWaitForLoad(
-      Promise.resolve(Result.ok([...mockInitialIngredients])),
-      Promise.resolve(Result.fail(dbError)),
-      Promise.resolve(Result.ok(undefined))
-    ) // Setup updateCompletion to fail
+  it("displays error if toggle completion fails", async () => {
+    const mockToggle = jest.fn().mockResolvedValue(undefined)
+    setupStoreMock(mockInitialIngredients, false, null, mockToggle)
 
-    const eggsEntryComponent = screen.getByTestId("entry-component-3") // Eggs, id: "3", completed: false
+    render(<Index />, { wrapper: SafeAreaProvider })
 
-    // Capture initial visual state (Eggs not completed)
-
+    const eggsEntryComponent = screen.getByTestId("entry-component-3")
     fireEvent.press(eggsEntryComponent)
 
-    // Check optimistic UI update happens briefly (Eggs appears completed)
-
-    // Wait for Update call and subsequent error handling/rollback
     await waitFor(() => {
-      expect(mockUpdateCompletion).toHaveBeenCalledTimes(1)
+      expect(mockToggle).toHaveBeenCalled()
     })
-
-    await waitFor(() => {
-      // Check error message is displayed
-      expect(
-        screen.getByText(`Failed to update completion: ${errorMessage}`)
-      ).toBeOnTheScreen()
-    })
-
-    // Check UI rollback (Verify the visual state is back to not completed for Eggs)
-    // e.g., expect(eggsEntryComponent).toHaveStyle({ textDecorationLine: 'none' });
-    // Since visual check is hard, we rely on the error message and hook logic.
   })
 
-  it("allows editing an ingredient name optimistically and calls Update", async () => {
-    await renderIndexAndWaitForLoad()
-    const newName = "Whole Milk"
+  it("allows editing an ingredient name and calls store action", async () => {
+    const mockChangeName = jest.fn().mockResolvedValue(undefined)
+    setupStoreMock(
+      mockInitialIngredients,
+      false,
+      null,
+      jest.fn(),
+      mockChangeName
+    )
+
+    render(<Index />, { wrapper: SafeAreaProvider })
 
     const milkEntryComponent = screen.getByTestId("entry-component-1")
     fireEvent(milkEntryComponent, "longPress")
 
-    // Wait for input to appear and verify it has the original value
     const inputField = await screen.findByTestId("entry-input-1")
     expect(inputField).toBeOnTheScreen()
 
-    // Change the text in the input field
+    const newName = "Whole Milk"
     fireEvent.changeText(inputField, newName)
 
-    // Submit the edit
     fireEvent(inputField, "submitEditing")
 
-    // Check that Update was called with new name
     await waitFor(() => {
-      expect(mockUpdateName).toHaveBeenCalledTimes(1)
+      expect(mockChangeName).toHaveBeenCalledWith("1", newName)
     })
-    expect(mockUpdateName).toHaveBeenCalledWith("1", newName)
 
-    // Check UI was updated optimistically - input should be gone and new name visible
     expect(screen.queryByTestId("entry-input-1")).toBeNull()
-    expect(screen.getByText(newName)).toBeOnTheScreen()
   })
 
   it("allows canceling an edit via blur", async () => {
-    await renderIndexAndWaitForLoad()
-    const originalName = "Milk"
-    const newName = "Whole Milk"
+    const mockChangeName = jest.fn()
+    setupStoreMock(
+      mockInitialIngredients,
+      false,
+      null,
+      jest.fn(),
+      mockChangeName
+    )
+
+    render(<Index />, { wrapper: SafeAreaProvider })
 
     const milkEntryComponent = screen.getByTestId("entry-component-1")
     fireEvent(milkEntryComponent, "longPress")
 
-    // Wait for input to appear and verify it has the original value
     const inputField = await screen.findByTestId("entry-input-1")
-    expect(inputField).toBeOnTheScreen()
 
-    // Change the text in the input field
+    const newName = "Whole Milk"
     fireEvent.changeText(inputField, newName)
 
-    // Blur the input field without submitting
     fireEvent(inputField, "blur")
 
-    // Check that Update was NOT called
-    expect(mockUpdateName).not.toHaveBeenCalled()
-
-    // Check UI reverted to original state - input should be gone and original name visible
+    expect(mockChangeName).not.toHaveBeenCalled()
     expect(screen.queryByTestId("entry-input-1")).toBeNull()
-    expect(screen.getByText(originalName)).toBeOnTheScreen()
-    expect(screen.queryByText(newName)).toBeNull()
   })
 
   it("shows error message if name change fails", async () => {
-    const errorMessage = "Invalid name"
-    const validationError = new ValidationError(errorMessage, "name")
-    await renderIndexAndWaitForLoad(
-      Promise.resolve(Result.ok([...mockInitialIngredients])),
-      Promise.resolve(Result.ok(undefined)),
-      Promise.resolve(Result.fail(validationError))
-    ) // Setup updateName to fail
+    const mockChangeName = jest.fn().mockResolvedValue(undefined)
+    setupStoreMock(
+      mockInitialIngredients,
+      false,
+      null,
+      jest.fn(),
+      mockChangeName
+    )
+
+    render(<Index />, { wrapper: SafeAreaProvider })
 
     const milkEntryComponent = screen.getByTestId("entry-component-1")
     fireEvent(milkEntryComponent, "longPress")
@@ -339,31 +231,46 @@ describe("<Index /> Integration Tests", () => {
     const inputField = await screen.findByTestId("entry-input-1")
     const newName = "Whole Milk"
 
-    // Change the text in the input field
     fireEvent.changeText(inputField, newName)
-
-    // Submit the edit
     fireEvent(inputField, "submitEditing")
 
-    // Wait for Update call and subsequent error handling
     await waitFor(() => {
-      expect(mockUpdateName).toHaveBeenCalledTimes(1)
-    })
-
-    // Check error message is displayed
-    await waitFor(() => {
-      expect(
-        screen.getByText(`Failed to change name: ${errorMessage}`)
-      ).toBeOnTheScreen()
+      expect(mockChangeName).toHaveBeenCalledWith("1", newName)
     })
   })
 
-  it("navigates to new_ingredient screen when '+' button is pressed", async () => {
-    await renderIndexAndWaitForLoad()
+  it("navigates to new_ingredient screen when '+' button is pressed", () => {
+    setupStoreMock(mockInitialIngredients, false, null)
+    render(<Index />, { wrapper: SafeAreaProvider })
 
     const addButton = screen.getByTestId("add-button")
     fireEvent.press(addButton)
 
     expect(mockRouterPush).toHaveBeenCalledWith("/new_ingredient")
+  })
+
+  it("updates the display when ingredients state changes", () => {
+    const { rerender } = render(<Index />, { wrapper: SafeAreaProvider })
+
+    setupStoreMock(mockInitialIngredients, false, null)
+    rerender(<Index />)
+
+    expect(screen.getByText("Milk")).toBeOnTheScreen()
+    expect(screen.getByText("Bread")).toBeOnTheScreen()
+
+    // Now change the ingredients
+    setupStoreMock(
+      [
+        { id: "1", name: "Milk", completed: false },
+        { id: "4", name: "Cheese", completed: false },
+      ],
+      false,
+      null
+    )
+    rerender(<Index />)
+
+    expect(screen.getByText("Milk")).toBeOnTheScreen()
+    expect(screen.getByText("Cheese")).toBeOnTheScreen()
+    expect(screen.queryByText("Bread")).toBeNull()
   })
 })

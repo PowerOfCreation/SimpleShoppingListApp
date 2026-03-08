@@ -32,7 +32,8 @@ export class IngredientService {
         }
       }
 
-      return Result.ok(this.ingredients)
+      // Return a shallow copy to prevent external mutations affecting the cache
+      return Result.ok([...this.ingredients])
     } catch (error) {
       logger.error("Error fetching ingredients", error)
       return Result.fail(
