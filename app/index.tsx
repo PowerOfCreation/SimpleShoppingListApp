@@ -1,12 +1,7 @@
 import { ActionButton } from "@/components/ActionButton"
 import { Entry } from "@/components/Entry"
 import React from "react"
-import {
-  FlatList,
-  StyleSheet,
-  ActivityIndicator,
-  View,
-} from "react-native"
+import { FlatList, StyleSheet, ActivityIndicator, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { router } from "expo-router"
 
