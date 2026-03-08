@@ -20,10 +20,28 @@ export const DB_VERSION = 1
 export const DB_NAME = "sholist.db"
 
 /**
- * Get SQLite database connection
+ * Singleton instance of the database connection
+ */
+let dbInstance: SQLite.SQLiteDatabase | null = null
+
+/**
+ * Get SQLite database connection (singleton pattern)
+ * Returns the same instance on every call to prevent connection pool exhaustion
+ * and database lock contention during hot reloads.
  */
 export function getDatabase(): SQLite.SQLiteDatabase {
-  return SQLite.openDatabaseSync(DB_NAME)
+  if (!dbInstance) {
+    dbInstance = SQLite.openDatabaseSync(DB_NAME)
+  }
+  return dbInstance
+}
+
+/**
+ * Reset the database singleton instance.
+ * Used for testing and lifecycle management (e.g., app going to background).
+ */
+export function resetDatabase(): void {
+  dbInstance = null
 }
 
 /**
