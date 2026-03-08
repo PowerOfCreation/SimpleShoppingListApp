@@ -1,5 +1,4 @@
 import { useThemeColor } from "@/hooks/useThemeColor"
-import { useDatabaseLifecycle } from "@/hooks/useDatabaseLifecycle"
 import { Drawer } from "expo-router/drawer"
 import { useColorScheme } from "react-native"
 import React, { useEffect, useState } from "react"
@@ -13,9 +12,6 @@ const logger = createLogger("RootLayout")
 
 export default function RootLayout() {
   useColorScheme()
-  // Set up database lifecycle management (resets connection on background)
-  useDatabaseLifecycle()
-
   const color = useThemeColor({}, "text")
   const [isInitialized, setIsInitialized] = useState(false)
   const [error, setError] = useState<string | null>(null)
