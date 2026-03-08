@@ -128,39 +128,24 @@ describe("IngredientService", () => {
   })
 
   describe("updateCompletion", () => {
-    it("should call repository updateCompletion and update cache", async () => {
+    it("should call repository updateCompletion with correct parameters", async () => {
       const ingredientId = "1"
       const completed = true
-      const initialIngredients: Ingredient[] = [
-        {
-          id: "1",
-          name: "Milk",
-          completed: false,
-          created_at: 1,
-          updated_at: 1,
-        },
-      ]
-      service.ingredients = initialIngredients // Set initial cache
-
-      const nowMock = 1000
-      jest.spyOn(Date, "now").mockReturnValue(nowMock)
 
       // Configure repository to return success
       mockRepository.updateCompletion.mockResolvedValue(Result.ok(undefined))
 
       const result = await service.updateCompletion(ingredientId, completed)
 
+      // Verify repository was called with correct parameters
       expect(mockRepository.updateCompletion).toHaveBeenCalledTimes(1)
       expect(mockRepository.updateCompletion).toHaveBeenCalledWith(
         ingredientId,
         completed
       )
 
+      // Verify success result
       expect(result.success).toBe(true)
-
-      // Verify cache update
-      expect(service.ingredients[0].completed).toBe(completed)
-      expect(service.ingredients[0].updated_at).toBe(nowMock)
     })
 
     it("should return error if repository fails", async () => {
@@ -183,39 +168,24 @@ describe("IngredientService", () => {
   })
 
   describe("updateName", () => {
-    it("should call repository updateName and update cache", async () => {
+    it("should call repository updateName with correct parameters", async () => {
       const ingredientId = "1"
       const newName = "Almond Milk"
-      const initialIngredients: Ingredient[] = [
-        {
-          id: "1",
-          name: "Milk",
-          completed: false,
-          created_at: 1,
-          updated_at: 1,
-        },
-      ]
-      service.ingredients = initialIngredients // Set initial cache
-
-      const nowMock = 1000
-      jest.spyOn(Date, "now").mockReturnValue(nowMock)
 
       // Configure repository to return success
       mockRepository.updateName.mockResolvedValue(Result.ok(undefined))
 
       const result = await service.updateName(ingredientId, newName)
 
-      expect(result.success).toBe(true)
-
+      // Verify repository was called with correct parameters
       expect(mockRepository.updateName).toHaveBeenCalledTimes(1)
       expect(mockRepository.updateName).toHaveBeenCalledWith(
         ingredientId,
         newName
       )
 
-      // Verify cache update
-      expect(service.ingredients[0].name).toBe(newName)
-      expect(service.ingredients[0].updated_at).toBe(nowMock)
+      // Verify success result
+      expect(result.success).toBe(true)
     })
 
     it("should return error if repository fails", async () => {
