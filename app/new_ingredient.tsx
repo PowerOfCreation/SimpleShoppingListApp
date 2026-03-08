@@ -1,7 +1,7 @@
-import { router } from "expo-router"
+import { router, useFocusEffect } from "expo-router"
 import React from "react"
-import { Pressable, View, StyleSheet } from "react-native"
-import { SafeAreaView } from "react-native"
+import { Pressable, View, StyleSheet, TextInput } from "react-native"
+import { SafeAreaView } from "react-native-safe-area-context"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedTextInput } from "@/components/ThemedTextInput"
 import { ingredientService } from "../api/ingredient-service"
@@ -10,6 +10,16 @@ export default function NewIngredient() {
   const [text, onChangeText] = React.useState("")
   const [invalidInputExplanation, setInvalidInputExplanation] =
     React.useState("")
+  const inputRef = React.useRef<TextInput>(null)
+
+  useFocusEffect(
+    React.useCallback(() => {
+      const id = setTimeout(() => {
+        inputRef.current?.focus()
+      }, 100) // we don't know when page is fully loaded on android, so we just wait a bit before focusing
+      return () => clearTimeout(id)
+    }, [])
+  )
 
   const addIngredient = async (ingredientName: string) => {
     const result = await ingredientService.AddIngredients(ingredientName)
@@ -20,6 +30,7 @@ export default function NewIngredient() {
       return
     }
 
+    onChangeText("")
     router.navigate("/")
   }
 
@@ -31,12 +42,12 @@ export default function NewIngredient() {
     <SafeAreaView style={styles.containerStyle}>
       <View style={styles.searchBarContainer}>
         <ThemedTextInput
+          ref={inputRef}
           onSubmit={() => addIngredient(text)}
           onChangeText={onChangeText}
           value={text}
           placeholder="Ingredient name"
           borderColor={invalidInputExplanation ? "red" : undefined}
-          autoFocus={true}
         />
 
         <Pressable

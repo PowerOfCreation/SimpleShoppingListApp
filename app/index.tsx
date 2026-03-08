@@ -3,11 +3,11 @@ import { Entry } from "@/components/Entry"
 import React from "react"
 import {
   FlatList,
-  SafeAreaView,
   StyleSheet,
   ActivityIndicator,
   View,
 } from "react-native"
+import { SafeAreaView } from "react-native-safe-area-context"
 import { router } from "expo-router"
 
 import { Ingredient } from "@/types/Ingredient"

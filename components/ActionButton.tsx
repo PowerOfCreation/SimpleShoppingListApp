@@ -5,6 +5,7 @@ import {
   StyleSheet,
 } from "react-native"
 import React from "react"
+import { useSafeAreaInsets } from "react-native-safe-area-context"
 
 type ActionProps = {
   testID?: string
@@ -13,10 +14,12 @@ type ActionProps = {
 }
 
 export function ActionButton(props: ActionProps) {
+  const insets = useSafeAreaInsets()
+
   return (
     <TouchableOpacity
       testID={props.testID}
-      style={styles.button}
+      style={[styles.button, { bottom: 10 + insets.bottom }]}
       onPress={props.onPress}
     >
       <Text style={styles.symbol}>{props.symbol}</Text>
@@ -32,7 +35,6 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     width: 70,
     position: "absolute",
-    bottom: 10,
     right: 10,
     height: 70,
     backgroundColor: "#fff",
