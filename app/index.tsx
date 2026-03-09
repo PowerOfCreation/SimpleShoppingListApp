@@ -3,22 +3,57 @@ import { Entry } from "@/components/Entry"
 import React from "react"
 import { FlatList, StyleSheet, ActivityIndicator, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
-import { router } from "expo-router"
+import { router, useFocusEffect } from "expo-router"
 
 import { Ingredient } from "@/types/Ingredient"
 import { ThemedText } from "@/components/ThemedText"
 import { useIngredients } from "@/hooks/useIngredients"
+import { ingredientService } from "@/api/ingredient-service"
+import { createLogger } from "@/api/common/logger"
+
+const logger = createLogger("Index")
 
 export default function Index() {
-  const {
-    ingredients,
-    isLoading,
-    error,
-    toggleIngredientCompletion,
-    changeIngredientName,
-  } = useIngredients()
-
+  const { ingredients, isLoading, error, refetch } = useIngredients()
   const [ingredientToEdit, setIngredientToEdit] = React.useState<string>("")
+
+  // Refetch ingredients when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      refetch()
+    }, [refetch])
+  )
+
+  const handleToggleComplete = async (id: string) => {
+    const ingredient = ingredients.find((ing) => ing.id === id)
+    if (!ingredient) return
+
+    try {
+      const result = await ingredientService.updateCompletion(
+        id,
+        !ingredient.completed
+      )
+      if (result.success) {
+        // Refetch to update UI
+        await refetch()
+      }
+    } catch (err) {
+      logger.error("Error toggling completion", err)
+    }
+  }
+
+  const handleChangeName = async (id: string, newName: string) => {
+    try {
+      const result = await ingredientService.updateName(id, newName)
+      if (result.success) {
+        setIngredientToEdit("")
+        // Refetch to update UI
+        await refetch()
+      }
+    } catch (err) {
+      logger.error("Error changing name", err)
+    }
+  }
 
   const entryLongPress = (id: string) => {
     setIngredientToEdit(id)
@@ -30,13 +65,12 @@ export default function Index() {
         id={item.id}
         ingredientName={item.name}
         isCompleted={item.completed}
-        onToggleComplete={() => toggleIngredientCompletion(item.id)}
+        onToggleComplete={() => handleToggleComplete(item.id)}
         onLongPress={() => entryLongPress(item.id)}
         isEdited={ingredientToEdit === item.id}
         onCancelEditing={() => setIngredientToEdit("")}
         onSaveEditing={async (text) => {
-          setIngredientToEdit("")
-          await changeIngredientName(item.id, text)
+          await handleChangeName(item.id, text)
         }}
       />
     )

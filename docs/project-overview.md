@@ -12,7 +12,7 @@ ShoList is a mobile application built with React Native and Expo that helps user
 - **React Navigation/Expo Router**: Navigation management
 
 ### State Management & Data Storage
-- **Global state management with Zustand** for single source of truth
+- **Simple React hooks** for data fetching and state management
 - SQLite (via `expo-sqlite`) for persistent data storage
 - UUID for generating unique identifiers
 
@@ -61,11 +61,10 @@ Custom React hooks.
 - `useThemeColor.ts`: Hook for accessing theme colors
 - `useColorScheme.ts`: Hook for detecting device color scheme (native)
 - `useColorScheme.web.ts`: Hook for detecting device color scheme (web)
-- `useIngredients.ts`: Hook for accessing global ingredients state from Zustand store
+- `useIngredients.ts`: Hook for loading ingredients from the service with refetch capability
 
-#### `/store`
-Global state management using Zustand.
-- `ingredientStore.ts`: Global Zustand store managing all ingredient state, fetching, and optimistic updates
+### `store/`
+Currently unused. Previously contained Zustand store (removed in favor of simpler hook-based approach).
 
 #### `/assets`
 Static assets like images and fonts.
@@ -113,23 +112,14 @@ The application follows a layered architecture with clear separation of concerns
                    ▼
 ┌─────────────────────────────────────────┐
 │   useIngredients Hook (UI Adapter)      │
-│  - Connects components to store         │
-│  - Exposes store state & actions        │
-└──────────────────┬──────────────────────┘
-                   │
-                   ▼
-┌─────────────────────────────────────────┐
-│   Zustand Store (Global State)          │
-│  - Single source of truth               │
-│  - All ingredient mutations             │
-│  - Optimistic updates with rollback     │
+│  - Loads ingredient data on mount       │
+│  - Provides refetch capability          │
 └──────────────────┬──────────────────────┘
                    │
                    ▼
 ┌─────────────────────────────────────────┐
 │  IngredientService (Data Access)        │
 │  - Network/DB operations only           │
-│  - No state management                  │
 │  - Pure business logic                  │
 └──────────────────┬──────────────────────┘
                    │
@@ -142,7 +132,7 @@ The application follows a layered architecture with clear separation of concerns
 
 ### Key Design Principles
 
-- **Single Source of Truth**: Zustand store manages all ingredient state globally
+- **Simple State Management**: `useIngredients` hook loads data from service as needed
 - **No Navigation Refetches**: Data persists across screen navigation (no `useFocusEffect` hacks)
 - **Optimistic Updates**: UI updates immediately; rolled back on failure
 - **Lazy Initialization**: Store initializes on first use, not on app startup
