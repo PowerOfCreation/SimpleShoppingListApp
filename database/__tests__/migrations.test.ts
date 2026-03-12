@@ -34,6 +34,7 @@ describe("Migrations", () => {
     await db.execAsync(`
       DROP TABLE IF EXISTS database_version;
       DROP TABLE IF EXISTS ingredients;
+      DROP TABLE IF EXISTS ingredient_lists;
     `)
   })
 

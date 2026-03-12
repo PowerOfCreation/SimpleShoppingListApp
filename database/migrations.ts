@@ -5,6 +5,7 @@ import { Ingredient } from "../types/Ingredient"
 import { createLogger } from "@/api/common/logger"
 import { Result } from "@/api/common/result"
 import { DbMigrationError } from "@/api/common/error-types"
+import { NIL_UUID } from "@/constants/Uuids"
 
 const logger = createLogger("Migrations")
 
@@ -148,7 +149,7 @@ export async function createDefaultList(
 ): Promise<Result<string, DbMigrationError>> {
   try {
     const now = Date.now()
-    const defaultListId = `list-${now}-${Math.random().toString(36).substring(2, 9)}`
+    const defaultListId = NIL_UUID
 
     await db.runAsync(
       `INSERT INTO ingredient_lists (id, name, created_at, updated_at)
@@ -244,8 +245,8 @@ export async function migrateToVersion2(
       // Create ingredient_lists table
       await db.runAsync(CREATE_INGREDIENT_LISTS_TABLE)
 
-      // Generate UUID for default list
-      const defaultListId = `list-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
+      // Use nil UUID as default list ID
+      const defaultListId = NIL_UUID
 
       // Create default "Standard List"
       await db.runAsync(

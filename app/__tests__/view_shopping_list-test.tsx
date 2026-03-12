@@ -5,11 +5,12 @@ import {
   waitFor,
   fireEvent,
 } from "@testing-library/react-native"
-import Index from ".."
+import ViewShoppingList from "../view_shopping_list"
 import { router } from "expo-router"
 import { Ingredient } from "@/types/Ingredient"
 import { SafeAreaProvider } from "react-native-safe-area-context"
 import { useIngredients } from "@/hooks/useIngredients"
+import { NIL_UUID } from "@/constants/Uuids"
 
 // --- Mocks ---
 
@@ -25,6 +26,9 @@ jest.mock("expo-router", () => {
         callback()
       }, [callback])
     },
+    useNavigation: jest.fn(() => ({
+      setOptions: jest.fn(),
+    })),
   }
 })
 
@@ -37,6 +41,7 @@ const mockInitialIngredients: Ingredient[] = [
     id: "1",
     name: "Milk",
     completed: false,
+    list_id: NIL_UUID,
     created_at: 1000,
     updated_at: 1000,
   },
@@ -44,6 +49,7 @@ const mockInitialIngredients: Ingredient[] = [
     id: "2",
     name: "Bread",
     completed: true,
+    list_id: NIL_UUID,
     created_at: 2000,
     updated_at: 2000,
   },
@@ -51,6 +57,7 @@ const mockInitialIngredients: Ingredient[] = [
     id: "3",
     name: "Eggs",
     completed: false,
+    list_id: NIL_UUID,
     created_at: 3000,
     updated_at: 3000,
   },
@@ -66,33 +73,35 @@ const setupHookMock = (
   ingredients: Ingredient[] = mockInitialIngredients,
   isLoading: boolean = false,
   error: string | null = null,
-  refetch: jest.Mock = jest.fn()
+  refetch: jest.Mock = jest.fn(),
+  listName: string | null = "Standard List"
 ) => {
   mockUseIngredients.mockReturnValue({
     ingredients,
     isLoading,
     error,
     refetch,
+    listName,
   })
 }
 
 // --- Tests ---
 
-describe("<Index /> Component Tests", () => {
+describe("<ViewShoppingList /> Component Tests", () => {
   beforeEach(() => {
     jest.clearAllMocks()
   })
 
   it("displays loading indicator when loading", () => {
     setupHookMock([], true, null)
-    render(<Index />, { wrapper: SafeAreaProvider })
+    render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
 
     expect(screen.getByAccessibilityHint("loading data")).toBeOnTheScreen()
   })
 
   it("displays ingredients after loading", () => {
     setupHookMock(mockInitialIngredients, false, null)
-    render(<Index />, { wrapper: SafeAreaProvider })
+    render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
 
     expect(screen.queryByAccessibilityHint("loading data")).toBeNull()
     expect(screen.getByText("Milk")).toBeOnTheScreen()
@@ -102,7 +111,7 @@ describe("<Index /> Component Tests", () => {
 
   it("displays empty state when no products", () => {
     setupHookMock([], false, null)
-    render(<Index />, { wrapper: SafeAreaProvider })
+    render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
 
     expect(
       screen.getByText(
@@ -114,14 +123,14 @@ describe("<Index /> Component Tests", () => {
   it("displays error message when loading fails", () => {
     const errorMsg = "Network error"
     setupHookMock([], false, errorMsg)
-    render(<Index />, { wrapper: SafeAreaProvider })
+    render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
 
     expect(screen.getByText(errorMsg)).toBeOnTheScreen()
   })
 
   it("renders all ingredients with testID", () => {
     setupHookMock(mockInitialIngredients, false, null)
-    render(<Index />, { wrapper: SafeAreaProvider })
+    render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
 
     expect(screen.getByTestId("entry-component-1")).toBeOnTheScreen()
     expect(screen.getByTestId("entry-component-2")).toBeOnTheScreen()
@@ -130,7 +139,7 @@ describe("<Index /> Component Tests", () => {
 
   it("toggles ingredient completion when entry pressed", () => {
     setupHookMock(mockInitialIngredients, false, null)
-    render(<Index />, { wrapper: SafeAreaProvider })
+    render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
 
     const milkEntry = screen.getByTestId("entry-component-1")
     fireEvent.press(milkEntry)
@@ -141,7 +150,7 @@ describe("<Index /> Component Tests", () => {
 
   it("navigates to new_ingredient screen when add button pressed", () => {
     setupHookMock(mockInitialIngredients, false, null)
-    render(<Index />, { wrapper: SafeAreaProvider })
+    render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
 
     const addButton = screen.getByTestId("add-button")
     fireEvent.press(addButton)
@@ -153,7 +162,7 @@ describe("<Index /> Component Tests", () => {
     const mockRefetch = jest.fn()
     setupHookMock(mockInitialIngredients, false, null, mockRefetch)
 
-    render(<Index />, { wrapper: SafeAreaProvider })
+    render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
 
     // useFocusEffect should call refetch
     expect(mockRefetch).toHaveBeenCalled()
