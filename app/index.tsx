@@ -1,79 +1,51 @@
 import { ActionButton } from "@/components/ActionButton"
-import { Entry } from "@/components/Entry"
 import React from "react"
-import { FlatList, StyleSheet, ActivityIndicator, View } from "react-native"
+import {
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+  View,
+  TouchableOpacity,
+} from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { router, useFocusEffect } from "expo-router"
 
-import { Ingredient } from "@/types/Ingredient"
+import { IngredientList } from "@/types/IngredientList"
 import { ThemedText } from "@/components/ThemedText"
-import { useIngredients } from "@/hooks/useIngredients"
-import { ingredientService } from "@/api/ingredient-service"
+import { useShoppingLists } from "@/hooks/useShoppingLists"
 import { createLogger } from "@/api/common/logger"
 
 const logger = createLogger("Index")
 
 export default function Index() {
-  const { ingredients, isLoading, error, refetch } = useIngredients()
-  const [ingredientToEdit, setIngredientToEdit] = React.useState<string>("")
+  const { lists, isLoading, error, refetch } = useShoppingLists()
 
-  // Refetch ingredients when screen comes into focus
+  // Refetch shopping lists when screen comes into focus
   useFocusEffect(
     React.useCallback(() => {
       refetch()
     }, [refetch])
   )
-
-  const handleToggleComplete = async (id: string) => {
-    const ingredient = ingredients.find((ing) => ing.id === id)
-    if (!ingredient) return
-
-    try {
-      const result = await ingredientService.updateCompletion(
-        id,
-        !ingredient.completed
-      )
-      if (result.success) {
-        // Refetch to update UI
-        await refetch()
-      }
-    } catch (err) {
-      logger.error("Error toggling completion", err)
-    }
+  const handleSelectList = (id: string) => {
+    router.push(`/view_shopping_list?listId=${id}`)
   }
 
-  const handleChangeName = async (id: string, newName: string) => {
-    try {
-      const result = await ingredientService.updateName(id, newName)
-      if (result.success) {
-        setIngredientToEdit("")
-        // Refetch to update UI
-        await refetch()
-      }
-    } catch (err) {
-      logger.error("Error changing name", err)
-    }
-  }
-
-  const entryLongPress = (id: string) => {
-    setIngredientToEdit(id)
-  }
-
-  const renderEntry = ({ item }: { item: Ingredient }) => {
+  const renderListItem = ({ item }: { item: IngredientList }) => {
     return (
-      <Entry
-        id={item.id}
-        ingredientName={item.name}
-        isCompleted={item.completed}
-        onToggleComplete={() => handleToggleComplete(item.id)}
-        onLongPress={() => entryLongPress(item.id)}
-        isEdited={ingredientToEdit === item.id}
-        onCancelEditing={() => setIngredientToEdit("")}
-        onSaveEditing={async (text) => {
-          await handleChangeName(item.id, text)
-        }}
-      />
+      <TouchableOpacity
+        onPress={() => handleSelectList(item.id)}
+        style={styles.listItem}
+      >
+        <ThemedText type="default">{item.name}</ThemedText>
+        <ThemedText style={styles.listDate} type="default">
+          {new Date(item.created_at || 0).toLocaleDateString()}
+        </ThemedText>
+      </TouchableOpacity>
     )
+  }
+
+  const handleAddList = () => {
+    router.push("/new_ingredient")
   }
 
   const renderContent = () => {
@@ -93,20 +65,21 @@ export default function Index() {
       )
     }
 
-    if (ingredients.length === 0) {
+    if (lists.length === 0) {
       return (
         <ThemedText style={styles.emptyListInfoTextStyle} type="default">
-          Press the '+' button at the bottom right to add your first product.
+          Press the '+' button at the bottom right to create your first shopping
+          list.
         </ThemedText>
       )
     }
 
     return (
       <FlatList
-        data={ingredients}
-        renderItem={renderEntry}
+        data={lists}
+        renderItem={renderListItem}
         keyExtractor={(item) => item.id}
-        extraData={`${ingredientToEdit}-${error}`}
+        extraData={error}
         removeClippedSubviews={false}
       />
     )
@@ -115,11 +88,7 @@ export default function Index() {
   return (
     <SafeAreaView style={styles.container}>
       {renderContent()}
-      <ActionButton
-        testID="add-button"
-        symbol="+"
-        onPress={() => router.push("/new_ingredient")}
-      />
+      <ActionButton testID="add-button" symbol="+" onPress={handleAddList} />
     </SafeAreaView>
   )
 }
@@ -141,5 +110,15 @@ const styles = StyleSheet.create({
   errorTextStyle: {
     color: "red",
     textAlign: "center",
+  },
+  listItem: {
+    padding: 16,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e0e0e0",
+  },
+  listDate: {
+    fontSize: 12,
+    marginTop: 4,
+    opacity: 0.6,
   },
 })

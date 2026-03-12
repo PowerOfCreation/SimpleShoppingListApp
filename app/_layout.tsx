@@ -74,8 +74,16 @@ export default function RootLayout() {
         <Drawer.Screen
           name="index"
           options={{
-            drawerLabel: "Shopping List",
+            drawerLabel: "Shopping Lists",
+            headerTitle: "Shopping Lists",
+          }}
+        />
+        <Drawer.Screen
+          name="view_shopping_list"
+          options={{
+            drawerLabel: "View Shopping List",
             headerTitle: "Shopping List",
+            drawerItemStyle: { display: "none" },
           }}
         />
         <Drawer.Screen
