@@ -31,6 +31,7 @@ describe("IngredientRepository", () => {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         completed INTEGER NOT NULL DEFAULT 0,
+        list_id TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -45,15 +46,16 @@ describe("IngredientRepository", () => {
           id TEXT PRIMARY KEY,
           name TEXT NOT NULL,
           completed INTEGER NOT NULL DEFAULT 0,
+          list_id TEXT NOT NULL,
           created_at INTEGER NOT NULL,
           updated_at INTEGER NOT NULL
         );
       `)
       await db.execAsync(`
-        INSERT INTO ingredients (id, name, completed, created_at, updated_at) VALUES
-        ('1', 'Milk', 0, 2000, 2000),
-        ('2', 'Eggs', 1, 3000, 3000),
-        ('3', 'Bread', 0, 1000, 1000);
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES
+        ('1', 'Milk', 0, 'list-1', 2000, 2000),
+        ('2', 'Eggs', 1, 'list-1', 3000, 3000),
+        ('3', 'Bread', 0, 'list-1', 1000, 1000);
       `)
 
       // Call the method
@@ -83,8 +85,8 @@ describe("IngredientRepository", () => {
     it("should return an ingredient by ID", async () => {
       // Insert test data
       await db.execAsync(`
-        INSERT INTO ingredients (id, name, completed, created_at, updated_at) VALUES
-        ('1', 'Milk', 0, 1000, 1000);
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES
+        ('1', 'Milk', 0, 'list-1', 1000, 1000);
       `)
 
       // Call the method
@@ -96,6 +98,7 @@ describe("IngredientRepository", () => {
         id: "1",
         name: "Milk",
         completed: false,
+        list_id: "list-1",
         created_at: 1000,
         updated_at: 1000,
       })
@@ -120,6 +123,7 @@ describe("IngredientRepository", () => {
         id: "1",
         name: "Milk",
         completed: false,
+        list_id: "list-1",
       }
 
       // Call the method
@@ -131,6 +135,7 @@ describe("IngredientRepository", () => {
         id: string
         name: string
         completed: number
+        list_id: string
         created_at: number
         updated_at: number
       }>(`SELECT * FROM ingredients WHERE id = ?`, "1")
@@ -139,6 +144,7 @@ describe("IngredientRepository", () => {
         id: "1",
         name: "Milk",
         completed: 0,
+        list_id: "list-1",
         created_at: now,
         updated_at: now,
       })
@@ -150,6 +156,7 @@ describe("IngredientRepository", () => {
         id: "1",
         name: "Milk",
         completed: false,
+        list_id: "list-1",
         created_at: 1000,
         updated_at: 2000,
       }
@@ -163,6 +170,7 @@ describe("IngredientRepository", () => {
         id: string
         name: string
         completed: number
+        list_id: string
         created_at: number
         updated_at: number
       }>(`SELECT * FROM ingredients WHERE id = ?`, "1")
@@ -171,6 +179,7 @@ describe("IngredientRepository", () => {
         id: "1",
         name: "Milk",
         completed: 0,
+        list_id: "list-1",
         created_at: 1000,
         updated_at: 2000,
       })
@@ -181,8 +190,8 @@ describe("IngredientRepository", () => {
     it("should update an ingredient in the database", async () => {
       // Insert a test ingredient
       await db.execAsync(`
-        INSERT INTO ingredients (id, name, completed, created_at, updated_at) VALUES
-        ('1', 'Milk', 0, 1000, 1000);
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES
+        ('1', 'Milk', 0, 'list-1', 1000, 1000);
       `)
 
       // Mock Date.now for consistent testing
@@ -194,6 +203,7 @@ describe("IngredientRepository", () => {
         id: "1",
         name: "Milk Updated",
         completed: true,
+        list_id: "list-1",
       }
 
       // Call the method
@@ -205,6 +215,7 @@ describe("IngredientRepository", () => {
         id: string
         name: string
         completed: number
+        list_id: string
         created_at: number
         updated_at: number
       }>(`SELECT * FROM ingredients WHERE id = ?`, "1")
@@ -213,6 +224,7 @@ describe("IngredientRepository", () => {
         id: "1",
         name: "Milk Updated",
         completed: 1,
+        list_id: "list-1",
         created_at: 1000, // Should not change
         updated_at: now, // Should update
       })
@@ -223,8 +235,8 @@ describe("IngredientRepository", () => {
     it("should update an ingredient completion status", async () => {
       // Insert a test ingredient
       await db.execAsync(`
-        INSERT INTO ingredients (id, name, completed, created_at, updated_at) VALUES
-        ('1', 'Milk', 0, 1000, 1000);
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES
+        ('1', 'Milk', 0, 'list-1', 1000, 1000);
       `)
 
       // Mock Date.now for consistent testing
@@ -240,6 +252,7 @@ describe("IngredientRepository", () => {
         id: string
         name: string
         completed: number
+        list_id: string
         created_at: number
         updated_at: number
       }>(`SELECT * FROM ingredients WHERE id = ?`, "1")
@@ -248,6 +261,7 @@ describe("IngredientRepository", () => {
         id: "1",
         name: "Milk",
         completed: 1, // Should change
+        list_id: "list-1",
         created_at: 1000, // Should not change
         updated_at: now, // Should update
       })
@@ -258,8 +272,8 @@ describe("IngredientRepository", () => {
     it("should update an ingredient name", async () => {
       // Insert a test ingredient
       await db.execAsync(`
-        INSERT INTO ingredients (id, name, completed, created_at, updated_at) VALUES
-        ('1', 'Milk', 0, 1000, 1000);
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES
+        ('1', 'Milk', 0, 'list-1', 1000, 1000);
       `)
 
       // Mock Date.now for consistent testing
@@ -275,6 +289,7 @@ describe("IngredientRepository", () => {
         id: string
         name: string
         completed: number
+        list_id: string
         created_at: number
         updated_at: number
       }>(`SELECT * FROM ingredients WHERE id = ?`, "1")
@@ -283,6 +298,7 @@ describe("IngredientRepository", () => {
         id: "1",
         name: "Almond Milk", // Should change
         completed: 0,
+        list_id: "list-1",
         created_at: 1000, // Should not change
         updated_at: now, // Should update
       })
@@ -307,8 +323,8 @@ describe("IngredientRepository", () => {
     it("should remove an ingredient from the database", async () => {
       // Insert a test ingredient
       await db.execAsync(`
-        INSERT INTO ingredients (id, name, completed, created_at, updated_at) VALUES
-        ('1', 'Milk', 0, 1000, 1000);
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES
+        ('1', 'Milk', 0, 'list-1', 1000, 1000);
       `)
 
       // Verify the ingredient exists

@@ -1,8 +1,6 @@
-export type Ingredient = {
+export type IngredientList = {
   id: string
   name: string
-  completed: boolean
-  list_id: string
   created_at?: number
   updated_at?: number
 }

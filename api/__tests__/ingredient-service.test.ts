@@ -56,6 +56,7 @@ describe("IngredientService", () => {
           id: "1",
           name: "Milk",
           completed: false,
+          list_id: "list-1",
           created_at: 1000,
           updated_at: 1000,
         },
@@ -63,6 +64,7 @@ describe("IngredientService", () => {
           id: "2",
           name: "Eggs",
           completed: true,
+          list_id: "list-1",
           created_at: 2000,
           updated_at: 2000,
         },
@@ -87,6 +89,7 @@ describe("IngredientService", () => {
     it("should add an ingredient using the repository", async () => {
       // Set up mock data
       const ingredientName = "Milk"
+      const listId = "list-1"
       const nowMock = 1000
 
       // Mock Date.now
@@ -96,7 +99,7 @@ describe("IngredientService", () => {
       mockRepository.add.mockResolvedValue(Result.ok(undefined))
 
       // Call the method
-      const result = await service.AddIngredients(ingredientName)
+      const result = await service.AddIngredients(ingredientName, listId)
 
       // Verify repository was called
       expect(mockRepository.add).toHaveBeenCalledTimes(1)
@@ -105,6 +108,7 @@ describe("IngredientService", () => {
       const addedIngredient = mockRepository.add.mock.calls[0][0]
       expect(addedIngredient.name).toBe(ingredientName)
       expect(addedIngredient.completed).toBe(false)
+      expect(addedIngredient.list_id).toBe(listId)
       expect(addedIngredient.id).toBeDefined() // Should have an ID
       expect(addedIngredient.created_at).toBe(nowMock)
       expect(addedIngredient.updated_at).toBe(nowMock)
@@ -115,7 +119,7 @@ describe("IngredientService", () => {
 
     it("should return error for empty ingredient name", async () => {
       // Call the method with empty name
-      const result = await service.AddIngredients("")
+      const result = await service.AddIngredients("", "list-1")
 
       // Verify repository was not called
       expect(mockRepository.add).not.toHaveBeenCalled()

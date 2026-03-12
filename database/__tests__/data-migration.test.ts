@@ -62,7 +62,7 @@ describe("Data Migration", () => {
       expect(result.success).toBe(true)
       expect(database.checkDatabaseInitialized).toHaveBeenCalledWith(db)
       expect(database.getDatabaseVersion).toHaveBeenCalledWith(db)
-      expect(migrations.executeMigrations).toHaveBeenCalledWith(db, true)
+      expect(migrations.executeMigrations).toHaveBeenCalledWith(db, true, 0)
     })
 
     it("should detect existing database with outdated version and execute migrations", async () => {
@@ -82,7 +82,11 @@ describe("Data Migration", () => {
       expect(result.success).toBe(true)
       expect(database.checkDatabaseInitialized).toHaveBeenCalledWith(db)
       expect(database.getDatabaseVersion).toHaveBeenCalledWith(db)
-      expect(migrations.executeMigrations).toHaveBeenCalledWith(db, false)
+      expect(migrations.executeMigrations).toHaveBeenCalledWith(
+        db,
+        false,
+        oldVersion
+      )
     })
 
     it("should skip migrations for up-to-date database", async () => {
@@ -162,7 +166,7 @@ describe("Data Migration", () => {
       expect(result.success).toBe(false)
       expect(database.checkDatabaseInitialized).toHaveBeenCalledWith(db)
       expect(database.getDatabaseVersion).toHaveBeenCalledWith(db)
-      expect(migrations.executeMigrations).toHaveBeenCalledWith(db, true)
+      expect(migrations.executeMigrations).toHaveBeenCalledWith(db, true, 0)
 
       const error = result.getError()
       expect(error).toBeInstanceOf(DbMigrationError)

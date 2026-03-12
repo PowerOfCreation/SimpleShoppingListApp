@@ -12,7 +12,7 @@ const logger = createLogger("Database")
 /**
  * Database version number - increment this when schema changes
  */
-export const DB_VERSION = 1
+export const DB_VERSION = 2
 
 /**
  * Database file name
@@ -127,7 +127,7 @@ export async function updateDatabaseVersion(
     }
 
     await db.runAsync(
-      `INSERT INTO database_version (version, migration_date) VALUES (?, ?);`,
+      `INSERT OR REPLACE INTO database_version (version, migration_date) VALUES (?, ?);`,
       version,
       migrationDate
     )

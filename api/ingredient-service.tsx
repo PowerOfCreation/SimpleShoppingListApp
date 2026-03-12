@@ -48,7 +48,8 @@ export class IngredientService {
   }
 
   async AddIngredients(
-    ingredientName: string
+    ingredientName: string,
+    listId: string
   ): Promise<Result<void, ValidationError | DbQueryError>> {
     if (!ingredientName.trim()) {
       const error = new ValidationError(
@@ -63,6 +64,7 @@ export class IngredientService {
       const newIngredient: Ingredient = {
         name: ingredientName,
         completed: false,
+        list_id: listId,
         id: uuidv4(),
         created_at: now,
         updated_at: now,

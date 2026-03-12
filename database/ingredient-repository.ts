@@ -28,10 +28,11 @@ export class IngredientRepository extends BaseRepository {
         id: string
         name: string
         completed: number
+        list_id: string
         created_at: number
         updated_at: number
       }>(
-        `SELECT id, name, completed, created_at, updated_at
+        `SELECT id, name, completed, list_id, created_at, updated_at
          FROM ingredients
          ORDER BY completed ASC, created_at DESC`
       )
@@ -40,6 +41,7 @@ export class IngredientRepository extends BaseRepository {
         id: row.id,
         name: row.name,
         completed: row.completed === 1,
+        list_id: row.list_id,
         created_at: row.created_at,
         updated_at: row.updated_at,
       }))
@@ -57,10 +59,11 @@ export class IngredientRepository extends BaseRepository {
         id: string
         name: string
         completed: number
+        list_id: string
         created_at: number
         updated_at: number
       }>(
-        `SELECT id, name, completed, created_at, updated_at
+        `SELECT id, name, completed, list_id, created_at, updated_at
          FROM ingredients
          WHERE id = ?`,
         id
@@ -74,6 +77,7 @@ export class IngredientRepository extends BaseRepository {
         id: result.id,
         name: result.name,
         completed: result.completed === 1,
+        list_id: result.list_id,
         created_at: result.created_at,
         updated_at: result.updated_at,
       }
@@ -90,11 +94,12 @@ export class IngredientRepository extends BaseRepository {
 
     return this._executeTransaction(async () => {
       await this.db.runAsync(
-        `INSERT INTO ingredients (id, name, completed, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?)`,
+        `INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at)
+           VALUES (?, ?, ?, ?, ?, ?)`,
         ingredient.id,
         ingredient.name,
         ingredient.completed ? 1 : 0,
+        ingredient.list_id,
         ingredient.created_at || now,
         ingredient.updated_at || now
       )
@@ -112,10 +117,11 @@ export class IngredientRepository extends BaseRepository {
     return this._executeTransaction(async () => {
       await this.db.runAsync(
         `UPDATE ingredients
-           SET name = ?, completed = ?, updated_at = ?
+           SET name = ?, completed = ?, list_id = ?, updated_at = ?
            WHERE id = ?`,
         ingredient.name,
         ingredient.completed ? 1 : 0,
+        ingredient.list_id,
         now,
         ingredient.id
       )
