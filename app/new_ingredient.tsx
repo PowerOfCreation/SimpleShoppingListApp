@@ -39,7 +39,7 @@ export default function NewIngredient() {
     }
 
     onChangeText("")
-    router.navigate("/")
+    router.navigate(`/view_shopping_list?listId=${listId}`)
   }
 
   if (invalidInputExplanation && text.trim()) {
