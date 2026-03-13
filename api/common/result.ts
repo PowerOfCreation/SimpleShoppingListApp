@@ -40,10 +40,13 @@ export class Result<T, E extends Error = Error> {
   }
 
   /**
-   * Get the error, or null if succeeded
+   * Get the error, or throw if succeeded
    */
-  public getError(): E | null {
-    return this.error
+  public getError(): E {
+    if (this.isSuccess) {
+      throw new Error("Cannot get error from a successful Result")
+    }
+    return this.error!
   }
 
   /**

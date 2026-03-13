@@ -1,51 +1,89 @@
 import React from "react"
-import { useIngredientsStore } from "@/store/ingredientStore"
+import { useLocalSearchParams } from "expo-router"
+import { Ingredient } from "@/types/Ingredient"
+import { ingredientService } from "@/api/ingredient-service"
+import { createLogger } from "@/api/common/logger"
+import { IngredientListRepository } from "@/database/ingredient-list-repository"
+import { getDatabase } from "@/database/database"
+
+const logger = createLogger("useIngredients")
 
 /**
- * Hook to access ingredients state and actions from the global Zustand store
- *
- * This hook replaces the previous useReducer implementation with a cleaner
- * interface to the global store. It handles:
- * - Lazy initialization of the store on first use
- * - Providing state selectors (ingredients, isLoading, error)
- * - Providing action callbacks (toggleIngredientCompletion, changeIngredientName)
- *
- * Key improvements over previous version:
- * - No useFocusEffect hack (data persists across navigation)
- * - No isInitialMount ref (single initialization on first use)
- * - Single source of truth via Zustand store
- * - Much simpler to test and reason about
- *
- * @returns Object with ingredients, isLoading, error, and action functions
+ * Simple hook to manage ingredient loading and refreshing
+ * No global state, no external dependencies - just loads from service
  */
 export function useIngredients() {
-  // Get state from store
-  const ingredients = useIngredientsStore((state) => state.ingredients)
-  const isLoading = useIngredientsStore((state) => state.isLoading)
-  const error = useIngredientsStore((state) => state.error)
-  const initialized = useIngredientsStore((state) => state.initialized)
+  const { listId } = useLocalSearchParams<{ listId: string }>()
+  const [ingredients, setIngredients] = React.useState<Ingredient[]>([])
+  const [isLoading, setIsLoading] = React.useState(false)
+  const [error, setError] = React.useState<string | null>(null)
+  const [listName, setListName] = React.useState<string | null>(null)
 
-  // Get actions from store
-  const initialize = useIngredientsStore((state) => state.initialize)
-  const toggleIngredientCompletion = useIngredientsStore(
-    (state) => state.toggleIngredientCompletion
-  )
-  const changeIngredientName = useIngredientsStore(
-    (state) => state.changeIngredientName
-  )
+  const loadIngredients = React.useCallback(async () => {
+    setIsLoading(true)
+    setError(null)
+    try {
+      const result = await ingredientService.GetIngredients(listId)
 
-  // Initialize store on first use (lazy initialization)
-  React.useEffect(() => {
-    if (!initialized) {
-      initialize()
+      if (!result.success) {
+        const err = result.getError()
+        setError(err.message)
+        logger.error("Failed to load ingredients", err)
+        return
+      }
+
+      setIngredients(result.getValue() || [])
+    } catch (err) {
+      setError("Failed to load ingredients")
+      logger.error("Error loading ingredients", err)
+    } finally {
+      setIsLoading(false)
     }
-  }, [initialized, initialize])
+  }, [listId])
+
+  // Load list name when listId changes
+  React.useEffect(() => {
+    async function loadListName() {
+      if (!listId) {
+        setListName(null)
+        return
+      }
+      try {
+        const repository = new IngredientListRepository(getDatabase())
+        const result = await repository.getById(listId)
+        if (result.success) {
+          const list = result.getValue()
+          setListName(list?.name || null)
+        }
+      } catch (err) {
+        logger.error("Error loading list name", err)
+      }
+    }
+    loadListName()
+  }, [listId])
+
+  // Load ingredients on mount
+  React.useEffect(() => {
+    loadIngredients()
+  }, [loadIngredients])
+
+  // Optimistic update function for immediate UI feedback
+  const updateIngredient = React.useCallback(
+    (id: string, updates: Partial<Ingredient>) => {
+      setIngredients((prev) =>
+        prev.map((ing) => (ing.id === id ? { ...ing, ...updates } : ing))
+      )
+    },
+    []
+  )
 
   return {
     ingredients,
     isLoading,
     error,
-    toggleIngredientCompletion,
-    changeIngredientName,
+    refetch: loadIngredients,
+    updateIngredient,
+    listName,
+    listId,
   }
 }

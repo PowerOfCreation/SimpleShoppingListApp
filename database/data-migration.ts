@@ -26,7 +26,7 @@ export async function initializeAndMigrateDatabase(
 
     if (!initResult.success) {
       // Return the init error directly
-      return Result.fail(initResult.getError()!)
+      return Result.fail(initResult.getError())
     }
 
     const initData = initResult.getValue()
@@ -50,7 +50,11 @@ export async function initializeAndMigrateDatabase(
     // Only execute migrations if it's the first run OR the DB version is outdated
     if (isFirstRun || currentVersion < DB_VERSION) {
       // Pass the actual isFirstRun flag to potentially trigger AsyncStorage migration
-      const migrateResult = await executeMigrations(db, isFirstRun)
+      const migrateResult = await executeMigrations(
+        db,
+        isFirstRun,
+        currentVersion
+      )
 
       if (!migrateResult.success) {
         return migrateResult

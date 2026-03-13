@@ -14,14 +14,18 @@ describe("Result", () => {
       const result = Result.ok(value)
       expect(result.success).toBe(true)
       expect(result.getValue()).toBe(value)
-      expect(result.getError()).toBeNull()
+      expect(() => result.getError()).toThrow(
+        "Cannot get error from a successful Result"
+      )
     })
 
     it("should create a successful result with null value", () => {
       const result = Result.ok<null, Error>(null)
       expect(result.success).toBe(true)
       expect(result.getValue()).toBeNull()
-      expect(result.getError()).toBeNull()
+      expect(() => result.getError()).toThrow(
+        "Cannot get error from a successful Result"
+      )
     })
   })
 
@@ -60,9 +64,11 @@ describe("Result", () => {
   })
 
   describe("getError", () => {
-    it("should return null for a successful result", () => {
+    it("should throw for a successful result", () => {
       const result = Result.ok("Success")
-      expect(result.getError()).toBeNull()
+      expect(() => result.getError()).toThrow(
+        "Cannot get error from a successful Result"
+      )
     })
 
     it("should return the error for a failed result", () => {
@@ -78,7 +84,9 @@ describe("Result", () => {
       const mappedResult = result.map((value) => (value ?? 0) * 2)
       expect(mappedResult.success).toBe(true)
       expect(mappedResult.getValue()).toBe(10)
-      expect(mappedResult.getError()).toBeNull()
+      expect(() => mappedResult.getError()).toThrow(
+        "Cannot get error from a successful Result"
+      )
     })
 
     it("should return a failed result if the mapping function throws", () => {
@@ -110,7 +118,9 @@ describe("Result", () => {
       )
       expect(mappedResult.success).toBe(true)
       expect(mappedResult.getValue()).toBe(10)
-      expect(mappedResult.getError()).toBeNull()
+      expect(() => mappedResult.getError()).toThrow(
+        "Cannot get error from a successful Result"
+      )
     })
 
     it("should return a failed result if the async mapping function throws", async () => {
@@ -154,7 +164,9 @@ describe("Result", () => {
       const result = await Result.fromPromise(promise)
       expect(result.success).toBe(true)
       expect(result.getValue()).toBe(value)
-      expect(result.getError()).toBeNull()
+      expect(() => result.getError()).toThrow(
+        "Cannot get error from a successful Result"
+      )
     })
 
     it("should create a failed result when the promise rejects", async () => {
@@ -179,8 +191,8 @@ describe("Result", () => {
 
       expect(result.success).toBe(false)
       expect(result.getError()).toBeInstanceOf(TestError)
-      expect(result.getError()?.message).toBe("Mapped: Plain string error")
-      expect(() => result.getValue()).toThrow(result.getError()!)
+      expect(result.getError().message).toBe("Mapped: Plain string error")
+      expect(() => result.getValue()).toThrow(result.getError())
     })
   })
 })

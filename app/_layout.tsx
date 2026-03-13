@@ -28,9 +28,7 @@ export default function RootLayout() {
         } else {
           const dbError = result.getError()
           logger.error("Failed to initialize database", dbError)
-          setError(
-            `Database initialization failed: ${dbError?.message || "Unknown error"}`
-          )
+          setError(`Database initialization failed: ${dbError.message}`)
         }
       } catch (err) {
         logger.error("Unexpected error initializing database", err)
@@ -72,18 +70,10 @@ export default function RootLayout() {
         }}
       >
         <Drawer.Screen
-          name="index"
+          name="(home)"
           options={{
-            drawerLabel: "Shopping List",
-            headerTitle: "Shopping List",
-          }}
-        />
-        <Drawer.Screen
-          name="new_ingredient"
-          options={{
-            drawerLabel: "Add Ingredient",
-            headerTitle: "Add new ingredient",
-            drawerItemStyle: { display: "none" },
+            drawerLabel: "Shopping Lists",
+            headerShown: false,
           }}
         />
       </Drawer>
