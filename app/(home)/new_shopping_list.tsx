@@ -34,7 +34,7 @@ export default function NewShoppingList() {
 
     const listId = result.getValue()
     onChangeText("")
-    router.navigate(`/view_shopping_list?listId=${listId}`)
+    router.replace(`/view_shopping_list?listId=${listId}`)
   }
 
   if (invalidInputExplanation && text.trim()) {
