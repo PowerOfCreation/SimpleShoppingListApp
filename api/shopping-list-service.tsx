@@ -40,8 +40,9 @@ export class ShoppingListService {
       const result = await this.repository.add(newList)
 
       if (!result.success) {
-        logger.error("Error creating shopping list", result.getError())
-        return result as any
+        const error = result.getError()
+        logger.error("Error creating shopping list", error)
+        return Result.fail(error)
       }
 
       return Result.ok(newList.id)

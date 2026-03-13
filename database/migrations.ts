@@ -62,7 +62,7 @@ export async function executeMigrations(
       // Create default list on first run
       const defaultListResult = await createDefaultList(db)
       if (!defaultListResult.success) {
-        return Result.fail(defaultListResult.getError()!)
+        return Result.fail(defaultListResult.getError())
       }
       const defaultListId = defaultListResult.getValue()!
 

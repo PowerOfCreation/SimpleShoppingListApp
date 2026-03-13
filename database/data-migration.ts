@@ -26,7 +26,7 @@ export async function initializeAndMigrateDatabase(
 
     if (!initResult.success) {
       // Return the init error directly
-      return Result.fail(initResult.getError()!)
+      return Result.fail(initResult.getError())
     }
 
     const initData = initResult.getValue()

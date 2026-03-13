@@ -34,7 +34,7 @@ export default function NewIngredient() {
 
     if (!result.success) {
       const error = result.getError()
-      setInvalidInputExplanation(error?.message || "Failed to add ingredient")
+      setInvalidInputExplanation(error.message)
       return
     }
 

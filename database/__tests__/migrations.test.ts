@@ -113,7 +113,7 @@ describe("Migrations", () => {
         // Log error for debugging
         const error = result.getError()
         throw new Error(
-          `Migration failed: ${error?.message}. Cause: ${error?.cause}`
+          `Migration failed: ${error.message}. Cause: ${error.cause}`
         )
       }
 

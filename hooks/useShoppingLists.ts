@@ -25,7 +25,7 @@ export function useShoppingLists() {
       } else {
         const dbError = result.getError()
         logger.error("Error fetching shopping lists", dbError)
-        setError(dbError?.message || "Failed to fetch shopping lists")
+        setError(dbError.message)
       }
     } catch (err) {
       logger.error("Unexpected error fetching shopping lists", err)

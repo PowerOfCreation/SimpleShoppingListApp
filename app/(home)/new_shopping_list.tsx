@@ -26,9 +26,7 @@ export default function NewShoppingList() {
 
     if (!result.success) {
       const error = result.getError()
-      setInvalidInputExplanation(
-        error?.message || "Failed to create shopping list"
-      )
+      setInvalidInputExplanation(error.message)
       return
     }
 

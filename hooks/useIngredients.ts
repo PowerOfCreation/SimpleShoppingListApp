@@ -27,7 +27,7 @@ export function useIngredients() {
 
       if (!result.success) {
         const err = result.getError()
-        setError(err?.message || "Failed to load ingredients")
+        setError(err.message)
         logger.error("Failed to load ingredients", err)
         return
       }

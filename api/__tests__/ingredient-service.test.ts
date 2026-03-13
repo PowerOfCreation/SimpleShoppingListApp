@@ -139,7 +139,7 @@ describe("IngredientService", () => {
       // Verify error result
       expect(result.success).toBe(false)
       expect(result.getError()).toBeInstanceOf(ValidationError)
-      expect(result.getError()?.message).toBe("Ingredient name can't be empty")
+      expect(result.getError().message).toBe("Ingredient name can't be empty")
     })
   })
 

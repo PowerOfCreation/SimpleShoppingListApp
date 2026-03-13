@@ -28,9 +28,7 @@ export default function RootLayout() {
         } else {
           const dbError = result.getError()
           logger.error("Failed to initialize database", dbError)
-          setError(
-            `Database initialization failed: ${dbError?.message || "Unknown error"}`
-          )
+          setError(`Database initialization failed: ${dbError.message}`)
         }
       } catch (err) {
         logger.error("Unexpected error initializing database", err)
