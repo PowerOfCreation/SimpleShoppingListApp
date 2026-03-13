@@ -11,7 +11,7 @@
     "test": "jest --coverage --silent",
     "test:ci": "jest --coverage --silent --ci",
     "test:debug": "jest --coverage",
-    "lint": "expo lint && tsc --noEmit"
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx && tsc --noEmit"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
