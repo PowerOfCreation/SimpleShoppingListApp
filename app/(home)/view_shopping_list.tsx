@@ -3,22 +3,84 @@ import { Entry } from "@/components/Entry"
 import React from "react"
 import { FlatList, StyleSheet, ActivityIndicator, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
-import { router } from "expo-router"
+import { router, useFocusEffect, useNavigation } from "expo-router"
 
 import { Ingredient } from "@/types/Ingredient"
 import { ThemedText } from "@/components/ThemedText"
 import { useIngredients } from "@/hooks/useIngredients"
+import { ingredientService } from "@/api/ingredient-service"
+import { createLogger } from "@/api/common/logger"
 
-export default function Index() {
+const logger = createLogger("ViewShoppingList")
+
+export default function ViewShoppingList() {
   const {
     ingredients,
     isLoading,
     error,
-    toggleIngredientCompletion,
-    changeIngredientName,
+    refetch,
+    updateIngredient,
+    listName,
+    listId,
   } = useIngredients()
-
   const [ingredientToEdit, setIngredientToEdit] = React.useState<string>("")
+  const navigation = useNavigation()
+
+  // Update header title when listName changes
+  React.useEffect(() => {
+    if (listName) {
+      navigation.setOptions({
+        headerTitle: listName,
+      })
+    }
+  }, [listName, navigation])
+
+  // Refetch ingredients when screen comes into focus
+  useFocusEffect(
+    React.useCallback(() => {
+      refetch()
+    }, [refetch])
+  )
+
+  const handleToggleComplete = async (id: string) => {
+    const ingredient = ingredients.find((ing) => ing.id === id)
+    if (!ingredient) return
+
+    // Optimistically update UI immediately
+    const newCompletedState = !ingredient.completed
+    updateIngredient(id, { completed: newCompletedState })
+
+    try {
+      await ingredientService.updateCompletion(id, newCompletedState)
+      // Don't refetch here - let useFocusEffect handle it when screen regains focus
+      // This allows animations to play and prevents immediate re-sorting
+    } catch (err) {
+      logger.error("Error toggling completion", err)
+      // Revert optimistic update on error
+      updateIngredient(id, { completed: ingredient.completed })
+    }
+  }
+
+  const handleChangeName = async (id: string, newName: string) => {
+    const ingredient = ingredients.find((ing) => ing.id === id)
+    if (!ingredient) return
+
+    // Optimistically update UI immediately
+    updateIngredient(id, { name: newName })
+    setIngredientToEdit("")
+
+    try {
+      const result = await ingredientService.updateName(id, newName)
+      if (!result.success) {
+        // Revert optimistic update on error
+        updateIngredient(id, { name: ingredient.name })
+      }
+    } catch (err) {
+      logger.error("Error changing name", err)
+      // Revert optimistic update on error
+      updateIngredient(id, { name: ingredient.name })
+    }
+  }
 
   const entryLongPress = (id: string) => {
     setIngredientToEdit(id)
@@ -30,13 +92,12 @@ export default function Index() {
         id={item.id}
         ingredientName={item.name}
         isCompleted={item.completed}
-        onToggleComplete={() => toggleIngredientCompletion(item.id)}
+        onToggleComplete={() => handleToggleComplete(item.id)}
         onLongPress={() => entryLongPress(item.id)}
         isEdited={ingredientToEdit === item.id}
         onCancelEditing={() => setIngredientToEdit("")}
         onSaveEditing={async (text) => {
-          setIngredientToEdit("")
-          await changeIngredientName(item.id, text)
+          await handleChangeName(item.id, text)
         }}
       />
     )
@@ -84,7 +145,9 @@ export default function Index() {
       <ActionButton
         testID="add-button"
         symbol="+"
-        onPress={() => router.push("/new_ingredient")}
+        onPress={() =>
+          router.push({ pathname: "/new_ingredient", params: { listId } })
+        }
       />
     </SafeAreaView>
   )

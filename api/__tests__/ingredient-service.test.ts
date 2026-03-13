@@ -49,13 +49,14 @@ describe("IngredientService", () => {
   })
 
   describe("GetIngredients", () => {
-    it("should get ingredients from the repository", async () => {
+    it("should get only ingredients for the given list from the repository", async () => {
       // Set up mock data
       const mockIngredients: Ingredient[] = [
         {
           id: "1",
           name: "Milk",
           completed: false,
+          list_id: "list-1",
           created_at: 1000,
           updated_at: 1000,
         },
@@ -63,23 +64,36 @@ describe("IngredientService", () => {
           id: "2",
           name: "Eggs",
           completed: true,
+          list_id: "list-1",
           created_at: 2000,
           updated_at: 2000,
+        },
+        {
+          id: "3",
+          name: "Bread",
+          completed: false,
+          list_id: "list-2",
+          created_at: 3000,
+          updated_at: 3000,
         },
       ]
 
       // Set up repository mock
-      mockRepository.getAll.mockResolvedValue(Result.ok(mockIngredients))
+      mockRepository.getAll.mockImplementation(async (listId: string) => {
+        const filtered = mockIngredients.filter((i) => i.list_id === listId)
+        return Result.ok(filtered)
+      })
 
-      // Call the method
-      const result = await service.GetIngredients()
+      // Call the method with listId
+      const result = await service.GetIngredients("list-1")
 
       // Verify repository was called
       expect(mockRepository.getAll).toHaveBeenCalledTimes(1)
 
-      // Verify result
+      // Verify result: only list-1 ingredients should be returned
+      const filtered = mockIngredients.filter((i) => i.list_id === "list-1")
       expect(result.success).toBe(true)
-      expect(result.getValue()).toEqual(mockIngredients)
+      expect(result.getValue()).toEqual(filtered)
     })
   })
 
@@ -87,6 +101,7 @@ describe("IngredientService", () => {
     it("should add an ingredient using the repository", async () => {
       // Set up mock data
       const ingredientName = "Milk"
+      const listId = "list-1"
       const nowMock = 1000
 
       // Mock Date.now
@@ -96,7 +111,7 @@ describe("IngredientService", () => {
       mockRepository.add.mockResolvedValue(Result.ok(undefined))
 
       // Call the method
-      const result = await service.AddIngredients(ingredientName)
+      const result = await service.AddIngredients(ingredientName, listId)
 
       // Verify repository was called
       expect(mockRepository.add).toHaveBeenCalledTimes(1)
@@ -105,6 +120,7 @@ describe("IngredientService", () => {
       const addedIngredient = mockRepository.add.mock.calls[0][0]
       expect(addedIngredient.name).toBe(ingredientName)
       expect(addedIngredient.completed).toBe(false)
+      expect(addedIngredient.list_id).toBe(listId)
       expect(addedIngredient.id).toBeDefined() // Should have an ID
       expect(addedIngredient.created_at).toBe(nowMock)
       expect(addedIngredient.updated_at).toBe(nowMock)
@@ -115,7 +131,7 @@ describe("IngredientService", () => {
 
     it("should return error for empty ingredient name", async () => {
       // Call the method with empty name
-      const result = await service.AddIngredients("")
+      const result = await service.AddIngredients("", "list-1")
 
       // Verify repository was not called
       expect(mockRepository.add).not.toHaveBeenCalled()
@@ -123,7 +139,7 @@ describe("IngredientService", () => {
       // Verify error result
       expect(result.success).toBe(false)
       expect(result.getError()).toBeInstanceOf(ValidationError)
-      expect(result.getError()?.message).toBe("Ingredient name can't be empty")
+      expect(result.getError().message).toBe("Ingredient name can't be empty")
     })
   })
 
@@ -211,7 +227,7 @@ describe("IngredientService", () => {
       mockRepository.getAll.mockResolvedValue(Result.fail(dbError))
 
       // Call the method
-      const result = await service.GetIngredients()
+      const result = await service.GetIngredients("")
 
       // Verify we get a failed result with the error
       expect(result.success).toBe(false)

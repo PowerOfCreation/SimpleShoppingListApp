@@ -18,21 +18,18 @@ export class IngredientService {
     this.repository = repository || new IngredientRepository(getDatabase())
   }
 
-  async GetIngredients(): Promise<Result<Ingredient[], DbQueryError>> {
+  async GetIngredients(
+    listId: string
+  ): Promise<Result<Ingredient[], DbQueryError>> {
     try {
-      if (this.initialLoad) {
-        this.initialLoad = false
-        const result = await this.repository.getAll()
+      const result = await this.repository.getAll(listId)
 
-        if (result.success) {
-          this.ingredients = result.getValue()!
-        } else {
-          logger.error("Error fetching ingredients", result.getError())
-          return result
-        }
+      if (!result.success) {
+        logger.error("Error fetching ingredients", result.getError())
+        return result
       }
 
-      // Return a shallow copy to prevent external mutations affecting the cache
+      this.ingredients = result.getValue()!
       return Result.ok([...this.ingredients])
     } catch (error) {
       logger.error("Error fetching ingredients", error)
@@ -48,7 +45,8 @@ export class IngredientService {
   }
 
   async AddIngredients(
-    ingredientName: string
+    ingredientName: string,
+    listId: string
   ): Promise<Result<void, ValidationError | DbQueryError>> {
     if (!ingredientName.trim()) {
       const error = new ValidationError(
@@ -63,6 +61,7 @@ export class IngredientService {
       const newIngredient: Ingredient = {
         name: ingredientName,
         completed: false,
+        list_id: listId,
         id: uuidv4(),
         created_at: now,
         updated_at: now,

@@ -11,7 +11,7 @@
     "test": "jest --coverage --silent",
     "test:ci": "jest --coverage --silent --ci",
     "test:debug": "jest --coverage",
-    "lint": "expo lint && tsc --noEmit"
+    "lint": "eslint . --ext .js,.jsx,.ts,.tsx && tsc --noEmit"
   },
   "dependencies": {
     "@expo/vector-icons": "^15.0.2",
@@ -22,7 +22,7 @@
     "expo-constants": "~55.0.7",
     "expo-font": "~55.0.4",
     "expo-linking": "~55.0.7",
-    "expo-router": "~55.0.4",
+    "expo-router": "~55.0.5",
     "expo-splash-screen": "~55.0.10",
     "expo-sqlite": "~55.0.10",
     "expo-status-bar": "~55.0.4",
@@ -39,8 +39,7 @@
     "react-native-screens": "~4.23.0",
     "react-native-web": "^0.21.0",
     "react-native-worklets": "0.7.2",
-    "uuid": "^11.0.0",
-    "zustand": "^5.0.11"
+    "uuid": "^11.0.5"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",
