@@ -94,6 +94,14 @@ export default function RootLayout() {
             drawerItemStyle: { display: "none" },
           }}
         />
+        <Drawer.Screen
+          name="new_shopping_list"
+          options={{
+            drawerLabel: "New Shopping List",
+            headerTitle: "Create new shopping list",
+            drawerItemStyle: { display: "none" },
+          }}
+        />
       </Drawer>
     </SafeAreaProvider>
   )

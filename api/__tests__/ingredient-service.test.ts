@@ -49,7 +49,7 @@ describe("IngredientService", () => {
   })
 
   describe("GetIngredients", () => {
-    it("should get ingredients from the repository", async () => {
+    it("should get only ingredients for the given list from the repository", async () => {
       // Set up mock data
       const mockIngredients: Ingredient[] = [
         {
@@ -68,20 +68,29 @@ describe("IngredientService", () => {
           created_at: 2000,
           updated_at: 2000,
         },
+        {
+          id: "3",
+          name: "Bread",
+          completed: false,
+          list_id: "list-2",
+          created_at: 3000,
+          updated_at: 3000,
+        },
       ]
 
       // Set up repository mock
       mockRepository.getAll.mockResolvedValue(Result.ok(mockIngredients))
 
-      // Call the method
-      const result = await service.GetIngredients()
+      // Call the method with listId
+      const result = await service.GetIngredients("list-1")
 
       // Verify repository was called
       expect(mockRepository.getAll).toHaveBeenCalledTimes(1)
 
-      // Verify result
+      // Verify result: only list-1 ingredients should be returned
+      const filtered = mockIngredients.filter((i) => i.list_id === "list-1")
       expect(result.success).toBe(true)
-      expect(result.getValue()).toEqual(mockIngredients)
+      expect(result.getValue()).toEqual(filtered)
     })
   })
 

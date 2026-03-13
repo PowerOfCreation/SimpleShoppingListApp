@@ -22,7 +22,7 @@ export class IngredientRepository extends BaseRepository {
    * Get all ingredients
    * @returns Result containing array of ingredients or error
    */
-  async getAll(): Promise<Result<Ingredient[], DbQueryError>> {
+  async getAll(listId: string): Promise<Result<Ingredient[], DbQueryError>> {
     return this._executeQuery(async () => {
       const result = await this.db.getAllAsync<{
         id: string
@@ -33,8 +33,10 @@ export class IngredientRepository extends BaseRepository {
         updated_at: number
       }>(
         `SELECT id, name, completed, list_id, created_at, updated_at
-         FROM ingredients
-         ORDER BY completed ASC, created_at DESC`
+        FROM ingredients
+        WHERE list_id = ?
+        ORDER BY completed ASC, created_at DESC`,
+        listId
       )
 
       return result.map((row) => ({

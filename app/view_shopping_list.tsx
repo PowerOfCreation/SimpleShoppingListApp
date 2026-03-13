@@ -14,7 +14,8 @@ import { createLogger } from "@/api/common/logger"
 const logger = createLogger("ViewShoppingList")
 
 export default function ViewShoppingList() {
-  const { ingredients, isLoading, error, refetch, listName } = useIngredients()
+  const { ingredients, isLoading, error, refetch, listName, listId } =
+    useIngredients()
   const [ingredientToEdit, setIngredientToEdit] = React.useState<string>("")
   const navigation = useNavigation()
 
@@ -128,7 +129,9 @@ export default function ViewShoppingList() {
       <ActionButton
         testID="add-button"
         symbol="+"
-        onPress={() => router.push("/new_ingredient")}
+        onPress={() =>
+          router.push({ pathname: "/new_ingredient", params: { listId } })
+        }
       />
     </SafeAreaView>
   )

@@ -23,21 +23,23 @@ export function useIngredients() {
     setIsLoading(true)
     setError(null)
     try {
-      const result = await ingredientService.GetIngredients()
-      if (result.success) {
-        setIngredients(result.getValue() || [])
-      } else {
+      const result = await ingredientService.GetIngredients(listId)
+
+      if (!result.success) {
         const err = result.getError()
         setError(err?.message || "Failed to load ingredients")
         logger.error("Failed to load ingredients", err)
+        return
       }
+
+      setIngredients(result.getValue() || [])
     } catch (err) {
       setError("Failed to load ingredients")
       logger.error("Error loading ingredients", err)
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [listId])
 
   // Load list name when listId changes
   React.useEffect(() => {
@@ -71,5 +73,6 @@ export function useIngredients() {
     error,
     refetch: loadIngredients,
     listName,
+    listId,
   }
 }

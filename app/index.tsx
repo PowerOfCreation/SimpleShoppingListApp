@@ -45,7 +45,7 @@ export default function Index() {
   }
 
   const handleAddList = () => {
-    router.push("/new_ingredient")
+    router.push("/new_shopping_list")
   }
 
   const renderContent = () => {

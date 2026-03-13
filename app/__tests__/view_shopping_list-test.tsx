@@ -41,7 +41,7 @@ const mockInitialIngredients: Ingredient[] = [
     id: "1",
     name: "Milk",
     completed: false,
-    list_id: NIL_UUID,
+    list_id: "list-1",
     created_at: 1000,
     updated_at: 1000,
   },
@@ -49,7 +49,7 @@ const mockInitialIngredients: Ingredient[] = [
     id: "2",
     name: "Bread",
     completed: true,
-    list_id: NIL_UUID,
+    list_id: "list-1",
     created_at: 2000,
     updated_at: 2000,
   },
@@ -57,7 +57,7 @@ const mockInitialIngredients: Ingredient[] = [
     id: "3",
     name: "Eggs",
     completed: false,
-    list_id: NIL_UUID,
+    list_id: "list-2",
     created_at: 3000,
     updated_at: 3000,
   },
@@ -74,7 +74,8 @@ const setupHookMock = (
   isLoading: boolean = false,
   error: string | null = null,
   refetch: jest.Mock = jest.fn(),
-  listName: string | null = "Standard List"
+  listName: string | null = "Standard List",
+  listId: string = "list-1"
 ) => {
   mockUseIngredients.mockReturnValue({
     ingredients,
@@ -82,6 +83,7 @@ const setupHookMock = (
     error,
     refetch,
     listName,
+    listId,
   })
 }
 
@@ -99,14 +101,14 @@ describe("<ViewShoppingList /> Component Tests", () => {
     expect(screen.getByAccessibilityHint("loading data")).toBeOnTheScreen()
   })
 
-  it("displays ingredients after loading", () => {
+  it("displays only ingredients for the current list after loading", () => {
     setupHookMock(mockInitialIngredients, false, null)
     render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
 
     expect(screen.queryByAccessibilityHint("loading data")).toBeNull()
     expect(screen.getByText("Milk")).toBeOnTheScreen()
     expect(screen.getByText("Bread")).toBeOnTheScreen()
-    expect(screen.getByText("Eggs")).toBeOnTheScreen()
+    expect(screen.queryByText("Eggs")).toBeNull()
   })
 
   it("displays empty state when no products", () => {
@@ -128,13 +130,13 @@ describe("<ViewShoppingList /> Component Tests", () => {
     expect(screen.getByText(errorMsg)).toBeOnTheScreen()
   })
 
-  it("renders all ingredients with testID", () => {
+  it("renders only ingredients for the current list with testID", () => {
     setupHookMock(mockInitialIngredients, false, null)
     render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
 
     expect(screen.getByTestId("entry-component-1")).toBeOnTheScreen()
     expect(screen.getByTestId("entry-component-2")).toBeOnTheScreen()
-    expect(screen.getByTestId("entry-component-3")).toBeOnTheScreen()
+    expect(screen.queryByTestId("entry-component-3")).toBeNull()
   })
 
   it("toggles ingredient completion when entry pressed", () => {
@@ -155,7 +157,10 @@ describe("<ViewShoppingList /> Component Tests", () => {
     const addButton = screen.getByTestId("add-button")
     fireEvent.press(addButton)
 
-    expect(mockRouterPush).toHaveBeenCalledWith("/new_ingredient")
+    expect(mockRouterPush).toHaveBeenCalledWith({
+      pathname: "/new_ingredient",
+      params: { listId: "list-1" },
+    })
   })
 
   it("calls refetch on screen focus", () => {

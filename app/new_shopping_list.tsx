@@ -1,13 +1,12 @@
-import { router, useFocusEffect, useLocalSearchParams } from "expo-router"
+import { router, useFocusEffect } from "expo-router"
 import React from "react"
 import { Pressable, View, StyleSheet, TextInput } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedTextInput } from "@/components/ThemedTextInput"
-import { ingredientService } from "../api/ingredient-service"
+import { shoppingListService } from "../api/shopping-list-service"
 
-export default function NewIngredient() {
-  const { listId } = useLocalSearchParams<{ listId: string }>()
+export default function NewShoppingList() {
   const [text, onChangeText] = React.useState("")
   const [invalidInputExplanation, setInvalidInputExplanation] =
     React.useState("")
@@ -22,24 +21,20 @@ export default function NewIngredient() {
     }, [])
   )
 
-  const addIngredient = async (ingredientName: string) => {
-    if (!listId) {
-      setInvalidInputExplanation("No list selected")
-      return
-    }
-    const result = await ingredientService.AddIngredients(
-      ingredientName,
-      listId
-    )
+  const createShoppingList = async (listName: string) => {
+    const result = await shoppingListService.createList(listName)
 
     if (!result.success) {
       const error = result.getError()
-      setInvalidInputExplanation(error?.message || "Failed to add ingredient")
+      setInvalidInputExplanation(
+        error?.message || "Failed to create shopping list"
+      )
       return
     }
 
+    const listId = result.getValue()
     onChangeText("")
-    router.navigate("/")
+    router.navigate(`/view_shopping_list?listId=${listId}`)
   }
 
   if (invalidInputExplanation && text.trim()) {
@@ -51,18 +46,18 @@ export default function NewIngredient() {
       <View style={styles.searchBarContainer}>
         <ThemedTextInput
           ref={inputRef}
-          onSubmit={() => addIngredient(text)}
+          onSubmit={() => createShoppingList(text)}
           onChangeText={onChangeText}
           value={text}
-          placeholder="Ingredient name"
+          placeholder="Shopping list name"
           borderColor={invalidInputExplanation ? "red" : undefined}
         />
 
         <Pressable
           style={styles.buttonStyle}
-          onPress={() => addIngredient(text)}
+          onPress={() => createShoppingList(text)}
         >
-          <ThemedText>Add</ThemedText>
+          <ThemedText>Create</ThemedText>
         </Pressable>
       </View>
       {invalidInputExplanation ? (
