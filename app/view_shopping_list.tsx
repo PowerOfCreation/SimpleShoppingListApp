@@ -14,8 +14,15 @@ import { createLogger } from "@/api/common/logger"
 const logger = createLogger("ViewShoppingList")
 
 export default function ViewShoppingList() {
-  const { ingredients, isLoading, error, refetch, listName, listId } =
-    useIngredients()
+  const {
+    ingredients,
+    isLoading,
+    error,
+    refetch,
+    updateIngredient,
+    listName,
+    listId,
+  } = useIngredients()
   const [ingredientToEdit, setIngredientToEdit] = React.useState<string>("")
   const navigation = useNavigation()
 
@@ -39,30 +46,39 @@ export default function ViewShoppingList() {
     const ingredient = ingredients.find((ing) => ing.id === id)
     if (!ingredient) return
 
+    // Optimistically update UI immediately
+    const newCompletedState = !ingredient.completed
+    updateIngredient(id, { completed: newCompletedState })
+
     try {
-      const result = await ingredientService.updateCompletion(
-        id,
-        !ingredient.completed
-      )
-      if (result.success) {
-        // Refetch to update UI
-        await refetch()
-      }
+      await ingredientService.updateCompletion(id, newCompletedState)
+      // Don't refetch here - let useFocusEffect handle it when screen regains focus
+      // This allows animations to play and prevents immediate re-sorting
     } catch (err) {
       logger.error("Error toggling completion", err)
+      // Revert optimistic update on error
+      updateIngredient(id, { completed: ingredient.completed })
     }
   }
 
   const handleChangeName = async (id: string, newName: string) => {
+    const ingredient = ingredients.find((ing) => ing.id === id)
+    if (!ingredient) return
+
+    // Optimistically update UI immediately
+    updateIngredient(id, { name: newName })
+    setIngredientToEdit("")
+
     try {
       const result = await ingredientService.updateName(id, newName)
-      if (result.success) {
-        setIngredientToEdit("")
-        // Refetch to update UI
-        await refetch()
+      if (!result.success) {
+        // Revert optimistic update on error
+        updateIngredient(id, { name: ingredient.name })
       }
     } catch (err) {
       logger.error("Error changing name", err)
+      // Revert optimistic update on error
+      updateIngredient(id, { name: ingredient.name })
     }
   }
 

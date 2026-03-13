@@ -67,11 +67,22 @@ export function useIngredients() {
     loadIngredients()
   }, [loadIngredients])
 
+  // Optimistic update function for immediate UI feedback
+  const updateIngredient = React.useCallback(
+    (id: string, updates: Partial<Ingredient>) => {
+      setIngredients((prev) =>
+        prev.map((ing) => (ing.id === id ? { ...ing, ...updates } : ing))
+      )
+    },
+    []
+  )
+
   return {
     ingredients,
     isLoading,
     error,
     refetch: loadIngredients,
+    updateIngredient,
     listName,
     listId,
   }
