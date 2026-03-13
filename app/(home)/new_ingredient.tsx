@@ -4,7 +4,7 @@ import { Pressable, View, StyleSheet, TextInput } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedTextInput } from "@/components/ThemedTextInput"
-import { ingredientService } from "../api/ingredient-service"
+import { ingredientService } from "@/api/ingredient-service"
 
 export default function NewIngredient() {
   const { listId } = useLocalSearchParams<{ listId: string }>()
