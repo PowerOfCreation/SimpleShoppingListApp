@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useMemo } from "react"
 import { IngredientList } from "@/types/IngredientList"
 import { IngredientListRepository } from "@/database/ingredient-list-repository"
 import { getDatabase } from "@/database/database"
@@ -10,7 +10,10 @@ export function useShoppingLists() {
   const [lists, setLists] = useState<IngredientList[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const repository = new IngredientListRepository(getDatabase())
+  const repository = useMemo(
+    () => new IngredientListRepository(getDatabase()),
+    []
+  )
 
   const refetch = useCallback(async () => {
     setIsLoading(true)
@@ -30,7 +33,7 @@ export function useShoppingLists() {
     } finally {
       setIsLoading(false)
     }
-  }, [])
+  }, [repository])
 
   return { lists, isLoading, error, refetch }
 }
