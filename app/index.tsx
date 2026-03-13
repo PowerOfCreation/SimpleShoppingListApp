@@ -13,9 +13,6 @@ import { router, useFocusEffect } from "expo-router"
 import { IngredientList } from "@/types/IngredientList"
 import { ThemedText } from "@/components/ThemedText"
 import { useShoppingLists } from "@/hooks/useShoppingLists"
-import { createLogger } from "@/api/common/logger"
-
-const logger = createLogger("Index")
 
 export default function Index() {
   const { lists, isLoading, error, refetch } = useShoppingLists()
