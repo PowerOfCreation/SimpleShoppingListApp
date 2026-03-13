@@ -79,7 +79,10 @@ describe("IngredientService", () => {
       ]
 
       // Set up repository mock
-      mockRepository.getAll.mockResolvedValue(Result.ok(mockIngredients))
+      mockRepository.getAll.mockImplementation(async (listId: string) => {
+        const filtered = mockIngredients.filter((i) => i.list_id === listId)
+        return Result.ok(filtered)
+      })
 
       // Call the method with listId
       const result = await service.GetIngredients("list-1")
@@ -224,7 +227,7 @@ describe("IngredientService", () => {
       mockRepository.getAll.mockResolvedValue(Result.fail(dbError))
 
       // Call the method
-      const result = await service.GetIngredients()
+      const result = await service.GetIngredients("")
 
       // Verify we get a failed result with the error
       expect(result.success).toBe(false)

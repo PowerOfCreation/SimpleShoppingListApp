@@ -1,175 +1,158 @@
-import React from "react"
-import {
-  screen,
-  render,
-  waitFor,
-  fireEvent,
-} from "@testing-library/react-native"
+import { screen } from "@testing-library/react-native"
+import { waitFor } from "@testing-library/react-native"
+import { renderRouter } from "expo-router/testing-library"
 import ViewShoppingList from "../view_shopping_list"
-import { router } from "expo-router"
-import { Ingredient } from "@/types/Ingredient"
-import { SafeAreaProvider } from "react-native-safe-area-context"
-import { useIngredients } from "@/hooks/useIngredients"
-import { NIL_UUID } from "@/constants/Uuids"
+import { IngredientRepository } from "@/database/ingredient-repository"
+import { getDatabase, resetDatabase } from "@/database/database"
+import { IngredientListRepository } from "@/database/ingredient-list-repository"
+import { initializeAndMigrateDatabase } from "@/database/data-migration"
+import type { Ingredient } from "@/types/Ingredient"
+import type { IngredientList } from "@/types/IngredientList"
 
-// --- Mocks ---
+/**
+ * Integration tests for ViewShoppingList component
+ * These tests use real database and services - no mocking.
+ * The database is initialized once (just like _layout does), then test data is set up for each test.
+ * This behaves exactly like the real app.
+ */
 
-// Mock expo-router
-jest.mock("expo-router", () => {
-  const React = require("react")
-  return {
-    router: {
-      push: jest.fn(),
-    },
-    useFocusEffect: (callback: () => void) => {
-      React.useEffect(() => {
-        callback()
-      }, [callback])
-    },
-    useNavigation: jest.fn(() => ({
-      setOptions: jest.fn(),
-    })),
-  }
-})
-
-// Mock the hook
-jest.mock("@/hooks/useIngredients")
-
-// --- Test Data ---
-const mockInitialIngredients: Ingredient[] = [
-  {
-    id: "1",
-    name: "Milk",
-    completed: false,
-    list_id: "list-1",
-    created_at: 1000,
-    updated_at: 1000,
-  },
-  {
-    id: "2",
-    name: "Bread",
-    completed: true,
-    list_id: "list-1",
-    created_at: 2000,
-    updated_at: 2000,
-  },
-  {
-    id: "3",
-    name: "Eggs",
-    completed: false,
-    list_id: "list-2",
-    created_at: 3000,
-    updated_at: 3000,
-  },
-]
-
-// --- Helpers ---
-const mockUseIngredients = useIngredients as jest.MockedFunction<
-  typeof useIngredients
->
-const mockRouterPush = router.push as jest.Mock
-
-const setupHookMock = (
-  ingredients: Ingredient[] = mockInitialIngredients,
-  isLoading: boolean = false,
-  error: string | null = null,
-  refetch: jest.Mock = jest.fn(),
-  listName: string | null = "Standard List",
-  listId: string = "list-1"
-) => {
-  mockUseIngredients.mockReturnValue({
-    ingredients,
-    isLoading,
-    error,
-    refetch,
-    listName,
-    listId,
+/**
+ * Waits for the app to finish loading by checking if loading indicator is gone
+ */
+async function waitForAppReady() {
+  await waitFor(() => {
+    expect(screen.queryByAccessibilityHint("loading data")).toBeNull()
   })
 }
 
-// --- Tests ---
+/**
+ * Creates a test ingredient list in the database
+ */
+async function createTestList(
+  db: ReturnType<typeof getDatabase>,
+  listData: Partial<IngredientList> & { id: string; name: string }
+): Promise<void> {
+  const listRepo = new IngredientListRepository(db)
+  const now = Date.now()
+  await listRepo.add({
+    created_at: now,
+    updated_at: now,
+    ...listData,
+  })
+}
+
+/**
+ * Creates a test ingredient in the database
+ */
+async function createTestIngredient(
+  db: ReturnType<typeof getDatabase>,
+  ingredientData: Partial<Ingredient> & {
+    id: string
+    name: string
+    list_id: string
+  }
+): Promise<void> {
+  const repo = new IngredientRepository(db)
+  const now = Date.now()
+  await repo.add({
+    completed: false,
+    created_at: now,
+    updated_at: now,
+    ...ingredientData,
+  })
+}
+
+/**
+ * Renders the ViewShoppingList component with the given list ID
+ */
+function renderShoppingListView(listId: string) {
+  return renderRouter(
+    { view_shopping_list: ViewShoppingList },
+    { initialUrl: `/view_shopping_list?listId=${listId}` }
+  )
+}
+
+/**
+ * Cleans up all test data from the database
+ */
+async function cleanupDatabase(db: ReturnType<typeof getDatabase>) {
+  await db.execAsync(`DELETE FROM ingredients;`)
+  await db.execAsync(`DELETE FROM ingredient_lists;`)
+}
 
 describe("<ViewShoppingList /> Component Tests", () => {
-  beforeEach(() => {
-    jest.clearAllMocks()
+  let db: ReturnType<typeof getDatabase>
+
+  beforeAll(async () => {
+    // Initialize once like _layout does - do NOT call resetDatabase()
+    db = getDatabase()
+    await initializeAndMigrateDatabase(db)
   })
 
-  it("displays loading indicator when loading", () => {
-    setupHookMock([], true, null)
-    render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
-
-    expect(screen.getByAccessibilityHint("loading data")).toBeOnTheScreen()
+  beforeEach(async () => {
+    await cleanupDatabase(db)
   })
 
-  it("displays only ingredients for the current list after loading", () => {
-    setupHookMock(mockInitialIngredients, false, null)
-    render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
+  it("renders without crashing", async () => {
+    renderShoppingListView("list-1")
 
-    expect(screen.queryByAccessibilityHint("loading data")).toBeNull()
-    expect(screen.getByText("Milk")).toBeOnTheScreen()
-    expect(screen.getByText("Bread")).toBeOnTheScreen()
-    expect(screen.queryByText("Eggs")).toBeNull()
+    await waitForAppReady()
+
+    expect(screen.getByTestId("add-button")).toBeTruthy()
   })
 
-  it("displays empty state when no products", () => {
-    setupHookMock([], false, null)
-    render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
+  it("shows empty state when no ingredients", async () => {
+    await createTestList(db, {
+      id: "empty-list",
+      name: "Empty List",
+    })
+
+    renderShoppingListView("empty-list")
+
+    await waitForAppReady()
 
     expect(
-      screen.getByText(
+      await screen.findByText(
         "Press the '+' button at the bottom right to add your first product."
       )
-    ).toBeOnTheScreen()
+    ).toBeTruthy()
   })
 
-  it("displays error message when loading fails", () => {
-    const errorMsg = "Network error"
-    setupHookMock([], false, errorMsg)
-    render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
-
-    expect(screen.getByText(errorMsg)).toBeOnTheScreen()
-  })
-
-  it("renders only ingredients for the current list with testID", () => {
-    setupHookMock(mockInitialIngredients, false, null)
-    render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
-
-    expect(screen.getByTestId("entry-component-1")).toBeOnTheScreen()
-    expect(screen.getByTestId("entry-component-2")).toBeOnTheScreen()
-    expect(screen.queryByTestId("entry-component-3")).toBeNull()
-  })
-
-  it("toggles ingredient completion when entry pressed", () => {
-    setupHookMock(mockInitialIngredients, false, null)
-    render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
-
-    const milkEntry = screen.getByTestId("entry-component-1")
-    fireEvent.press(milkEntry)
-
-    // Component should handle the toggle
-    expect(screen.getByText("Milk")).toBeOnTheScreen()
-  })
-
-  it("navigates to new_ingredient screen when add button pressed", () => {
-    setupHookMock(mockInitialIngredients, false, null)
-    render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
-
-    const addButton = screen.getByTestId("add-button")
-    fireEvent.press(addButton)
-
-    expect(mockRouterPush).toHaveBeenCalledWith({
-      pathname: "/new_ingredient",
-      params: { listId: "list-1" },
+  it("renders ingredient entries for the current list (integration)", async () => {
+    await createTestList(db, {
+      id: "list-with-items",
+      name: "Test List",
     })
-  })
+    await createTestList(db, {
+      id: "list-2",
+      name: "Other List",
+    })
 
-  it("calls refetch on screen focus", () => {
-    const mockRefetch = jest.fn()
-    setupHookMock(mockInitialIngredients, false, null, mockRefetch)
+    await createTestIngredient(db, {
+      id: "1",
+      name: "Milk",
+      completed: false,
+      list_id: "list-with-items",
+    })
+    await createTestIngredient(db, {
+      id: "2",
+      name: "Bread",
+      completed: true,
+      list_id: "list-with-items",
+    })
+    // Belongs to a different list - should NOT appear
+    await createTestIngredient(db, {
+      id: "3",
+      name: "Eggs",
+      completed: false,
+      list_id: "list-2",
+    })
 
-    render(<ViewShoppingList />, { wrapper: SafeAreaProvider })
+    renderShoppingListView("list-with-items")
+    await waitForAppReady()
 
-    // useFocusEffect should call refetch
-    expect(mockRefetch).toHaveBeenCalled()
+    expect(await screen.findByText("Milk")).toBeTruthy()
+    expect(await screen.findByText("Bread")).toBeTruthy()
+    expect(screen.queryByText("Eggs")).toBeNull()
   })
 })

@@ -59,7 +59,7 @@ describe("IngredientRepository", () => {
       `)
 
       // Call the method
-      const result = await repository.getAll()
+      const result = await repository.getAll("list-1")
       expect(result.success).toBe(true)
 
       const ingredients = result.getValue()!
@@ -75,7 +75,7 @@ describe("IngredientRepository", () => {
     })
 
     it("should return empty array when no ingredients exist", async () => {
-      const result = await repository.getAll()
+      const result = await repository.getAll("list-1")
       expect(result.success).toBe(true)
       expect(result.getValue()).toEqual([])
     })
