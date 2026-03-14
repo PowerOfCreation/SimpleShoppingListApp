@@ -35,5 +35,16 @@ export function useShoppingLists() {
     }
   }, [repository])
 
-  return { lists, isLoading, error, refetch }
+  const updateList = useCallback(
+    (listId: string, updates: Partial<IngredientList>) => {
+      setLists((prevLists) =>
+        prevLists.map((list) =>
+          list.id === listId ? { ...list, ...updates } : list
+        )
+      )
+    },
+    []
+  )
+
+  return { lists, isLoading, error, refetch, updateList }
 }

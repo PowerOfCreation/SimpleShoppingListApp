@@ -1,21 +1,21 @@
 import { ActionButton } from "@/components/ActionButton"
 import React from "react"
-import {
-  FlatList,
-  StyleSheet,
-  ActivityIndicator,
-  View,
-  TouchableOpacity,
-} from "react-native"
+import { FlatList, StyleSheet, ActivityIndicator, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { router, useFocusEffect } from "expo-router"
 
 import { IngredientList } from "@/types/IngredientList"
 import { ThemedText } from "@/components/ThemedText"
 import { useShoppingLists } from "@/hooks/useShoppingLists"
+import { ShoppingListEntry } from "@/components/ShoppingListEntry"
+import { shoppingListService } from "@/api/shopping-list-service"
+import { createLogger } from "@/api/common/logger"
+
+const logger = createLogger("Index")
 
 export default function Index() {
-  const { lists, isLoading, error, refetch } = useShoppingLists()
+  const { lists, isLoading, error, refetch, updateList } = useShoppingLists()
+  const [listToEdit, setListToEdit] = React.useState<string>("")
 
   // Refetch shopping lists when screen comes into focus
   useFocusEffect(
@@ -27,17 +27,45 @@ export default function Index() {
     router.push(`/view_shopping_list?listId=${id}`)
   }
 
+  const handleChangeName = async (id: string, newName: string) => {
+    const list = lists.find((l) => l.id === id)
+    if (!list) return
+
+    // Optimistically update UI immediately
+    updateList(id, { name: newName })
+    setListToEdit("")
+
+    try {
+      const result = await shoppingListService.updateName(id, newName)
+      if (!result.success) {
+        // Revert optimistic update on error
+        updateList(id, { name: list.name })
+      }
+    } catch (err) {
+      logger.error("Error changing list name", err)
+      // Revert optimistic update on error
+      updateList(id, { name: list.name })
+    }
+  }
+
+  const handleLongPress = (id: string) => {
+    setListToEdit(id)
+  }
+
   const renderListItem = ({ item }: { item: IngredientList }) => {
     return (
-      <TouchableOpacity
+      <ShoppingListEntry
+        id={item.id}
+        listName={item.name}
+        createdAt={item.created_at || 0}
         onPress={() => handleSelectList(item.id)}
-        style={styles.listItem}
-      >
-        <ThemedText type="default">{item.name}</ThemedText>
-        <ThemedText style={styles.listDate} type="default">
-          {new Date(item.created_at || 0).toLocaleDateString()}
-        </ThemedText>
-      </TouchableOpacity>
+        onLongPress={() => handleLongPress(item.id)}
+        isEdited={listToEdit === item.id}
+        onCancelEditing={() => setListToEdit("")}
+        onSaveEditing={async (text) => {
+          await handleChangeName(item.id, text)
+        }}
+      />
     )
   }
 
@@ -76,7 +104,7 @@ export default function Index() {
         data={lists}
         renderItem={renderListItem}
         keyExtractor={(item) => item.id}
-        extraData={error}
+        extraData={`${listToEdit}-${error}`}
         removeClippedSubviews={false}
       />
     )
@@ -107,15 +135,5 @@ const styles = StyleSheet.create({
   errorTextStyle: {
     color: "red",
     textAlign: "center",
-  },
-  listItem: {
-    padding: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#e0e0e0",
-  },
-  listDate: {
-    fontSize: 12,
-    marginTop: 4,
-    opacity: 0.6,
   },
 })
