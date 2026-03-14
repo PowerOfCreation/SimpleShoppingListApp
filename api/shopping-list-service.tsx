@@ -58,6 +58,65 @@ export class ShoppingListService {
       )
     }
   }
+
+  async updateName(
+    listId: string,
+    newName: string
+  ): Promise<Result<void, ValidationError | DbQueryError>> {
+    if (!newName.trim()) {
+      const error = new ValidationError(
+        "Shopping list name can't be empty",
+        "name"
+      )
+      return Result.fail(error)
+    }
+
+    try {
+      const existingListResult = await this.repository.getById(listId)
+
+      if (!existingListResult.success) {
+        const error = existingListResult.getError()
+        logger.error("Error fetching shopping list", error)
+        return Result.fail(error)
+      }
+
+      const existingList = existingListResult.getValue()
+      if (!existingList) {
+        const error = new DbQueryError(
+          "Shopping list not found",
+          "updateName",
+          "IngredientList"
+        )
+        return Result.fail(error)
+      }
+
+      const updatedList: IngredientList = {
+        ...existingList,
+        name: newName,
+        updated_at: Date.now(),
+      }
+
+      const result = await this.repository.update(updatedList)
+
+      if (!result.success) {
+        const error = result.getError()
+        logger.error("Error updating shopping list name", error)
+        return Result.fail(error)
+      }
+
+      return Result.ok(undefined)
+    } catch (error) {
+      logger.error("Error updating shopping list name", error)
+      return Result.fail(
+        new DbQueryError(
+          "Failed to update shopping list name",
+          "updateName",
+          "IngredientList",
+          error
+        )
+      )
+    }
+  }
 }
 
 export const shoppingListService = new ShoppingListService()
