@@ -4,7 +4,7 @@ import { FlatList, StyleSheet, ActivityIndicator, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { router, useFocusEffect } from "expo-router"
 
-import { IngredientList } from "@/types/IngredientList"
+import { ShoppingListOverview } from "@/types/ShoppingListOverview"
 import { ThemedText } from "@/components/ThemedText"
 import { useShoppingLists } from "@/hooks/useShoppingLists"
 import { ShoppingListEntry } from "@/components/ShoppingListEntry"
@@ -52,12 +52,14 @@ export default function Index() {
     setListToEdit(id)
   }
 
-  const renderListItem = ({ item }: { item: IngredientList }) => {
+  const renderListItem = ({ item }: { item: ShoppingListOverview }) => {
     return (
       <ShoppingListEntry
         id={item.id}
         listName={item.name}
         createdAt={item.created_at || 0}
+        totalCount={item.totalCount}
+        completedCount={item.completedCount}
         onPress={() => handleSelectList(item.id)}
         onLongPress={() => handleLongPress(item.id)}
         isEdited={listToEdit === item.id}

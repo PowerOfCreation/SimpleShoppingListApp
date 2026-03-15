@@ -20,14 +20,26 @@ describe("IngredientListRepository", () => {
     db = getDatabase()
     repository = new IngredientListRepository(db)
 
-    // Clear the ingredient_lists table before each test
+    // Clear the tables before each test
     await db.execAsync(`DROP TABLE IF EXISTS ingredient_lists;`)
+    await db.execAsync(`DROP TABLE IF EXISTS ingredients;`)
 
     // Set up database schema for each test
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS ingredient_lists (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
+        created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `)
+
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS ingredients (
+        id TEXT PRIMARY KEY,
+        name TEXT NOT NULL,
+        completed INTEGER NOT NULL DEFAULT 0,
+        list_id TEXT,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL
       );
@@ -60,6 +72,102 @@ describe("IngredientListRepository", () => {
       const result = await repository.getAll()
       expect(result.success).toBe(true)
       expect(result.getValue()).toEqual([])
+    })
+  })
+
+  describe("getAllWithCounts", () => {
+    it("should return lists with ingredient counts", async () => {
+      // Insert test data - 3 lists with different ingredient counts
+      await db.execAsync(`
+        INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES
+        ('1', 'Shopping List', 2000, 2000),
+        ('2', 'Weekly Groceries', 3000, 3000),
+        ('3', 'Empty List', 1000, 1000);
+      `)
+
+      await db.execAsync(`
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES
+        ('i1', 'Milk', 1, '1', 2000, 2000),
+        ('i2', 'Bread', 0, '1', 2000, 2000),
+        ('i3', 'Eggs', 1, '1', 2000, 2000),
+        ('i4', 'Butter', 1, '2', 3000, 3000),
+        ('i5', 'Cheese', 1, '2', 3000, 3000),
+        ('i6', 'Ham', 0, '2', 3000, 3000),
+        ('i7', 'Tomatoes', 0, '2', 3000, 3000);
+      `)
+
+      const result = await repository.getAllWithCounts()
+      expect(result.success).toBe(true)
+
+      const lists = result.getValue()!
+      expect(lists.length).toBe(3)
+
+      // Weekly Groceries (newest) - 4 total, 2 completed
+      expect(lists[0].id).toBe("2")
+      expect(lists[0].name).toBe("Weekly Groceries")
+      expect(lists[0].totalCount).toBe(4)
+      expect(lists[0].completedCount).toBe(2)
+
+      // Shopping List - 3 total, 2 completed
+      expect(lists[1].id).toBe("1")
+      expect(lists[1].name).toBe("Shopping List")
+      expect(lists[1].totalCount).toBe(3)
+      expect(lists[1].completedCount).toBe(2)
+
+      // Empty List (oldest) - 0 total, 0 completed
+      expect(lists[2].id).toBe("3")
+      expect(lists[2].name).toBe("Empty List")
+      expect(lists[2].totalCount).toBe(0)
+      expect(lists[2].completedCount).toBe(0)
+    })
+
+    it("should return empty array when no lists exist", async () => {
+      const result = await repository.getAllWithCounts()
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toEqual([])
+    })
+
+    it("should handle lists with all completed ingredients", async () => {
+      await db.execAsync(`
+        INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES
+        ('1', 'All Done', 1000, 1000);
+      `)
+
+      await db.execAsync(`
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES
+        ('i1', 'Item 1', 1, '1', 1000, 1000),
+        ('i2', 'Item 2', 1, '1', 1000, 1000);
+      `)
+
+      const result = await repository.getAllWithCounts()
+      expect(result.success).toBe(true)
+
+      const lists = result.getValue()!
+      expect(lists.length).toBe(1)
+      expect(lists[0].totalCount).toBe(2)
+      expect(lists[0].completedCount).toBe(2)
+    })
+
+    it("should handle lists with no completed ingredients", async () => {
+      await db.execAsync(`
+        INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES
+        ('1', 'None Done', 1000, 1000);
+      `)
+
+      await db.execAsync(`
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES
+        ('i1', 'Item 1', 0, '1', 1000, 1000),
+        ('i2', 'Item 2', 0, '1', 1000, 1000),
+        ('i3', 'Item 3', 0, '1', 1000, 1000);
+      `)
+
+      const result = await repository.getAllWithCounts()
+      expect(result.success).toBe(true)
+
+      const lists = result.getValue()!
+      expect(lists.length).toBe(1)
+      expect(lists[0].totalCount).toBe(3)
+      expect(lists[0].completedCount).toBe(0)
     })
   })
 
