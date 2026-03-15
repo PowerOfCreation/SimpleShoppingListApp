@@ -3,6 +3,7 @@ import {
   TouchableOpacity,
   StyleSheet,
   TextInput,
+  View,
 } from "react-native"
 import { ThemedText } from "./ThemedText"
 import React, { forwardRef } from "react"
@@ -12,6 +13,8 @@ export type ShoppingListEntryProps = {
   id: string
   listName: string
   createdAt: number
+  totalCount?: number
+  completedCount?: number
   onPress: (event: GestureResponderEvent) => void
   onLongPress: (event: GestureResponderEvent) => void
   onPressOut?: (event: GestureResponderEvent) => void
@@ -49,10 +52,20 @@ export const ShoppingListEntry = forwardRef<TextInput, ShoppingListEntryProps>(
           />
         ) : (
           <>
-            <ThemedText type="default">{props.listName}</ThemedText>
-            <ThemedText style={styles.listDate} type="default">
-              {new Date(props.createdAt).toLocaleDateString()}
-            </ThemedText>
+            <View style={styles.listContent}>
+              <View style={styles.listInfo}>
+                <ThemedText type="default">{props.listName}</ThemedText>
+                <ThemedText style={styles.listDate} type="default">
+                  {new Date(props.createdAt).toLocaleDateString()}
+                </ThemedText>
+              </View>
+              {props.totalCount !== undefined &&
+                props.completedCount !== undefined && (
+                  <ThemedText style={styles.listCount} type="default">
+                    {props.completedCount}/{props.totalCount}
+                  </ThemedText>
+                )}
+            </View>
           </>
         )}
       </TouchableOpacity>
@@ -66,9 +79,23 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     borderBottomColor: "#e0e0e0",
   },
+  listContent: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
+  listInfo: {
+    flex: 1,
+  },
   listDate: {
     fontSize: 12,
     marginTop: 4,
     opacity: 0.6,
+  },
+  listCount: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginLeft: 12,
+    opacity: 0.7,
   },
 })

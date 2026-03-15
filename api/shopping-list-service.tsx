@@ -1,4 +1,5 @@
 import { IngredientList } from "@/types/IngredientList"
+import { ShoppingListOverview } from "@/types/ShoppingListOverview"
 import "react-native-get-random-values"
 import { v4 as uuidv4 } from "uuid"
 import { IngredientListRepository } from "@/database/ingredient-list-repository"
@@ -111,6 +112,32 @@ export class ShoppingListService {
         new DbQueryError(
           "Failed to update shopping list name",
           "updateName",
+          "IngredientList",
+          error
+        )
+      )
+    }
+  }
+
+  async getAllWithCounts(): Promise<
+    Result<ShoppingListOverview[], DbQueryError>
+  > {
+    try {
+      const result = await this.repository.getAllWithCounts()
+
+      if (!result.success) {
+        const error = result.getError()
+        logger.error("Error fetching shopping lists with counts", error)
+        return Result.fail(error)
+      }
+
+      return Result.ok(result.getValue()!)
+    } catch (error) {
+      logger.error("Error fetching shopping lists with counts", error)
+      return Result.fail(
+        new DbQueryError(
+          "Failed to fetch shopping lists",
+          "getAllWithCounts",
           "IngredientList",
           error
         )

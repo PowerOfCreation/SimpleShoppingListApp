@@ -1,25 +1,20 @@
 import { useState, useCallback, useMemo } from "react"
-import { IngredientList } from "@/types/IngredientList"
-import { IngredientListRepository } from "@/database/ingredient-list-repository"
-import { getDatabase } from "@/database/database"
+import { ShoppingListOverview } from "@/types/ShoppingListOverview"
+import { shoppingListService } from "@/api/shopping-list-service"
 import { createLogger } from "@/api/common/logger"
 
 const logger = createLogger("useShoppingLists")
 
 export function useShoppingLists() {
-  const [lists, setLists] = useState<IngredientList[]>([])
+  const [lists, setLists] = useState<ShoppingListOverview[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const repository = useMemo(
-    () => new IngredientListRepository(getDatabase()),
-    []
-  )
 
   const refetch = useCallback(async () => {
     setIsLoading(true)
     setError(null)
     try {
-      const result = await repository.getAll()
+      const result = await shoppingListService.getAllWithCounts()
       if (result.success) {
         setLists(result.getValue()!)
       } else {
@@ -33,10 +28,10 @@ export function useShoppingLists() {
     } finally {
       setIsLoading(false)
     }
-  }, [repository])
+  }, [])
 
   const updateList = useCallback(
-    (listId: string, updates: Partial<IngredientList>) => {
+    (listId: string, updates: Partial<ShoppingListOverview>) => {
       setLists((prevLists) =>
         prevLists.map((list) =>
           list.id === listId ? { ...list, ...updates } : list
