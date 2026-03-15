@@ -53,7 +53,7 @@
     "@types/react-test-renderer": "^19.1.0",
     "@typescript-eslint/eslint-plugin": "^8.56.1",
     "@typescript-eslint/parser": "^8.56.1",
-    "eslint": "^8.57.1",
+    "eslint": "^10.0.3",
     "eslint-config-expo": "~55.0.0",
     "eslint-config-prettier": "9.1.0",
     "eslint-plugin-jest": "^28.8.3",
