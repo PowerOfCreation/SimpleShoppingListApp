@@ -4,10 +4,12 @@ import {
   StyleSheet,
   TextInput,
   View,
+  Alert,
 } from "react-native"
 import { ThemedText } from "./ThemedText"
 import React, { forwardRef } from "react"
 import { ThemedTextInput } from "./ThemedTextInput"
+import { MaterialIcons } from "@expo/vector-icons"
 
 export type ShoppingListEntryProps = {
   id: string
@@ -21,6 +23,7 @@ export type ShoppingListEntryProps = {
   isEdited: boolean
   onCancelEditing: () => void
   onSaveEditing: (text: string) => void
+  onDelete?: () => void
 }
 
 export const ShoppingListEntry = forwardRef<TextInput, ShoppingListEntryProps>(
@@ -31,6 +34,32 @@ export const ShoppingListEntry = forwardRef<TextInput, ShoppingListEntryProps>(
       onChangeText(props.listName)
     }, [props.isEdited, props.listName])
 
+    const handleDeletePress = () => {
+      const ingredientCount = props.totalCount ?? 0
+      const ingredientText =
+        ingredientCount === 1 ? "ingredient" : "ingredients"
+
+      Alert.alert(
+        "Delete Shopping List",
+        `Do you really want to delete list "${props.listName}" with ${ingredientCount} ${ingredientText}?`,
+        [
+          {
+            text: "Cancel",
+            style: "cancel",
+          },
+          {
+            text: "Delete",
+            style: "destructive",
+            onPress: () => {
+              if (props.onDelete) {
+                props.onDelete()
+              }
+            },
+          },
+        ]
+      )
+    }
+
     return (
       <TouchableOpacity
         testID={`shopping-list-entry-${props.id}`}
@@ -40,16 +69,38 @@ export const ShoppingListEntry = forwardRef<TextInput, ShoppingListEntryProps>(
         onPressOut={props.onPressOut}
       >
         {props.isEdited ? (
-          <ThemedTextInput
-            testID={`shopping-list-input-${props.id}`}
-            onChangeText={onChangeText}
-            onSubmit={props.onSaveEditing}
-            value={text}
-            placeholder={""}
-            autoFocus={true}
-            onBlur={props.onCancelEditing}
-            ref={ref}
-          />
+          <View style={styles.editContainer}>
+            <ThemedTextInput
+              testID={`shopping-list-input-${props.id}`}
+              onChangeText={onChangeText}
+              onSubmit={() => props.onSaveEditing(text)}
+              value={text}
+              placeholder={""}
+              autoFocus={true}
+              ref={ref}
+            />
+            <TouchableOpacity
+              testID={`save-button-${props.id}`}
+              style={styles.actionButton}
+              onPress={() => props.onSaveEditing(text)}
+            >
+              <MaterialIcons name="check" size={20} color="#34C759" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID={`cancel-button-${props.id}`}
+              style={styles.actionButton}
+              onPress={props.onCancelEditing}
+            >
+              <MaterialIcons name="close" size={20} color="#8E8E93" />
+            </TouchableOpacity>
+            <TouchableOpacity
+              testID={`delete-button-${props.id}`}
+              style={styles.actionButton}
+              onPress={handleDeletePress}
+            >
+              <MaterialIcons name="delete" size={20} color="#ff3b30" />
+            </TouchableOpacity>
+          </View>
         ) : (
           <>
             <View style={styles.listContent}>
@@ -132,5 +183,16 @@ const styles = StyleSheet.create({
   },
   progressIncomplete: {
     backgroundColor: "#FF9800",
+  },
+  editContainer: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginLeft: -12,
+  },
+  actionButton: {
+    padding: 4,
+    justifyContent: "center",
+    alignItems: "center",
   },
 })

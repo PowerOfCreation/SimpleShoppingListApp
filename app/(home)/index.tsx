@@ -108,6 +108,7 @@ export default function Index() {
         keyExtractor={(item) => item.id}
         extraData={`${listToEdit}-${error}`}
         removeClippedSubviews={false}
+        keyboardShouldPersistTaps="handled"
       />
     )
   }
