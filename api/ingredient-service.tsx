@@ -171,6 +171,35 @@ export class IngredientService {
       )
     }
   }
+
+  async deleteIngredient(id: string): Promise<Result<void, DbQueryError>> {
+    try {
+      const result = await this.repository.remove(id)
+
+      if (!result.success) {
+        logger.error(`Error deleting ingredient ${id}`, result.getError())
+        return result
+      }
+
+      // Update local cache
+      const index = this.ingredients.findIndex((ing) => ing.id === id)
+      if (index !== -1) {
+        this.ingredients.splice(index, 1)
+      }
+
+      return Result.ok(undefined)
+    } catch (error) {
+      logger.error(`Error deleting ingredient ${id}`, error)
+      return Result.fail(
+        new DbQueryError(
+          `Failed to delete ingredient ${id}`,
+          "deleteIngredient",
+          "Ingredient",
+          error
+        )
+      )
+    }
+  }
 }
 
 export const ingredientService = new IngredientService()
