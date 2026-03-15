@@ -66,6 +66,28 @@ export const ShoppingListEntry = forwardRef<TextInput, ShoppingListEntryProps>(
                   </ThemedText>
                 )}
             </View>
+            {props.totalCount !== undefined &&
+              props.completedCount !== undefined &&
+              props.totalCount > 0 && (
+                <View style={styles.progressBar}>
+                  <View
+                    style={[
+                      styles.progressCompleted,
+                      {
+                        flex: props.completedCount,
+                      },
+                    ]}
+                  />
+                  <View
+                    style={[
+                      styles.progressIncomplete,
+                      {
+                        flex: props.totalCount - props.completedCount,
+                      },
+                    ]}
+                  />
+                </View>
+              )}
           </>
         )}
       </TouchableOpacity>
@@ -97,5 +119,18 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginLeft: 12,
     opacity: 0.7,
+  },
+  progressBar: {
+    flexDirection: "row",
+    height: 4,
+    marginTop: 8,
+    borderRadius: 2,
+    overflow: "hidden",
+  },
+  progressCompleted: {
+    backgroundColor: "#2196F3",
+  },
+  progressIncomplete: {
+    backgroundColor: "#FF9800",
   },
 })
