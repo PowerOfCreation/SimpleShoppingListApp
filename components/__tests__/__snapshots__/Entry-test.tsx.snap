@@ -1,6 +1,6 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
-exports[`renders correctly 1`] = `
+exports[`Entry renders correctly 1`] = `
 <View
   accessibilityState={
     {
@@ -72,5 +72,212 @@ exports[`renders correctly 1`] = `
       ]
     }
   />
+</View>
+`;
+
+exports[`Entry renders correctly in edit mode 1`] = `
+<View
+  accessibilityState={
+    {
+      "busy": undefined,
+      "checked": undefined,
+      "disabled": undefined,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  onClick={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    {
+      "alignItems": "center",
+      "backgroundColor": "#2e2e2e",
+      "borderBlockColor": "gray",
+      "borderTopWidth": 1,
+      "display": "flex",
+      "flexDirection": "row",
+      "height": 60,
+      "opacity": 1,
+      "paddingLeft": 15,
+      "width": "100%",
+    }
+  }
+  testID="entry-component-1"
+>
+  <Text />
+  <View
+    style={
+      {
+        "alignItems": "center",
+        "flex": 1,
+        "flexDirection": "row",
+        "gap": 4,
+        "marginLeft": -4,
+      }
+    }
+  >
+    <TextInput
+      autoFocus={true}
+      onChangeText={[Function]}
+      onSubmitEditing={[Function]}
+      placeholder=""
+      placeholderTextColor="#687076"
+      showSoftInputOnFocus={true}
+      style={
+        [
+          {
+            "borderWidth": 1,
+            "flex": 1,
+            "height": 40,
+            "margin": 12,
+            "padding": 10,
+            "top": 0,
+          },
+          {
+            "borderColor": "#11181C",
+            "color": "#11181C",
+          },
+        ]
+      }
+      testID="entry-input-1"
+      value="Default Ingredient"
+    />
+    <View
+      accessibilityState={
+        {
+          "busy": undefined,
+          "checked": undefined,
+          "disabled": undefined,
+          "expanded": undefined,
+          "selected": undefined,
+        }
+      }
+      accessibilityValue={
+        {
+          "max": undefined,
+          "min": undefined,
+          "now": undefined,
+          "text": undefined,
+        }
+      }
+      accessible={true}
+      collapsable={false}
+      focusable={true}
+      onClick={[Function]}
+      onResponderGrant={[Function]}
+      onResponderMove={[Function]}
+      onResponderRelease={[Function]}
+      onResponderTerminate={[Function]}
+      onResponderTerminationRequest={[Function]}
+      onStartShouldSetResponder={[Function]}
+      style={
+        {
+          "alignItems": "center",
+          "justifyContent": "center",
+          "opacity": 1,
+          "padding": 4,
+        }
+      }
+      testID="save-button-1"
+    >
+      <Text />
+    </View>
+    <View
+      accessibilityState={
+        {
+          "busy": undefined,
+          "checked": undefined,
+          "disabled": undefined,
+          "expanded": undefined,
+          "selected": undefined,
+        }
+      }
+      accessibilityValue={
+        {
+          "max": undefined,
+          "min": undefined,
+          "now": undefined,
+          "text": undefined,
+        }
+      }
+      accessible={true}
+      collapsable={false}
+      focusable={true}
+      onClick={[Function]}
+      onResponderGrant={[Function]}
+      onResponderMove={[Function]}
+      onResponderRelease={[Function]}
+      onResponderTerminate={[Function]}
+      onResponderTerminationRequest={[Function]}
+      onStartShouldSetResponder={[Function]}
+      style={
+        {
+          "alignItems": "center",
+          "justifyContent": "center",
+          "opacity": 1,
+          "padding": 4,
+        }
+      }
+      testID="cancel-button-1"
+    >
+      <Text />
+    </View>
+    <View
+      accessibilityState={
+        {
+          "busy": undefined,
+          "checked": undefined,
+          "disabled": undefined,
+          "expanded": undefined,
+          "selected": undefined,
+        }
+      }
+      accessibilityValue={
+        {
+          "max": undefined,
+          "min": undefined,
+          "now": undefined,
+          "text": undefined,
+        }
+      }
+      accessible={true}
+      collapsable={false}
+      focusable={true}
+      onClick={[Function]}
+      onResponderGrant={[Function]}
+      onResponderMove={[Function]}
+      onResponderRelease={[Function]}
+      onResponderTerminate={[Function]}
+      onResponderTerminationRequest={[Function]}
+      onStartShouldSetResponder={[Function]}
+      style={
+        {
+          "alignItems": "center",
+          "justifyContent": "center",
+          "opacity": 1,
+          "padding": 4,
+        }
+      }
+      testID="delete-button-1"
+    >
+      <Text />
+    </View>
+  </View>
 </View>
 `;

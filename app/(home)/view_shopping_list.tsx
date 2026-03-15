@@ -82,6 +82,20 @@ export default function ViewShoppingList() {
     }
   }
 
+  const handleDeleteIngredient = async (id: string) => {
+    setIngredientToEdit("")
+
+    try {
+      const result = await ingredientService.deleteIngredient(id)
+      if (result.success) {
+        // Refetch to update the list
+        refetch()
+      }
+    } catch (err) {
+      logger.error("Error deleting ingredient", err)
+    }
+  }
+
   const entryLongPress = (id: string) => {
     setIngredientToEdit(id)
   }
@@ -99,6 +113,7 @@ export default function ViewShoppingList() {
         onSaveEditing={async (text) => {
           await handleChangeName(item.id, text)
         }}
+        onDelete={() => handleDeleteIngredient(item.id)}
       />
     )
   }
@@ -135,6 +150,7 @@ export default function ViewShoppingList() {
         keyExtractor={(item) => item.id}
         extraData={`${ingredientToEdit}-${error}`}
         removeClippedSubviews={false}
+        keyboardShouldPersistTaps="handled"
       />
     )
   }

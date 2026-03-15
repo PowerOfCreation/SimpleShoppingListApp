@@ -219,6 +219,37 @@ describe("IngredientService", () => {
     })
   })
 
+  describe("deleteIngredient", () => {
+    it("should call repository remove with correct parameters", async () => {
+      const ingredientId = "1"
+
+      // Configure repository to return success
+      mockRepository.remove.mockResolvedValue(Result.ok(undefined))
+
+      const result = await service.deleteIngredient(ingredientId)
+
+      // Verify repository was called with correct parameters
+      expect(mockRepository.remove).toHaveBeenCalledTimes(1)
+      expect(mockRepository.remove).toHaveBeenCalledWith(ingredientId)
+
+      // Verify success result
+      expect(result.success).toBe(true)
+    })
+
+    it("should return error if repository fails", async () => {
+      const ingredientId = "1"
+      const errorMessage = "DB error"
+      const dbError = new DbQueryError(errorMessage, "remove", "Ingredient")
+
+      mockRepository.remove.mockResolvedValue(Result.fail(dbError))
+
+      const result = await service.deleteIngredient(ingredientId)
+
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBe(dbError)
+    })
+  })
+
   describe("error handling", () => {
     it("should handle repository errors gracefully", async () => {
       // Set up repository to return an error result
