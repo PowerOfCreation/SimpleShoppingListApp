@@ -10,16 +10,18 @@ import { NIL_UUID } from "@/constants/Uuids"
 const logger = createLogger("Migrations")
 
 /**
- * SQL statements for creating the database schema (version 2)
+ * SQL statements for creating the database schema (version 3)
+ * Version 3 adds foreign key constraint with cascade delete
  */
 const CREATE_INGREDIENTS_TABLE = `
 CREATE TABLE IF NOT EXISTS ingredients (
   id TEXT PRIMARY KEY,
   name TEXT NOT NULL,
   completed INTEGER NOT NULL DEFAULT 0,
-  list_id TEXT,
+  list_id TEXT NOT NULL,
   created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
+  updated_at INTEGER NOT NULL,
+  FOREIGN KEY (list_id) REFERENCES ingredient_lists(id) ON DELETE CASCADE
 );
 `
 
@@ -79,6 +81,13 @@ export async function executeMigrations(
         const v2Result = await migrateToVersion2(db)
         if (!v2Result.success) {
           return v2Result
+        }
+      }
+
+      if (currentVersion < 3) {
+        const v3Result = await migrateToVersion3(db)
+        if (!v3Result.success) {
+          return v3Result
         }
       }
     }
@@ -222,6 +231,67 @@ export async function migrateFromAsyncStorage(
       error
     )
     logger.error("Error migrating data from AsyncStorage", migrationError)
+    return Result.fail(migrationError)
+  }
+}
+
+/**
+ * Migrate database from version 2 to version 3
+ * Adds foreign key constraint with cascade delete:
+ * - Recreates ingredients table with foreign key constraint
+ * - Cleans up orphaned ingredients (those referencing non-existent lists)
+ * - Migrates valid ingredients to new table
+ * @returns Result containing void on success or DbMigrationError on failure
+ */
+export async function migrateToVersion3(
+  db: SQLite.SQLiteDatabase
+): Promise<Result<void, DbMigrationError>> {
+  try {
+    await db.withTransactionAsync(async () => {
+      // First, enable foreign key constraints (they're off by default in SQLite)
+      await db.execAsync(`PRAGMA foreign_keys = ON;`)
+
+      // Rename existing ingredients table
+      await db.runAsync(`
+        ALTER TABLE ingredients RENAME TO ingredients_old;
+      `)
+
+      // Create new ingredients table with foreign key constraint
+      await db.runAsync(`
+        CREATE TABLE ingredients (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          completed INTEGER NOT NULL DEFAULT 0,
+          list_id TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          FOREIGN KEY (list_id) REFERENCES ingredient_lists(id) ON DELETE CASCADE
+        );
+      `)
+
+      // Copy valid ingredients (only those with valid list_id references)
+      // This automatically cleans up orphaned ingredients
+      await db.runAsync(`
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at)
+        SELECT i.id, i.name, i.completed, i.list_id, i.created_at, i.updated_at
+        FROM ingredients_old i
+        INNER JOIN ingredient_lists il ON i.list_id = il.id;
+      `)
+
+      // Drop old table
+      await db.runAsync(`DROP TABLE ingredients_old;`)
+
+      logger.info("Successfully migrated database to version 3")
+    })
+
+    return Result.ok(undefined)
+  } catch (error) {
+    const migrationError = new DbMigrationError(
+      "Failed to migrate to version 3",
+      3,
+      error
+    )
+    logger.error("Error migrating to version 3", migrationError)
     return Result.fail(migrationError)
   }
 }
