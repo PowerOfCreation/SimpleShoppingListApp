@@ -83,7 +83,7 @@ export async function executeMigrations(
           return v2Result
         }
       }
-      
+
       if (currentVersion < 3) {
         const v3Result = await migrateToVersion3(db)
         if (!v3Result.success) {

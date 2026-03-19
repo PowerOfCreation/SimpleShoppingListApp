@@ -482,7 +482,7 @@ describe("Migrations", () => {
       const createSql = await db.getFirstAsync<{ sql: string }>(
         `SELECT sql FROM sqlite_master WHERE type='table' AND name='ingredients';`
       )
-      
+
       expect(createSql?.sql).toContain("FOREIGN KEY")
       expect(createSql?.sql).toContain("REFERENCES ingredient_lists(id)")
       expect(createSql?.sql).toContain("ON DELETE CASCADE")
@@ -511,7 +511,11 @@ describe("Migrations", () => {
         `SELECT id FROM ingredients ORDER BY id;`
       )
       expect(validIngredients.length).toBe(3)
-      expect(validIngredients.map(i => i.id)).toEqual(['ing-1', 'ing-2', 'ing-3'])
+      expect(validIngredients.map((i) => i.id)).toEqual([
+        "ing-1",
+        "ing-2",
+        "ing-3",
+      ])
     })
 
     it("should cascade delete ingredients when list is deleted", async () => {
