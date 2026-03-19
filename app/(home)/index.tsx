@@ -52,6 +52,25 @@ export default function Index() {
     setListToEdit(id)
   }
 
+  const handleDeleteList = async (id: string) => {
+    const list = lists.find((l) => l.id === id)
+    if (!list) return
+
+    setListToEdit("")
+
+    try {
+      const result = await shoppingListService.deleteList(id)
+      if (result.success) {
+        // Refetch to update the UI
+        await refetch()
+      } else {
+        logger.error("Error deleting list", result.getError())
+      }
+    } catch (err) {
+      logger.error("Error deleting list", err)
+    }
+  }
+
   const renderListItem = ({ item }: { item: ShoppingListOverview }) => {
     return (
       <ShoppingListEntry
@@ -67,6 +86,7 @@ export default function Index() {
         onSaveEditing={async (text) => {
           await handleChangeName(item.id, text)
         }}
+        onDelete={() => handleDeleteList(item.id)}
       />
     )
   }

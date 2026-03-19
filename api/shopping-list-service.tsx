@@ -144,6 +144,32 @@ export class ShoppingListService {
       )
     }
   }
+
+  async deleteList(listId: string): Promise<Result<void, DbQueryError>> {
+    try {
+      const result = await this.repository.delete(listId)
+
+      if (!result.success) {
+        logger.error(
+          `Error deleting shopping list ${listId}`,
+          result.getError()
+        )
+        return result
+      }
+
+      return Result.ok(undefined)
+    } catch (error) {
+      logger.error(`Error deleting shopping list ${listId}`, error)
+      return Result.fail(
+        new DbQueryError(
+          `Failed to delete shopping list ${listId}`,
+          "deleteList",
+          "IngredientList",
+          error
+        )
+      )
+    }
+  }
 }
 
 export const shoppingListService = new ShoppingListService()
