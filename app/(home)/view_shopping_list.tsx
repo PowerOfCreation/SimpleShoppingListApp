@@ -1,17 +1,20 @@
 import { ActionButton } from "@/components/ActionButton"
 import { Entry } from "@/components/Entry"
 import React from "react"
-import { FlatList, StyleSheet, ActivityIndicator, View } from "react-native"
+import {
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+  View,
+  TouchableOpacity,
+} from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { router, useFocusEffect, useNavigation } from "expo-router"
+import { MaterialIcons } from "@expo/vector-icons"
 
 import { Ingredient } from "@/types/Ingredient"
 import { ThemedText } from "@/components/ThemedText"
 import { useIngredients } from "@/hooks/useIngredients"
-import { ingredientService } from "@/api/ingredient-service"
-import { createLogger } from "@/api/common/logger"
-
-const logger = createLogger("ViewShoppingList")
 
 export default function ViewShoppingList() {
   const {
@@ -19,21 +22,38 @@ export default function ViewShoppingList() {
     isLoading,
     error,
     refetch,
-    updateIngredient,
     listName,
     listId,
+    toggleCompletion,
+    updateName,
+    deleteIngredient,
+    sortIngredients,
   } = useIngredients()
   const [ingredientToEdit, setIngredientToEdit] = React.useState<string>("")
   const navigation = useNavigation()
 
-  // Update header title when listName changes
+  // Memoize the header right component to avoid recreating on every render
+  const headerRightComponent = React.useCallback(
+    () => (
+      <TouchableOpacity
+        onPress={sortIngredients}
+        style={styles.sortButton}
+        accessibilityLabel="Sort list"
+        accessibilityHint="Moves completed items to the bottom"
+      >
+        <MaterialIcons name="sort" size={24} color="#007AFF" />
+      </TouchableOpacity>
+    ),
+    [sortIngredients]
+  )
+
+  // Update header with title and sort button
   React.useEffect(() => {
-    if (listName) {
-      navigation.setOptions({
-        headerTitle: listName,
-      })
-    }
-  }, [listName, navigation])
+    navigation.setOptions({
+      headerTitle: listName || "",
+      headerRight: headerRightComponent,
+    })
+  }, [listName, navigation, headerRightComponent])
 
   // Refetch ingredients when screen comes into focus
   useFocusEffect(
@@ -42,58 +62,14 @@ export default function ViewShoppingList() {
     }, [refetch])
   )
 
-  const handleToggleComplete = async (id: string) => {
-    const ingredient = ingredients.find((ing) => ing.id === id)
-    if (!ingredient) return
-
-    // Optimistically update UI immediately
-    const newCompletedState = !ingredient.completed
-    updateIngredient(id, { completed: newCompletedState })
-
-    try {
-      await ingredientService.updateCompletion(id, newCompletedState)
-      // Don't refetch here - let useFocusEffect handle it when screen regains focus
-      // This allows animations to play and prevents immediate re-sorting
-    } catch (err) {
-      logger.error("Error toggling completion", err)
-      // Revert optimistic update on error
-      updateIngredient(id, { completed: ingredient.completed })
-    }
-  }
-
   const handleChangeName = async (id: string, newName: string) => {
-    const ingredient = ingredients.find((ing) => ing.id === id)
-    if (!ingredient) return
-
-    // Optimistically update UI immediately
-    updateIngredient(id, { name: newName })
     setIngredientToEdit("")
-
-    try {
-      const result = await ingredientService.updateName(id, newName)
-      if (!result.success) {
-        // Revert optimistic update on error
-        updateIngredient(id, { name: ingredient.name })
-      }
-    } catch (err) {
-      logger.error("Error changing name", err)
-      // Revert optimistic update on error
-      updateIngredient(id, { name: ingredient.name })
-    }
+    await updateName(id, newName)
   }
 
   const handleDeleteIngredient = async (id: string) => {
     setIngredientToEdit("")
-
-    try {
-      const result = await ingredientService.deleteIngredient(id)
-      if (result.success) {
-        // Refetch to update the list
-        refetch()
-      }
-    } catch (err) {
-      logger.error("Error deleting ingredient", err)
-    }
+    await deleteIngredient(id)
   }
 
   const entryLongPress = (id: string) => {
@@ -106,7 +82,7 @@ export default function ViewShoppingList() {
         id={item.id}
         ingredientName={item.name}
         isCompleted={item.completed}
-        onToggleComplete={() => handleToggleComplete(item.id)}
+        onToggleComplete={() => toggleCompletion(item.id)}
         onLongPress={() => entryLongPress(item.id)}
         isEdited={ingredientToEdit === item.id}
         onCancelEditing={() => setIngredientToEdit("")}
@@ -186,5 +162,9 @@ const styles = StyleSheet.create({
   errorTextStyle: {
     color: "red",
     textAlign: "center",
+  },
+  sortButton: {
+    marginRight: 16,
+    padding: 4,
   },
 })
