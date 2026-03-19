@@ -9,8 +9,9 @@ import { getDatabase } from "@/database/database"
 const logger = createLogger("useIngredients")
 
 /**
- * Simple hook to manage ingredient loading and refreshing
- * No global state, no external dependencies - just loads from service
+ * Hook to manage ingredient state and operations
+ * Encapsulates business logic and API interactions
+ * Maintains single source of truth for ingredient display
  */
 export function useIngredients() {
   const { listId } = useLocalSearchParams<{ listId: string }>()
@@ -67,23 +68,124 @@ export function useIngredients() {
     loadIngredients()
   }, [loadIngredients])
 
-  // Optimistic update function for immediate UI feedback
-  const updateIngredient = React.useCallback(
-    (id: string, updates: Partial<Ingredient>) => {
+  /**
+   * Toggle ingredient completion status
+   * Uses optimistic update - item stays in place, no auto-sorting
+   */
+  const toggleCompletion = React.useCallback(
+    async (id: string) => {
+      const ingredient = ingredients.find((ing) => ing.id === id)
+      if (!ingredient) return
+
+      const newCompletedState = !ingredient.completed
+
+      // Optimistic update - immediate UI feedback
       setIngredients((prev) =>
-        prev.map((ing) => (ing.id === id ? { ...ing, ...updates } : ing))
+        prev.map((ing) =>
+          ing.id === id ? { ...ing, completed: newCompletedState } : ing
+        )
       )
+
+      try {
+        await ingredientService.updateCompletion(id, newCompletedState)
+      } catch (err) {
+        logger.error("Error toggling completion", err)
+        // Revert on error
+        setIngredients((prev) =>
+          prev.map((ing) =>
+            ing.id === id ? { ...ing, completed: ingredient.completed } : ing
+          )
+        )
+      }
     },
-    []
+    [ingredients]
   )
+
+  /**
+   * Update ingredient name
+   * Uses optimistic update
+   */
+  const updateName = React.useCallback(
+    async (id: string, newName: string) => {
+      const ingredient = ingredients.find((ing) => ing.id === id)
+      if (!ingredient) return
+
+      // Optimistic update
+      setIngredients((prev) =>
+        prev.map((ing) => (ing.id === id ? { ...ing, name: newName } : ing))
+      )
+
+      try {
+        const result = await ingredientService.updateName(id, newName)
+        if (!result.success) {
+          // Revert on error
+          setIngredients((prev) =>
+            prev.map((ing) =>
+              ing.id === id ? { ...ing, name: ingredient.name } : ing
+            )
+          )
+        }
+      } catch (err) {
+        logger.error("Error updating name", err)
+        // Revert on error
+        setIngredients((prev) =>
+          prev.map((ing) =>
+            ing.id === id ? { ...ing, name: ingredient.name } : ing
+          )
+        )
+      }
+    },
+    [ingredients]
+  )
+
+  /**
+   * Delete ingredient
+   */
+  const deleteIngredient = React.useCallback(
+    async (id: string) => {
+      try {
+        const result = await ingredientService.deleteIngredient(id)
+        if (result.success) {
+          // Refetch to update the list
+          await loadIngredients()
+        }
+      } catch (err) {
+        logger.error("Error deleting ingredient", err)
+      }
+    },
+    [loadIngredients]
+  )
+
+  /**
+   * Apply sorting to ingredients
+   * Sorts by completion (incomplete first) then by creation date (newest first)
+   * This is the "manual sort" that applies database ordering
+   */
+  const sortIngredients = React.useCallback(() => {
+    setIngredients((prev) => {
+      const sorted = [...prev].sort((a, b) => {
+        // First by completion (incomplete first)
+        if (a.completed !== b.completed) {
+          return a.completed ? 1 : -1
+        }
+        // Then by creation date (newest first)
+        return (b.created_at || 0) - (a.created_at || 0)
+      })
+      return sorted
+    })
+  }, [])
 
   return {
     ingredients,
     isLoading,
     error,
     refetch: loadIngredients,
-    updateIngredient,
     listName,
     listId,
+    // Business operations
+    toggleCompletion,
+    updateName,
+    deleteIngredient,
+    sortIngredients,
   }
 }
