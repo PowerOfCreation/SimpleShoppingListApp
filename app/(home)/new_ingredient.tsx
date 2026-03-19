@@ -1,10 +1,12 @@
 import { router, useFocusEffect, useLocalSearchParams } from "expo-router"
 import React from "react"
-import { Pressable, View, StyleSheet, TextInput } from "react-native"
+import { Pressable, View, StyleSheet, TextInput, FlatList } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedTextInput } from "@/components/ThemedTextInput"
 import { ingredientService } from "@/api/ingredient-service"
+import { useCompletedIngredients } from "@/hooks/useCompletedIngredients"
+import { Ingredient } from "@/types/Ingredient"
 
 export default function NewIngredient() {
   const { listId } = useLocalSearchParams<{ listId: string }>()
@@ -12,6 +14,19 @@ export default function NewIngredient() {
   const [invalidInputExplanation, setInvalidInputExplanation] =
     React.useState("")
   const inputRef = React.useRef<TextInput>(null)
+
+  const { completedIngredients } = useCompletedIngredients(listId)
+
+  // Filter completed ingredients based on user input
+  const filteredCompletedIngredients = React.useMemo(() => {
+    const searchText = text.trim().toLowerCase()
+    if (!searchText) {
+      return completedIngredients
+    }
+    return completedIngredients.filter((ingredient) =>
+      ingredient.name.toLowerCase().includes(searchText)
+    )
+  }, [text, completedIngredients])
 
   useFocusEffect(
     React.useCallback(() => {
@@ -46,6 +61,20 @@ export default function NewIngredient() {
     setInvalidInputExplanation("")
   }
 
+  const renderCompletedIngredient = ({ item }: { item: Ingredient }) => (
+    <Pressable
+      style={styles.completedIngredientItem}
+      onPress={() => {
+        onChangeText(item.name)
+        inputRef.current?.focus()
+      }}
+    >
+      <ThemedText style={styles.completedIngredientName}>
+        {item.name}
+      </ThemedText>
+    </Pressable>
+  )
+
   return (
     <SafeAreaView style={styles.containerStyle}>
       <View style={styles.searchBarContainer}>
@@ -70,6 +99,20 @@ export default function NewIngredient() {
           {invalidInputExplanation}
         </ThemedText>
       ) : null}
+
+      {filteredCompletedIngredients.length > 0 && (
+        <View style={styles.completedIngredientsContainer}>
+          <ThemedText style={styles.completedIngredientsHeader}>
+            Previously completed
+          </ThemedText>
+          <FlatList
+            data={filteredCompletedIngredients}
+            renderItem={renderCompletedIngredient}
+            keyExtractor={(item) => item.id}
+            style={styles.completedIngredientsList}
+          />
+        </View>
+      )}
     </SafeAreaView>
   )
 }
@@ -89,5 +132,29 @@ const styles = StyleSheet.create({
   },
   invalidInputExplanationStyle: {
     color: "red",
+  },
+  completedIngredientsContainer: {
+    flex: 1,
+    width: "100%",
+    marginTop: 20,
+    paddingHorizontal: 15,
+  },
+  completedIngredientsHeader: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginBottom: 10,
+    opacity: 0.6,
+  },
+  completedIngredientsList: {
+    flex: 1,
+  },
+  completedIngredientItem: {
+    paddingVertical: 12,
+    paddingHorizontal: 15,
+    borderBottomWidth: 1,
+    borderBottomColor: "#e0e0e0",
+  },
+  completedIngredientName: {
+    fontSize: 16,
   },
 })
