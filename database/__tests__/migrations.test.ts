@@ -419,4 +419,188 @@ describe("Migrations", () => {
       })
     })
   })
+
+  describe("Migration to version 3 - Foreign Key Cascade Delete", () => {
+    beforeEach(async () => {
+      // Clear any existing tables first
+      await db.execAsync(`
+        DROP TABLE IF EXISTS ingredient_lists;
+        DROP TABLE IF EXISTS ingredients;
+        DROP TABLE IF EXISTS database_version;
+      `)
+
+      // Set up version 2 schema
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS ingredient_lists (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS ingredients (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          completed INTEGER NOT NULL DEFAULT 0,
+          list_id TEXT,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+        
+        CREATE TABLE IF NOT EXISTS database_version (
+          version INTEGER PRIMARY KEY,
+          migration_date INTEGER NOT NULL
+        );
+        
+        INSERT INTO database_version (version, migration_date) VALUES (2, ${Date.now()});
+      `)
+
+      // Insert test data: 2 lists
+      await db.execAsync(`
+        INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES
+        ('list-1', 'Groceries', 1000, 1000),
+        ('list-2', 'Hardware', 2000, 2000);
+      `)
+
+      // Insert ingredients: some valid, some orphaned
+      await db.execAsync(`
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES
+        ('ing-1', 'Milk', 0, 'list-1', 1000, 1000),
+        ('ing-2', 'Eggs', 0, 'list-1', 2000, 2000),
+        ('ing-3', 'Hammer', 1, 'list-2', 3000, 3000),
+        ('ing-orphan', 'Orphaned Item', 0, 'non-existent-list', 4000, 4000);
+      `)
+    })
+
+    it("should add foreign key constraint to ingredients table", async () => {
+      const { migrateToVersion3 } = jest.requireActual("../migrations")
+      const result = await migrateToVersion3(db)
+
+      expect(result.success).toBe(true)
+
+      // Verify foreign key constraint exists by checking table schema
+      const createSql = await db.getFirstAsync<{ sql: string }>(
+        `SELECT sql FROM sqlite_master WHERE type='table' AND name='ingredients';`
+      )
+      
+      expect(createSql?.sql).toContain("FOREIGN KEY")
+      expect(createSql?.sql).toContain("REFERENCES ingredient_lists(id)")
+      expect(createSql?.sql).toContain("ON DELETE CASCADE")
+    })
+
+    it("should remove orphaned ingredients during migration", async () => {
+      // Verify orphaned ingredient exists before migration
+      const beforeCount = await db.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) as count FROM ingredients WHERE id = 'ing-orphan';`
+      )
+      expect(beforeCount?.count).toBe(1)
+
+      const { migrateToVersion3 } = jest.requireActual("../migrations")
+      const result = await migrateToVersion3(db)
+
+      expect(result.success).toBe(true)
+
+      // Verify orphaned ingredient was removed
+      const afterCount = await db.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) as count FROM ingredients WHERE id = 'ing-orphan';`
+      )
+      expect(afterCount?.count).toBe(0)
+
+      // Verify valid ingredients remain
+      const validIngredients = await db.getAllAsync<{ id: string }>(
+        `SELECT id FROM ingredients ORDER BY id;`
+      )
+      expect(validIngredients.length).toBe(3)
+      expect(validIngredients.map(i => i.id)).toEqual(['ing-1', 'ing-2', 'ing-3'])
+    })
+
+    it("should cascade delete ingredients when list is deleted", async () => {
+      const { migrateToVersion3 } = jest.requireActual("../migrations")
+      const result = await migrateToVersion3(db)
+
+      expect(result.success).toBe(true)
+
+      // Enable foreign keys for this test
+      await db.execAsync(`PRAGMA foreign_keys = ON;`)
+
+      // Verify ingredients exist before deletion
+      const beforeCount = await db.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) as count FROM ingredients WHERE list_id = 'list-1';`
+      )
+      expect(beforeCount?.count).toBe(2)
+
+      // Delete the list
+      await db.runAsync(`DELETE FROM ingredient_lists WHERE id = 'list-1';`)
+
+      // Verify ingredients were cascade deleted
+      const afterCount = await db.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) as count FROM ingredients WHERE list_id = 'list-1';`
+      )
+      expect(afterCount?.count).toBe(0)
+
+      // Verify other list's ingredients remain
+      const list2Count = await db.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) as count FROM ingredients WHERE list_id = 'list-2';`
+      )
+      expect(list2Count?.count).toBe(1)
+    })
+
+    it("should preserve valid ingredient data during migration", async () => {
+      const { migrateToVersion3 } = jest.requireActual("../migrations")
+      const result = await migrateToVersion3(db)
+
+      expect(result.success).toBe(true)
+
+      // Verify all valid ingredients are preserved with correct data
+      const ingredients = await db.getAllAsync<{
+        id: string
+        name: string
+        completed: number
+        list_id: string
+        created_at: number
+        updated_at: number
+      }>(
+        `SELECT id, name, completed, list_id, created_at, updated_at FROM ingredients ORDER BY id;`
+      )
+
+      expect(ingredients.length).toBe(3)
+      expect(ingredients[0]).toMatchObject({
+        id: "ing-1",
+        name: "Milk",
+        completed: 0,
+        list_id: "list-1",
+        created_at: 1000,
+        updated_at: 1000,
+      })
+      expect(ingredients[1]).toMatchObject({
+        id: "ing-2",
+        name: "Eggs",
+        completed: 0,
+        list_id: "list-1",
+        created_at: 2000,
+        updated_at: 2000,
+      })
+      expect(ingredients[2]).toMatchObject({
+        id: "ing-3",
+        name: "Hammer",
+        completed: 1,
+        list_id: "list-2",
+        created_at: 3000,
+        updated_at: 3000,
+      })
+    })
+
+    it("should handle migration errors gracefully", async () => {
+      // Mock database error
+      jest.spyOn(db, "withTransactionAsync").mockImplementationOnce(() => {
+        throw new Error("Migration failed")
+      })
+
+      const { migrateToVersion3 } = jest.requireActual("../migrations")
+      const result = await migrateToVersion3(db)
+
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBeInstanceOf(DbMigrationError)
+    })
+  })
 })
