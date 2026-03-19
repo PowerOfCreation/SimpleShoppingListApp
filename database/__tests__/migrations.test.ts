@@ -607,4 +607,126 @@ describe("Migrations", () => {
       expect(result.getError()).toBeInstanceOf(DbMigrationError)
     })
   })
+
+  describe("Migration to version 4 - Completed At Timestamp", () => {
+    beforeEach(async () => {
+      // Clear any existing tables first
+      await db.execAsync(`
+        DROP TABLE IF EXISTS ingredient_lists;
+        DROP TABLE IF EXISTS ingredients;
+        DROP TABLE IF EXISTS database_version;
+      `)
+
+      // Set up version 3 schema (without completed_at)
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS ingredient_lists (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS ingredients (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          completed INTEGER NOT NULL DEFAULT 0,
+          list_id TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          FOREIGN KEY (list_id) REFERENCES ingredient_lists(id) ON DELETE CASCADE
+        );
+        
+        CREATE TABLE IF NOT EXISTS database_version (
+          version INTEGER PRIMARY KEY,
+          migration_date INTEGER NOT NULL
+        );
+        
+        INSERT INTO database_version (version, migration_date) VALUES (3, ${Date.now()});
+      `)
+
+      // Insert test data
+      await db.execAsync(`
+        INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES
+        ('list-1', 'Groceries', 1000, 1000);
+      `)
+
+      await db.execAsync(`
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES
+        ('ing-1', 'Milk', 0, 'list-1', 1000, 1000),
+        ('ing-2', 'Eggs', 1, 'list-1', 2000, 2000);
+      `)
+    })
+
+    it("should add completed_at column to ingredients table", async () => {
+      const { migrateToVersion4 } = jest.requireActual("../migrations")
+      const result = await migrateToVersion4(db)
+
+      expect(result.success).toBe(true)
+
+      // Verify completed_at column exists by querying table info
+      const tableInfo = await db.getAllAsync<{
+        name: string
+        type: string
+      }>(`PRAGMA table_info(ingredients);`)
+
+      const completedAtColumn = tableInfo.find(
+        (col) => col.name === "completed_at"
+      )
+      expect(completedAtColumn).toBeDefined()
+      expect(completedAtColumn?.type).toBe("INTEGER")
+    })
+
+    it("should preserve existing ingredient data during migration", async () => {
+      const { migrateToVersion4 } = jest.requireActual("../migrations")
+      const result = await migrateToVersion4(db)
+
+      expect(result.success).toBe(true)
+
+      // Verify all ingredients are preserved with correct data
+      const ingredients = await db.getAllAsync<{
+        id: string
+        name: string
+        completed: number
+        list_id: string
+        created_at: number
+        updated_at: number
+        completed_at: number | null
+      }>(
+        `SELECT id, name, completed, list_id, created_at, updated_at, completed_at FROM ingredients ORDER BY id;`
+      )
+
+      expect(ingredients.length).toBe(2)
+      expect(ingredients[0]).toMatchObject({
+        id: "ing-1",
+        name: "Milk",
+        completed: 0,
+        list_id: "list-1",
+        created_at: 1000,
+        updated_at: 1000,
+        completed_at: null,
+      })
+      expect(ingredients[1]).toMatchObject({
+        id: "ing-2",
+        name: "Eggs",
+        completed: 1,
+        list_id: "list-1",
+        created_at: 2000,
+        updated_at: 2000,
+        completed_at: null,
+      })
+    })
+
+    it("should handle migration errors gracefully", async () => {
+      // Mock database error
+      jest.spyOn(db, "withTransactionAsync").mockImplementationOnce(() => {
+        throw new Error("Migration failed")
+      })
+
+      const { migrateToVersion4 } = jest.requireActual("../migrations")
+      const result = await migrateToVersion4(db)
+
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBeInstanceOf(DbMigrationError)
+    })
+  })
 })

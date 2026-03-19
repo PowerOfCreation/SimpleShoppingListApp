@@ -35,6 +35,7 @@ describe("IngredientService", () => {
       updateName: jest.fn(),
       remove: jest.fn(),
       reorderIngredients: jest.fn(),
+      getCompletedIngredients: jest.fn(),
     } as unknown as jest.Mocked<IngredientRepository>
 
     // Set up the mock
@@ -261,6 +262,68 @@ describe("IngredientService", () => {
       const result = await service.GetIngredients("")
 
       // Verify we get a failed result with the error
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBe(dbError)
+    })
+  })
+
+  describe("getCompletedIngredients", () => {
+    it("should get completed ingredients for the given list from the repository", async () => {
+      // Set up mock data
+      const mockCompletedIngredients: Ingredient[] = [
+        {
+          id: "2",
+          name: "Eggs",
+          completed: true,
+          list_id: "list-1",
+          created_at: 2000,
+          updated_at: 2000,
+          completed_at: 2000,
+        },
+        {
+          id: "4",
+          name: "Butter",
+          completed: true,
+          list_id: "list-1",
+          created_at: 4000,
+          updated_at: 4000,
+          completed_at: 4000,
+        },
+      ]
+
+      // Set up repository mock
+      mockRepository.getCompletedIngredients = jest
+        .fn()
+        .mockResolvedValue(Result.ok(mockCompletedIngredients))
+
+      // Call the method with listId
+      const result = await service.getCompletedIngredients("list-1")
+
+      // Verify repository was called
+      expect(mockRepository.getCompletedIngredients).toHaveBeenCalledTimes(1)
+      expect(mockRepository.getCompletedIngredients).toHaveBeenCalledWith(
+        "list-1"
+      )
+
+      // Verify result
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toEqual(mockCompletedIngredients)
+    })
+
+    it("should return error if repository fails", async () => {
+      const errorMessage = "DB error"
+      const dbError = new DbQueryError(
+        errorMessage,
+        "getCompletedIngredients",
+        "Ingredient"
+      )
+
+      mockRepository.getCompletedIngredients = jest
+        .fn()
+        .mockResolvedValue(Result.fail(dbError))
+
+      const result = await service.getCompletedIngredients("list-1")
+
       expect(result.success).toBe(false)
       expect(result.getError()).toBe(dbError)
     })
