@@ -28,4 +28,4 @@ jobs:
         uses: ./.github/actions/setup-node-install
 
       - name: 🚑 Run Doctor Checks
-        run: npx expo-doctor@latest
+        run: pnpm dlx expo-doctor
