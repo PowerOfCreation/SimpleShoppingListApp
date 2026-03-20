@@ -7,11 +7,11 @@ on:
       - master
     paths:
       - "package.json"
-      - "package-lock.yaml"
+      - "pnpm-lock.yaml"
   pull_request:
     paths:
       - "package.json"
-      - "package-lock.yaml"
+      - "pnpm-lock.yaml"
 
 jobs:
   doctor:
@@ -28,4 +28,4 @@ jobs:
         uses: ./.github/actions/setup-node-install
 
       - name: 🚑 Run Doctor Checks
-        run: npx expo-doctor@latest
+        run: pnpm dlx expo-doctor

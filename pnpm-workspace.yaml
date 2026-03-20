@@ -1,0 +1,12 @@
+# pnpm workspace configuration
+# This file is required for managing build script approvals in pnpm v10+
+
+# Packages in this workspace (single package project)
+packages:
+  - '.'
+
+# Approved build scripts
+# These dependencies are allowed to run their build scripts during installation
+# Add packages to this list using: pnpm approve-builds
+onlyBuiltDependencies:
+  - better-sqlite3

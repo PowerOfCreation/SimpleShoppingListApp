@@ -1,13 +1,17 @@
-name: "Setup Node + NPM + Install Dependencies"
-description: "Setup Node + NPM + Install Dependencies"
+name: "Setup Node + pnpm + Install Dependencies"
+description: "Setup Node + pnpm + Install Dependencies"
 runs:
   using: "composite"
   steps:
+    - uses: pnpm/action-setup@v4
+      with:
+        version: 9
+
     - uses: actions/setup-node@v4
       with:
         node-version: 20
-        cache: "npm"
+        cache: "pnpm"
 
     - name: 📦 Install Project Dependencies
-      run: npm install
+      run: pnpm install --frozen-lockfile
       shell: bash

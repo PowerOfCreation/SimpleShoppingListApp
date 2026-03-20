@@ -7,13 +7,13 @@ This is an [Expo](https://expo.dev) project created with [`create-expo-app`](htt
 1. Install dependencies
 
    ```bash
-   npm install
+   pnpm install
    ```
 
 2. Start the app
 
    ```bash
-    npx expo start
+    pnpm expo start
    ```
 
 In the output, you'll find options to open the app in a
@@ -26,7 +26,7 @@ In the output, you'll find options to open the app in a
 # Get Release Build
 
 ```bash
-npx expo run:android --variant release
+pnpm expo run:android --variant release
 ```
 
 Interesting links:
@@ -36,5 +36,5 @@ Interesting links:
 # Running tests locally
 
 ```bash
-npm run test
+pnpm test
 ```
