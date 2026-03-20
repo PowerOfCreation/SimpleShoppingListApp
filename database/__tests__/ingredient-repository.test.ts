@@ -33,7 +33,8 @@ describe("IngredientRepository", () => {
         completed INTEGER NOT NULL DEFAULT 0,
         list_id TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        completed_at INTEGER
       );
     `)
   })
@@ -42,20 +43,10 @@ describe("IngredientRepository", () => {
     it("should return all ingredients sorted by completion and creation date", async () => {
       // Insert test data
       await db.execAsync(`
-        CREATE TABLE IF NOT EXISTS ingredients (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          completed INTEGER NOT NULL DEFAULT 0,
-          list_id TEXT NOT NULL,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL
-        );
-      `)
-      await db.execAsync(`
-        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES
-        ('1', 'Milk', 0, 'list-1', 2000, 2000),
-        ('2', 'Eggs', 1, 'list-1', 3000, 3000),
-        ('3', 'Bread', 0, 'list-1', 1000, 1000);
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at, completed_at) VALUES
+        ('1', 'Milk', 0, 'list-1', 2000, 2000, NULL),
+        ('2', 'Eggs', 1, 'list-1', 3000, 3000, 3000),
+        ('3', 'Bread', 0, 'list-1', 1000, 1000, NULL);
       `)
 
       // Call the method
@@ -85,8 +76,8 @@ describe("IngredientRepository", () => {
     it("should return an ingredient by ID", async () => {
       // Insert test data
       await db.execAsync(`
-        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES
-        ('1', 'Milk', 0, 'list-1', 1000, 1000);
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at, completed_at) VALUES
+        ('1', 'Milk', 0, 'list-1', 1000, 1000, NULL);
       `)
 
       // Call the method
@@ -138,6 +129,7 @@ describe("IngredientRepository", () => {
         list_id: string
         created_at: number
         updated_at: number
+        completed_at: number | null
       }>(`SELECT * FROM ingredients WHERE id = ?`, "1")
 
       expect(dbResult).toEqual({
@@ -147,6 +139,7 @@ describe("IngredientRepository", () => {
         list_id: "list-1",
         created_at: now,
         updated_at: now,
+        completed_at: null,
       })
     })
 
@@ -173,6 +166,7 @@ describe("IngredientRepository", () => {
         list_id: string
         created_at: number
         updated_at: number
+        completed_at: number | null
       }>(`SELECT * FROM ingredients WHERE id = ?`, "1")
 
       expect(dbResult).toEqual({
@@ -182,6 +176,7 @@ describe("IngredientRepository", () => {
         list_id: "list-1",
         created_at: 1000,
         updated_at: 2000,
+        completed_at: null,
       })
     })
   })
@@ -190,8 +185,8 @@ describe("IngredientRepository", () => {
     it("should update an ingredient in the database", async () => {
       // Insert a test ingredient
       await db.execAsync(`
-        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES
-        ('1', 'Milk', 0, 'list-1', 1000, 1000);
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at, completed_at) VALUES
+        ('1', 'Milk', 0, 'list-1', 1000, 1000, NULL);
       `)
 
       // Mock Date.now for consistent testing
@@ -218,6 +213,7 @@ describe("IngredientRepository", () => {
         list_id: string
         created_at: number
         updated_at: number
+        completed_at: number | null
       }>(`SELECT * FROM ingredients WHERE id = ?`, "1")
 
       expect(dbResult).toEqual({
@@ -227,6 +223,7 @@ describe("IngredientRepository", () => {
         list_id: "list-1",
         created_at: 1000, // Should not change
         updated_at: now, // Should update
+        completed_at: null,
       })
     })
   })
@@ -235,8 +232,8 @@ describe("IngredientRepository", () => {
     it("should update an ingredient completion status", async () => {
       // Insert a test ingredient
       await db.execAsync(`
-        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES
-        ('1', 'Milk', 0, 'list-1', 1000, 1000);
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at, completed_at) VALUES
+        ('1', 'Milk', 0, 'list-1', 1000, 1000, NULL);
       `)
 
       // Mock Date.now for consistent testing
@@ -255,6 +252,7 @@ describe("IngredientRepository", () => {
         list_id: string
         created_at: number
         updated_at: number
+        completed_at: number | null
       }>(`SELECT * FROM ingredients WHERE id = ?`, "1")
 
       expect(dbResult).toEqual({
@@ -264,6 +262,7 @@ describe("IngredientRepository", () => {
         list_id: "list-1",
         created_at: 1000, // Should not change
         updated_at: now, // Should update
+        completed_at: now, // Should be set to now
       })
     })
   })
@@ -272,8 +271,8 @@ describe("IngredientRepository", () => {
     it("should update an ingredient name", async () => {
       // Insert a test ingredient
       await db.execAsync(`
-        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES
-        ('1', 'Milk', 0, 'list-1', 1000, 1000);
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at, completed_at) VALUES
+        ('1', 'Milk', 0, 'list-1', 1000, 1000, NULL);
       `)
 
       // Mock Date.now for consistent testing
@@ -292,6 +291,7 @@ describe("IngredientRepository", () => {
         list_id: string
         created_at: number
         updated_at: number
+        completed_at: number | null
       }>(`SELECT * FROM ingredients WHERE id = ?`, "1")
 
       expect(dbResult).toEqual({
@@ -301,6 +301,7 @@ describe("IngredientRepository", () => {
         list_id: "list-1",
         created_at: 1000, // Should not change
         updated_at: now, // Should update
+        completed_at: null,
       })
     })
 
@@ -323,8 +324,8 @@ describe("IngredientRepository", () => {
     it("should remove an ingredient from the database", async () => {
       // Insert a test ingredient
       await db.execAsync(`
-        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES
-        ('1', 'Milk', 0, 'list-1', 1000, 1000);
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at, completed_at) VALUES
+        ('1', 'Milk', 0, 'list-1', 1000, 1000, NULL);
       `)
 
       // Verify the ingredient exists
@@ -355,6 +356,63 @@ describe("IngredientRepository", () => {
       // Verify the result is a Not Implemented error
       expect(result.success).toBe(false)
       expect(result.getError()).toBeInstanceOf(NotImplementedError)
+    })
+  })
+
+  describe("getCompletedIngredients", () => {
+    it("should return only completed ingredients ordered by completion date", async () => {
+      // Insert test data
+      await db.execAsync(`
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at, completed_at) VALUES
+        ('1', 'Milk', 0, 'list-1', 1000, 1000, NULL),
+        ('2', 'Eggs', 1, 'list-1', 2000, 2000, 2000),
+        ('3', 'Bread', 1, 'list-1', 3000, 3000, 3000),
+        ('4', 'Butter', 1, 'list-1', 4000, 4000, 1500);
+      `)
+
+      // Call the method
+      const result = await repository.getCompletedIngredients("list-1")
+      expect(result.success).toBe(true)
+
+      const ingredients = result.getValue()!
+      // Verify results - should only get completed items, sorted by completed_at DESC (most recent first)
+      expect(ingredients.length).toBe(3)
+      expect(ingredients[0].id).toBe("3") // Bread (completed_at: 3000)
+      expect(ingredients[1].id).toBe("2") // Eggs (completed_at: 2000)
+      expect(ingredients[2].id).toBe("4") // Butter (completed_at: 1500)
+
+      // Verify all are completed
+      expect(ingredients[0].completed).toBe(true)
+      expect(ingredients[1].completed).toBe(true)
+      expect(ingredients[2].completed).toBe(true)
+    })
+
+    it("should return empty array when no completed ingredients exist", async () => {
+      // Insert only non-completed ingredients
+      await db.execAsync(`
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at, completed_at) VALUES
+        ('1', 'Milk', 0, 'list-1', 1000, 1000, NULL);
+      `)
+
+      const result = await repository.getCompletedIngredients("list-1")
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toEqual([])
+    })
+
+    it("should filter by list_id", async () => {
+      // Insert ingredients for different lists
+      await db.execAsync(`
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at, completed_at) VALUES
+        ('1', 'Milk', 1, 'list-1', 1000, 1000, 1000),
+        ('2', 'Eggs', 1, 'list-2', 2000, 2000, 2000);
+      `)
+
+      const result = await repository.getCompletedIngredients("list-1")
+      expect(result.success).toBe(true)
+
+      const ingredients = result.getValue()!
+      expect(ingredients.length).toBe(1)
+      expect(ingredients[0].id).toBe("1")
     })
   })
 })

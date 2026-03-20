@@ -31,8 +31,9 @@ export class IngredientRepository extends BaseRepository {
         list_id: string
         created_at: number
         updated_at: number
+        completed_at: number | null
       }>(
-        `SELECT id, name, completed, list_id, created_at, updated_at
+        `SELECT id, name, completed, list_id, created_at, updated_at, completed_at
         FROM ingredients
         WHERE list_id = ?
         ORDER BY completed ASC, created_at DESC`,
@@ -46,6 +47,7 @@ export class IngredientRepository extends BaseRepository {
         list_id: row.list_id,
         created_at: row.created_at,
         updated_at: row.updated_at,
+        completed_at: row.completed_at || undefined,
       }))
     }, "getAll")
   }
@@ -64,8 +66,9 @@ export class IngredientRepository extends BaseRepository {
         list_id: string
         created_at: number
         updated_at: number
+        completed_at: number | null
       }>(
-        `SELECT id, name, completed, list_id, created_at, updated_at
+        `SELECT id, name, completed, list_id, created_at, updated_at, completed_at
          FROM ingredients
          WHERE id = ?`,
         id
@@ -82,6 +85,7 @@ export class IngredientRepository extends BaseRepository {
         list_id: result.list_id,
         created_at: result.created_at,
         updated_at: result.updated_at,
+        completed_at: result.completed_at || undefined,
       }
     }, "getById")
   }
@@ -145,10 +149,11 @@ export class IngredientRepository extends BaseRepository {
     return this._executeTransaction(async () => {
       await this.db.runAsync(
         `UPDATE ingredients
-           SET completed = ?, updated_at = ?
+           SET completed = ?, updated_at = ?, completed_at = ?
            WHERE id = ?`,
         completed ? 1 : 0,
         now,
+        completed ? now : null,
         id
       )
     }, "updateCompletion")
@@ -176,6 +181,43 @@ export class IngredientRepository extends BaseRepository {
         id
       )
     }, "updateName")
+  }
+
+  /**
+   * Get completed ingredients ordered by completion date
+   * @param listId List ID to filter by
+   * @returns Result containing array of completed ingredients or error
+   */
+  async getCompletedIngredients(
+    listId: string
+  ): Promise<Result<Ingredient[], DbQueryError>> {
+    return this._executeQuery(async () => {
+      const result = await this.db.getAllAsync<{
+        id: string
+        name: string
+        completed: number
+        list_id: string
+        created_at: number
+        updated_at: number
+        completed_at: number | null
+      }>(
+        `SELECT id, name, completed, list_id, created_at, updated_at, completed_at
+        FROM ingredients
+        WHERE list_id = ? AND completed = 1
+        ORDER BY completed_at DESC`,
+        listId
+      )
+
+      return result.map((row) => ({
+        id: row.id,
+        name: row.name,
+        completed: row.completed === 1,
+        list_id: row.list_id,
+        created_at: row.created_at,
+        updated_at: row.updated_at,
+        completed_at: row.completed_at || undefined,
+      }))
+    }, "getCompletedIngredients")
   }
 
   /**

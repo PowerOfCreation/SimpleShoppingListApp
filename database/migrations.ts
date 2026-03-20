@@ -10,8 +10,8 @@ import { NIL_UUID } from "@/constants/Uuids"
 const logger = createLogger("Migrations")
 
 /**
- * SQL statements for creating the database schema (version 3)
- * Version 3 adds foreign key constraint with cascade delete
+ * SQL statements for creating the database schema (version 4)
+ * Version 4 adds completed_at column to track when ingredients are completed
  */
 const CREATE_INGREDIENTS_TABLE = `
 CREATE TABLE IF NOT EXISTS ingredients (
@@ -21,6 +21,7 @@ CREATE TABLE IF NOT EXISTS ingredients (
   list_id TEXT NOT NULL,
   created_at INTEGER NOT NULL,
   updated_at INTEGER NOT NULL,
+  completed_at INTEGER,
   FOREIGN KEY (list_id) REFERENCES ingredient_lists(id) ON DELETE CASCADE
 );
 `
@@ -88,6 +89,13 @@ export async function executeMigrations(
         const v3Result = await migrateToVersion3(db)
         if (!v3Result.success) {
           return v3Result
+        }
+      }
+
+      if (currentVersion < 4) {
+        const v4Result = await migrateToVersion4(db)
+        if (!v4Result.success) {
+          return v4Result
         }
       }
     }
@@ -292,6 +300,36 @@ export async function migrateToVersion3(
       error
     )
     logger.error("Error migrating to version 3", migrationError)
+    return Result.fail(migrationError)
+  }
+}
+
+/**
+ * Migrate database from version 3 to version 4
+ * Adds completed_at column to track when ingredients are completed
+ * @returns Result containing void on success or DbMigrationError on failure
+ */
+export async function migrateToVersion4(
+  db: SQLite.SQLiteDatabase
+): Promise<Result<void, DbMigrationError>> {
+  try {
+    await db.withTransactionAsync(async () => {
+      // Add completed_at column to ingredients table
+      await db.runAsync(`
+        ALTER TABLE ingredients ADD COLUMN completed_at INTEGER;
+      `)
+
+      logger.info("Successfully migrated database to version 4")
+    })
+
+    return Result.ok(undefined)
+  } catch (error) {
+    const migrationError = new DbMigrationError(
+      "Failed to migrate to version 4",
+      4,
+      error
+    )
+    logger.error("Error migrating to version 4", migrationError)
     return Result.fail(migrationError)
   }
 }

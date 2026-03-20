@@ -110,8 +110,10 @@ export class IngredientService {
       // Update local cache
       const index = this.ingredients.findIndex((ing) => ing.id === id)
       if (index !== -1) {
+        const now = Date.now()
         this.ingredients[index].completed = completed
-        this.ingredients[index].updated_at = Date.now()
+        this.ingredients[index].updated_at = now
+        this.ingredients[index].completed_at = completed ? now : undefined
       }
 
       return Result.ok(undefined)
@@ -194,6 +196,31 @@ export class IngredientService {
         new DbQueryError(
           `Failed to delete ingredient ${id}`,
           "deleteIngredient",
+          "Ingredient",
+          error
+        )
+      )
+    }
+  }
+
+  async getCompletedIngredients(
+    listId: string
+  ): Promise<Result<Ingredient[], DbQueryError>> {
+    try {
+      const result = await this.repository.getCompletedIngredients(listId)
+
+      if (!result.success) {
+        logger.error("Error fetching completed ingredients", result.getError())
+        return result
+      }
+
+      return Result.ok(result.getValue()!)
+    } catch (error) {
+      logger.error("Error fetching completed ingredients", error)
+      return Result.fail(
+        new DbQueryError(
+          "Failed to get completed ingredients",
+          "getCompletedIngredients",
           "Ingredient",
           error
         )
