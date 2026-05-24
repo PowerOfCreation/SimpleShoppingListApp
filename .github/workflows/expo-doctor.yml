@@ -20,9 +20,11 @@ jobs:
 
     steps:
       - name: 📦 Checkout project repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          sparse-checkout: |
+            frontend/
 
       - name: 📦 Setup Node and dependencies
         uses: ./.github/actions/setup-node-install
