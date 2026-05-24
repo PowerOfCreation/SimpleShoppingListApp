@@ -25,17 +25,18 @@ jobs:
 
       - name: 🏃‍♂️ Run Tests
         run: pnpm run test:ci
+        working-directory: ./frontend
 
       - name: Jest Coverage Comment
         uses: MishaKav/jest-coverage-comment@main
         if: (success() || failure()) && github.event_name == 'pull_request'
         with:
-          coverage-summary-path: ./coverage/coverage-summary.json
+          coverage-summary-path: ./frontend/coverage/coverage-summary.json
           summary-title: "💯 Test Coverage"
           badge-title: Coverage
           create-new-comment: false
           junitxml-title: 😎 Tests Results
-          junitxml-path: ./coverage/jest-junit.xml
+          junitxml-path: ./frontend/coverage/jest-junit.xml
           coverage-title: 👀 Tests Details
-          coverage-path: ./coverage/coverage.txt
+          coverage-path: ./frontend/coverage/coverage.txt
           report-only-changed-files: true

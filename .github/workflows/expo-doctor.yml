@@ -6,12 +6,12 @@ on:
       - main
       - master
     paths:
-      - "package.json"
-      - "pnpm-lock.yaml"
+      - "frontend/package.json"
+      - "frontend/pnpm-lock.yaml"
   pull_request:
     paths:
-      - "package.json"
-      - "pnpm-lock.yaml"
+      - "frontend/package.json"
+      - "frontend/pnpm-lock.yaml"
 
 jobs:
   doctor:
@@ -20,12 +20,16 @@ jobs:
 
     steps:
       - name: 📦 Checkout project repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          sparse-checkout: |
+            .github
+            frontend/
 
       - name: 📦 Setup Node and dependencies
         uses: ./.github/actions/setup-node-install
 
       - name: 🚑 Run Doctor Checks
         run: pnpm dlx expo-doctor
+        working-directory: ./frontend

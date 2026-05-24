@@ -16,9 +16,12 @@ jobs:
 
     steps:
       - name: 📦 Checkout project repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           fetch-depth: 0
+          sparse-checkout: |
+            .github
+            frontend/
 
       - name: 📦 Setup Node and dependencies
         uses: ./.github/actions/setup-node-install
@@ -27,11 +30,13 @@ jobs:
         if: github.event_name == 'pull_request'
         uses: reviewdog/action-eslint@v1
         with:
+          workdir: frontend
           github_token: ${{ secrets.GITHUB_TOKEN }}
           reporter: github-pr-review
-          eslint_flags: ". --ext .js,.jsx,.ts,.tsx"
+          eslint_flags: "--ext .js,.jsx,.ts,.tsx"
           fail_level: warning
 
       - name: 🏃‍♂️ Run ESLint no PR
         if: github.event_name != 'pull_request'
         run: pnpm run lint
+        working-directory: ./frontend

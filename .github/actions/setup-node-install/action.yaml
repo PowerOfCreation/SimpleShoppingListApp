@@ -6,12 +6,15 @@ runs:
     - uses: pnpm/action-setup@v4
       with:
         version: 9
+        package_json_file: frontend/package.json
 
     - uses: actions/setup-node@v4
       with:
         node-version: 20
         cache: "pnpm"
+        cache-dependency-path: frontend/pnpm-lock.yaml
 
     - name: 📦 Install Project Dependencies
       run: pnpm install --frozen-lockfile
       shell: bash
+      working-directory: ./frontend
