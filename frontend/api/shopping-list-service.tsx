@@ -1,4 +1,3 @@
-import { IngredientList } from "@/types/IngredientList"
 import { ShoppingListOverview } from "@/types/ShoppingListOverview"
 import "react-native-get-random-values"
 import { v4 as uuidv4 } from "uuid"
@@ -7,6 +6,8 @@ import { getDatabase } from "@/database/database"
 import { createLogger } from "@/api/common/logger"
 import { Result } from "@/api/common/result"
 import { DbQueryError, ValidationError } from "@/api/common/error-types"
+import { EventTypes, AggregateTypes } from "@/types/DomainEvent"
+import { getClientId } from "@/api/common/client-id"
 
 const logger = createLogger("ShoppingListService")
 
@@ -30,23 +31,35 @@ export class ShoppingListService {
 
     try {
       const now = Date.now()
-      const newList: IngredientList = {
-        id: uuidv4(),
-        name: listName,
-        created_at: now,
-        updated_at: now,
-      }
+      const listId = uuidv4()
+      const clientId = getClientId()
+      const db = getDatabase()
 
-      // Add to repository
-      const result = await this.repository.add(newList)
+      // Write event + projection atomically: event store is source of truth,
+      // ingredient_lists is the read-model projection.
+      await db.withTransactionAsync(async () => {
+        await db.runAsync(
+          `INSERT INTO domain_events (event_id, event_type, aggregate_id, aggregate_type, occurred_at, client_id, payload)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          uuidv4(),
+          EventTypes.TODO_LIST_CREATED,
+          listId,
+          AggregateTypes.TODO_LIST,
+          now,
+          clientId,
+          JSON.stringify({ name: listName })
+        )
+        await db.runAsync(
+          `INSERT INTO ingredient_lists (id, name, created_at, updated_at)
+           VALUES (?, ?, ?, ?)`,
+          listId,
+          listName,
+          now,
+          now
+        )
+      })
 
-      if (!result.success) {
-        const error = result.getError()
-        logger.error("Error creating shopping list", error)
-        return Result.fail(error)
-      }
-
-      return Result.ok(newList.id)
+      return Result.ok(listId)
     } catch (error) {
       logger.error("Error creating shopping list", error)
       return Result.fail(

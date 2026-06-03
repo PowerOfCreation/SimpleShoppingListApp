@@ -6,6 +6,9 @@ import { createLogger } from "@/api/common/logger"
 import { Result } from "@/api/common/result"
 import { DbMigrationError } from "@/api/common/error-types"
 import { NIL_UUID } from "@/constants/Uuids"
+import "react-native-get-random-values"
+import { v4 as uuidv4 } from "uuid"
+import { EventTypes, AggregateTypes } from "@/types/DomainEvent"
 
 const logger = createLogger("Migrations")
 
@@ -42,6 +45,23 @@ CREATE TABLE IF NOT EXISTS ingredient_lists (
 );
 `
 
+const CREATE_DOMAIN_EVENTS_TABLE = `
+CREATE TABLE IF NOT EXISTS domain_events (
+  event_id       TEXT PRIMARY KEY,
+  event_type     TEXT NOT NULL,
+  aggregate_id   TEXT NOT NULL,
+  aggregate_type TEXT NOT NULL,
+  occurred_at    INTEGER NOT NULL,
+  client_id      TEXT NOT NULL,
+  payload        TEXT NOT NULL
+);
+`
+
+const CREATE_DOMAIN_EVENTS_INDEX = `
+CREATE INDEX IF NOT EXISTS idx_domain_events_aggregate
+ON domain_events(aggregate_id, occurred_at);
+`
+
 /**
  * Execute database migrations
  * @param db SQLite database connection
@@ -76,6 +96,12 @@ export async function executeMigrations(
           return migrateResult
         }
       }
+
+      // Backfill domain_events for all lists (including default list just created)
+      const v5Result = await migrateToVersion5(db)
+      if (!v5Result.success) {
+        return v5Result
+      }
     } else {
       // Run version-specific migrations for existing databases
       if (currentVersion < 2) {
@@ -96,6 +122,13 @@ export async function executeMigrations(
         const v4Result = await migrateToVersion4(db)
         if (!v4Result.success) {
           return v4Result
+        }
+      }
+
+      if (currentVersion < 5) {
+        const v5Result = await migrateToVersion5(db)
+        if (!v5Result.success) {
+          return v5Result
         }
       }
     }
@@ -142,6 +175,10 @@ export async function createTables(
 
       // Create ingredient lists table
       await db.runAsync(CREATE_INGREDIENT_LISTS_TABLE)
+
+      // Create domain events table (event store)
+      await db.runAsync(CREATE_DOMAIN_EVENTS_TABLE)
+      await db.runAsync(CREATE_DOMAIN_EVENTS_INDEX)
     })
 
     return Result.ok(undefined)
@@ -330,6 +367,55 @@ export async function migrateToVersion4(
       error
     )
     logger.error("Error migrating to version 4", migrationError)
+    return Result.fail(migrationError)
+  }
+}
+
+/**
+ * Migrate database from version 4 to version 5
+ * Introduces the domain_events event store table.
+ * Synthesizes todo_list.created events for all existing ingredient_lists rows.
+ * client_id is set to 'migration' for these synthetic events.
+ */
+export async function migrateToVersion5(
+  db: SQLite.SQLiteDatabase
+): Promise<Result<void, DbMigrationError>> {
+  try {
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(CREATE_DOMAIN_EVENTS_TABLE)
+      await db.runAsync(CREATE_DOMAIN_EVENTS_INDEX)
+
+      const existingLists = await db.getAllAsync<{
+        id: string
+        name: string
+        created_at: number
+      }>(`SELECT id, name, created_at FROM ingredient_lists`)
+
+      for (const list of existingLists) {
+        await db.runAsync(
+          `INSERT INTO domain_events (event_id, event_type, aggregate_id, aggregate_type, occurred_at, client_id, payload)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          uuidv4(),
+          EventTypes.TODO_LIST_CREATED,
+          list.id,
+          AggregateTypes.TODO_LIST,
+          list.created_at,
+          "migration",
+          JSON.stringify({ name: list.name })
+        )
+      }
+
+      logger.info("Successfully migrated database to version 5")
+    })
+
+    return Result.ok(undefined)
+  } catch (error) {
+    const migrationError = new DbMigrationError(
+      "Failed to migrate to version 5",
+      5,
+      error
+    )
+    logger.error("Error migrating to version 5", migrationError)
     return Result.fail(migrationError)
   }
 }
