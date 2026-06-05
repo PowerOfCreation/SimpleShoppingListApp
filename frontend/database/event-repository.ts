@@ -40,4 +40,14 @@ export class EventRepository extends BaseRepository {
       )
     }, "getByAggregateId")
   }
+
+  async getAll(): Promise<Result<DomainEventRow[], DbQueryError>> {
+    return this._executeQuery(async () => {
+      return this.db.getAllAsync<DomainEventRow>(
+        `SELECT event_id, event_type, aggregate_id, aggregate_type, occurred_at, client_id, payload
+         FROM domain_events
+         ORDER BY occurred_at DESC`
+      )
+    }, "getAll")
+  }
 }
