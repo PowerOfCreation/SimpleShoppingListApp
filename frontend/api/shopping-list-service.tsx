@@ -2,62 +2,63 @@ import { ShoppingListOverview } from "@/types/ShoppingListOverview"
 import "react-native-get-random-values"
 import { v4 as uuidv4 } from "uuid"
 import { IngredientListRepository } from "@/database/ingredient-list-repository"
+import { EventRepository } from "@/database/event-repository"
+import { IngredientListProjection } from "@/database/ingredient-list-projection"
 import { getDatabase } from "@/database/database"
 import { createLogger } from "@/api/common/logger"
 import { Result } from "@/api/common/result"
 import { DbQueryError, ValidationError } from "@/api/common/error-types"
-import { EventTypes, AggregateTypes } from "@/types/DomainEvent"
+import { EventTypes, AggregateTypes, DomainEventRow } from "@/types/DomainEvent"
 import { getClientId } from "@/api/common/client-id"
 
 const logger = createLogger("ShoppingListService")
 
 export class ShoppingListService {
   private repository: IngredientListRepository
+  private eventRepository: EventRepository
+  private projection: IngredientListProjection
 
-  constructor(repository?: IngredientListRepository) {
-    this.repository = repository || new IngredientListRepository(getDatabase())
+  constructor(
+    repository?: IngredientListRepository,
+    eventRepository?: EventRepository,
+    projection?: IngredientListProjection
+  ) {
+    const db = getDatabase()
+    this.repository = repository || new IngredientListRepository(db)
+    this.eventRepository = eventRepository || new EventRepository(db)
+    this.projection = projection || new IngredientListProjection(db)
   }
 
   async createList(
     listName: string
   ): Promise<Result<string, ValidationError | DbQueryError>> {
     if (!listName.trim()) {
-      const error = new ValidationError(
-        "Shopping list name can't be empty",
-        "name"
+      return Result.fail(
+        new ValidationError("Shopping list name can't be empty", "name")
       )
-      return Result.fail(error)
     }
 
     try {
       const now = Date.now()
       const listId = uuidv4()
-      const clientId = getClientId()
-      const db = getDatabase()
+      const event: DomainEventRow = {
+        event_id: uuidv4(),
+        event_type: EventTypes.TODO_LIST_CREATED,
+        aggregate_id: listId,
+        aggregate_type: AggregateTypes.TODO_LIST,
+        occurred_at: now,
+        client_id: getClientId(),
+        payload: JSON.stringify({ name: listName }),
+      }
 
-      // Write event + projection atomically: event store is source of truth,
-      // ingredient_lists is the read-model projection.
-      await db.withTransactionAsync(async () => {
-        await db.runAsync(
-          `INSERT INTO domain_events (event_id, event_type, aggregate_id, aggregate_type, occurred_at, client_id, payload)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          uuidv4(),
-          EventTypes.TODO_LIST_CREATED,
-          listId,
-          AggregateTypes.TODO_LIST,
-          now,
-          clientId,
-          JSON.stringify({ name: listName })
-        )
-        await db.runAsync(
-          `INSERT INTO ingredient_lists (id, name, created_at, updated_at)
-           VALUES (?, ?, ?, ?)`,
-          listId,
-          listName,
-          now,
-          now
-        )
-      })
+      const result = await this.eventRepository.appendWithProjection(
+        event,
+        (db) => this.projection.handleCreated(db, event)
+      )
+
+      if (!result.success) {
+        return Result.fail(result.getError())
+      }
 
       return Result.ok(listId)
     } catch (error) {
@@ -78,44 +79,30 @@ export class ShoppingListService {
     newName: string
   ): Promise<Result<void, ValidationError | DbQueryError>> {
     if (!newName.trim()) {
-      const error = new ValidationError(
-        "Shopping list name can't be empty",
-        "name"
+      return Result.fail(
+        new ValidationError("Shopping list name can't be empty", "name")
       )
-      return Result.fail(error)
     }
 
     try {
-      const existingListResult = await this.repository.getById(listId)
-
-      if (!existingListResult.success) {
-        const error = existingListResult.getError()
-        logger.error("Error fetching shopping list", error)
-        return Result.fail(error)
+      const now = Date.now()
+      const event: DomainEventRow = {
+        event_id: uuidv4(),
+        event_type: EventTypes.TODO_LIST_UPDATED,
+        aggregate_id: listId,
+        aggregate_type: AggregateTypes.TODO_LIST,
+        occurred_at: now,
+        client_id: getClientId(),
+        payload: JSON.stringify({ name: newName }),
       }
 
-      const existingList = existingListResult.getValue()
-      if (!existingList) {
-        const error = new DbQueryError(
-          "Shopping list not found",
-          "updateName",
-          "IngredientList"
-        )
-        return Result.fail(error)
-      }
-
-      const updatedList: IngredientList = {
-        ...existingList,
-        name: newName,
-        updated_at: Date.now(),
-      }
-
-      const result = await this.repository.update(updatedList)
+      const result = await this.eventRepository.appendWithProjection(
+        event,
+        (db) => this.projection.handleUpdated(db, event)
+      )
 
       if (!result.success) {
-        const error = result.getError()
-        logger.error("Error updating shopping list name", error)
-        return Result.fail(error)
+        return Result.fail(result.getError())
       }
 
       return Result.ok(undefined)
@@ -160,14 +147,23 @@ export class ShoppingListService {
 
   async deleteList(listId: string): Promise<Result<void, DbQueryError>> {
     try {
-      const result = await this.repository.delete(listId)
+      const event: DomainEventRow = {
+        event_id: uuidv4(),
+        event_type: EventTypes.TODO_LIST_DELETED,
+        aggregate_id: listId,
+        aggregate_type: AggregateTypes.TODO_LIST,
+        occurred_at: Date.now(),
+        client_id: getClientId(),
+        payload: JSON.stringify({}),
+      }
+
+      const result = await this.eventRepository.appendWithProjection(
+        event,
+        (db) => this.projection.handleDeleted(db, event)
+      )
 
       if (!result.success) {
-        logger.error(
-          `Error deleting shopping list ${listId}`,
-          result.getError()
-        )
-        return result
+        return Result.fail(result.getError())
       }
 
       return Result.ok(undefined)
@@ -177,6 +173,29 @@ export class ShoppingListService {
         new DbQueryError(
           `Failed to delete shopping list ${listId}`,
           "deleteList",
+          "IngredientList",
+          error
+        )
+      )
+    }
+  }
+
+  async rebuildProjection(): Promise<Result<void, DbQueryError>> {
+    const eventsResult = await this.eventRepository.getByAggregateType(
+      AggregateTypes.TODO_LIST
+    )
+    if (!eventsResult.success) {
+      return Result.fail(eventsResult.getError())
+    }
+    try {
+      await this.projection.rebuild(eventsResult.getValue()!)
+      return Result.ok(undefined)
+    } catch (error) {
+      logger.error("Error rebuilding projection", error)
+      return Result.fail(
+        new DbQueryError(
+          "Failed to rebuild projection",
+          "rebuildProjection",
           "IngredientList",
           error
         )

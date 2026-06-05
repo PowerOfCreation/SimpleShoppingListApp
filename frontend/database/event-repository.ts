@@ -27,6 +27,26 @@ export class EventRepository extends BaseRepository {
     }, "append")
   }
 
+  async appendWithProjection(
+    event: DomainEventRow,
+    projection: (db: SQLiteDatabase) => Promise<void>
+  ): Promise<Result<void, DbQueryError>> {
+    return this._executeTransaction(async () => {
+      await this.db.runAsync(
+        `INSERT INTO domain_events (event_id, event_type, aggregate_id, aggregate_type, occurred_at, client_id, payload)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        event.event_id,
+        event.event_type,
+        event.aggregate_id,
+        event.aggregate_type,
+        event.occurred_at,
+        event.client_id,
+        event.payload
+      )
+      await projection(this.db)
+    }, "appendWithProjection")
+  }
+
   async getByAggregateId(
     aggregateId: string
   ): Promise<Result<DomainEventRow[], DbQueryError>> {
@@ -49,5 +69,19 @@ export class EventRepository extends BaseRepository {
          ORDER BY occurred_at DESC`
       )
     }, "getAll")
+  }
+
+  async getByAggregateType(
+    aggregateType: string
+  ): Promise<Result<DomainEventRow[], DbQueryError>> {
+    return this._executeQuery(async () => {
+      return this.db.getAllAsync<DomainEventRow>(
+        `SELECT event_id, event_type, aggregate_id, aggregate_type, occurred_at, client_id, payload
+         FROM domain_events
+         WHERE aggregate_type = ?
+         ORDER BY occurred_at ASC`,
+        aggregateType
+      )
+    }, "getByAggregateType")
   }
 }

@@ -4,7 +4,6 @@ import { renderRouter } from "expo-router/testing-library"
 import ViewShoppingList from "../view_shopping_list"
 import { IngredientRepository } from "@/database/ingredient-repository"
 import { getDatabase } from "@/database/database"
-import { IngredientListRepository } from "@/database/ingredient-list-repository"
 import { initializeAndMigrateDatabase } from "@/database/data-migration"
 import type { Ingredient } from "@/types/Ingredient"
 import type { IngredientList } from "@/types/IngredientList"
@@ -32,13 +31,14 @@ async function createTestList(
   db: ReturnType<typeof getDatabase>,
   listData: Partial<IngredientList> & { id: string; name: string }
 ): Promise<void> {
-  const listRepo = new IngredientListRepository(db)
   const now = Date.now()
-  await listRepo.add({
-    created_at: now,
-    updated_at: now,
-    ...listData,
-  })
+  await db.runAsync(
+    `INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)`,
+    listData.id,
+    listData.name,
+    listData.created_at ?? now,
+    listData.updated_at ?? now
+  )
 }
 
 /**

@@ -10,6 +10,8 @@ export type DomainEventRow = {
 
 export const EventTypes = {
   TODO_LIST_CREATED: "todo_list.created",
+  TODO_LIST_UPDATED: "todo_list.updated",
+  TODO_LIST_DELETED: "todo_list.deleted",
 } as const
 
 export const AggregateTypes = {

@@ -1,7 +1,6 @@
 import * as SQLite from "expo-sqlite"
 import { IngredientListRepository } from "../ingredient-list-repository"
 import { getDatabase } from "../database"
-import { IngredientList } from "../../types/IngredientList"
 
 // Mock DB_NAME without breaking function exports
 jest.mock("../database", () => {
@@ -199,104 +198,4 @@ describe("IngredientListRepository", () => {
     })
   })
 
-  describe("add", () => {
-    it("should insert a new ingredient list", async () => {
-      const newList: IngredientList = {
-        id: "1",
-        name: "Shopping List",
-        created_at: 1000,
-        updated_at: 1000,
-      }
-
-      // Add the list
-      const result = await repository.add(newList)
-      expect(result.success).toBe(true)
-
-      // Verify it was inserted
-      const rows = await db.getAllAsync<IngredientList>(`
-        SELECT * FROM ingredient_lists WHERE id = '1';
-      `)
-      expect(rows[0]).toEqual(newList)
-    })
-
-    it("should fail when inserting duplicate ID", async () => {
-      const list: IngredientList = {
-        id: "1",
-        name: "Shopping List",
-        created_at: 1000,
-        updated_at: 1000,
-      }
-
-      // Insert once
-      await repository.add(list)
-
-      // Try to insert again with same ID
-      const result = await repository.add(list)
-      expect(result.success).toBe(false)
-    })
-  })
-
-  describe("update", () => {
-    it("should update an existing ingredient list", async () => {
-      // Insert initial data
-      await db.execAsync(`
-        INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES
-        ('1', 'Shopping List', 1000, 1000);
-      `)
-
-      // Update the list
-      const updatedList: IngredientList = {
-        id: "1",
-        name: "Updated Shopping List",
-        created_at: 1000,
-        updated_at: 2000,
-      }
-
-      const result = await repository.update(updatedList)
-      expect(result.success).toBe(true)
-
-      // Verify it was updated
-      const rows = await db.getAllAsync<IngredientList>(`
-        SELECT * FROM ingredient_lists WHERE id = '1';
-      `)
-      expect(rows[0]).toEqual(updatedList)
-    })
-
-    it("should return success even when updating non-existent list", async () => {
-      const list: IngredientList = {
-        id: "nonexistent",
-        name: "Non-existent",
-        created_at: 1000,
-        updated_at: 1000,
-      }
-
-      const result = await repository.update(list)
-      expect(result.success).toBe(true)
-    })
-  })
-
-  describe("delete", () => {
-    it("should delete an existing ingredient list", async () => {
-      // Insert test data
-      await db.execAsync(`
-        INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES
-        ('1', 'Shopping List', 1000, 1000);
-      `)
-
-      // Delete the list
-      const result = await repository.delete("1")
-      expect(result.success).toBe(true)
-
-      // Verify it was deleted
-      const rows = await db.getAllAsync<IngredientList>(`
-        SELECT * FROM ingredient_lists WHERE id = '1';
-      `)
-      expect(rows.length).toBe(0)
-    })
-
-    it("should return success even when deleting non-existent list", async () => {
-      const result = await repository.delete("nonexistent")
-      expect(result.success).toBe(true)
-    })
-  })
 })
