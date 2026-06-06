@@ -115,7 +115,7 @@ export default function Index() {
     if (lists.length === 0) {
       return (
         <ThemedText style={styles.emptyListInfoTextStyle} type="default">
-          Press the '+' button at the bottom right to create your first shopping
+          Press the &apos;+&apos; button at the bottom right to create your first shopping
           list.
         </ThemedText>
       )

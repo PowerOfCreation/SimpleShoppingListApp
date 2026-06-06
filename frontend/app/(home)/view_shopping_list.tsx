@@ -114,7 +114,7 @@ export default function ViewShoppingList() {
     if (ingredients.length === 0) {
       return (
         <ThemedText style={styles.emptyListInfoTextStyle} type="default">
-          Press the '+' button at the bottom right to add your first product.
+          Press the &apos;+&apos; button at the bottom right to add your first product.
         </ThemedText>
       )
     }
