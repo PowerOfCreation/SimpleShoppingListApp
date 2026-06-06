@@ -197,5 +197,4 @@ describe("IngredientListRepository", () => {
       expect(result.getValue()).toBeNull()
     })
   })
-
 })

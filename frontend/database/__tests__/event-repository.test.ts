@@ -1,15 +1,17 @@
 import * as SQLite from "expo-sqlite"
 import { EventRepository } from "../event-repository"
 import { getDatabase } from "../database"
-import { AggregateTypes, EventTypes } from "@/types/DomainEvent"
+import { AggregateTypes, DomainEventRow, EventTypes } from "@/types/DomainEvent"
 
 jest.mock("../database", () => {
   const originalModule = jest.requireActual("../database")
   return { ...originalModule, DB_NAME: ":memory:" }
 })
 
-const makeEvent = (overrides: Partial<ReturnType<typeof baseEvent>> = {}) =>
-  ({ ...baseEvent(), ...overrides })
+const makeEvent = (overrides: Partial<DomainEventRow> = {}) => ({
+  ...baseEvent(),
+  ...overrides,
+})
 
 function baseEvent() {
   return {
@@ -50,7 +52,9 @@ describe("EventRepository", () => {
       const result = await repo.append(makeEvent())
 
       expect(result.success).toBe(true)
-      const row = await db.getFirstAsync<any>(`SELECT * FROM domain_events WHERE event_id = 'evt-1'`)
+      const row = await db.getFirstAsync<DomainEventRow>(
+        `SELECT * FROM domain_events WHERE event_id = 'evt-1'`
+      )
       expect(row).toMatchObject({ event_id: "evt-1", aggregate_id: "agg-1" })
     })
   })
@@ -64,7 +68,9 @@ describe("EventRepository", () => {
 
       expect(result.success).toBe(true)
       expect(projected).toEqual(["called"])
-      const count = await db.getFirstAsync<{ c: number }>(`SELECT COUNT(*) as c FROM domain_events`)
+      const count = await db.getFirstAsync<{ c: number }>(
+        `SELECT COUNT(*) as c FROM domain_events`
+      )
       expect(count?.c).toBe(1)
     })
 
@@ -74,16 +80,24 @@ describe("EventRepository", () => {
       })
 
       expect(result.success).toBe(false)
-      const count = await db.getFirstAsync<{ c: number }>(`SELECT COUNT(*) as c FROM domain_events`)
+      const count = await db.getFirstAsync<{ c: number }>(
+        `SELECT COUNT(*) as c FROM domain_events`
+      )
       expect(count?.c).toBe(0)
     })
   })
 
   describe("getByAggregateId", () => {
     it("returns events for the given aggregate ordered by occurred_at ASC", async () => {
-      await repo.append(makeEvent({ event_id: "e2", aggregate_id: "agg-1", occurred_at: 2000 }))
-      await repo.append(makeEvent({ event_id: "e1", aggregate_id: "agg-1", occurred_at: 1000 }))
-      await repo.append(makeEvent({ event_id: "e3", aggregate_id: "other", occurred_at: 500 }))
+      await repo.append(
+        makeEvent({ event_id: "e2", aggregate_id: "agg-1", occurred_at: 2000 })
+      )
+      await repo.append(
+        makeEvent({ event_id: "e1", aggregate_id: "agg-1", occurred_at: 1000 })
+      )
+      await repo.append(
+        makeEvent({ event_id: "e3", aggregate_id: "other", occurred_at: 500 })
+      )
 
       const result = await repo.getByAggregateId("agg-1")
 
@@ -95,9 +109,27 @@ describe("EventRepository", () => {
 
   describe("getByAggregateType", () => {
     it("filters by aggregate_type and orders by occurred_at ASC", async () => {
-      await repo.append(makeEvent({ event_id: "e1", aggregate_type: AggregateTypes.INGREDIENT, occurred_at: 1000 }))
-      await repo.append(makeEvent({ event_id: "e2", aggregate_type: AggregateTypes.TODO_LIST, occurred_at: 500 }))
-      await repo.append(makeEvent({ event_id: "e3", aggregate_type: AggregateTypes.INGREDIENT, occurred_at: 2000 }))
+      await repo.append(
+        makeEvent({
+          event_id: "e1",
+          aggregate_type: AggregateTypes.INGREDIENT,
+          occurred_at: 1000,
+        })
+      )
+      await repo.append(
+        makeEvent({
+          event_id: "e2",
+          aggregate_type: AggregateTypes.TODO_LIST,
+          occurred_at: 500,
+        })
+      )
+      await repo.append(
+        makeEvent({
+          event_id: "e3",
+          aggregate_type: AggregateTypes.INGREDIENT,
+          occurred_at: 2000,
+        })
+      )
 
       const result = await repo.getByAggregateType(AggregateTypes.INGREDIENT)
 
@@ -115,7 +147,11 @@ describe("EventRepository", () => {
       const result = await repo.getAll()
 
       expect(result.success).toBe(true)
-      expect(result.getValue()!.map((e) => e.event_id)).toEqual(["e2", "e3", "e1"])
+      expect(result.getValue()!.map((e) => e.event_id)).toEqual([
+        "e2",
+        "e3",
+        "e1",
+      ])
     })
   })
 })

@@ -1,9 +1,6 @@
 import * as SQLite from "expo-sqlite"
 import { createLogger } from "@/api/common/logger"
-import {
-  DbQueryError,
-  DbMigrationError,
-} from "@/api/common/error-types"
+import { DbQueryError, DbMigrationError } from "@/api/common/error-types"
 import { Result } from "@/api/common/result"
 
 const logger = createLogger("Database")

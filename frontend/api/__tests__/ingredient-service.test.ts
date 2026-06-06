@@ -7,7 +7,7 @@ import { Ingredient } from "@/types/Ingredient"
 import * as SQLite from "expo-sqlite"
 import { DbQueryError, ValidationError } from "@/api/common/error-types"
 import { Result } from "@/api/common/result"
-import { EventTypes } from "@/types/DomainEvent"
+import { DomainEventRow, EventTypes } from "@/types/DomainEvent"
 
 jest.mock("@/database/ingredient-repository")
 const MockIngredientRepository = IngredientRepository as jest.MockedClass<
@@ -174,8 +174,14 @@ describe("IngredientService", () => {
     })
 
     it("should return error if event repository fails", async () => {
-      const dbError = new DbQueryError("DB error", "updateCompletion", "Ingredient")
-      mockEventRepository.appendWithProjection.mockResolvedValue(Result.fail(dbError))
+      const dbError = new DbQueryError(
+        "DB error",
+        "updateCompletion",
+        "Ingredient"
+      )
+      mockEventRepository.appendWithProjection.mockResolvedValue(
+        Result.fail(dbError)
+      )
 
       const result = await service.updateCompletion("1", true)
 
@@ -204,7 +210,9 @@ describe("IngredientService", () => {
 
     it("should return error if event repository fails", async () => {
       const dbError = new DbQueryError("DB error", "updateName", "Ingredient")
-      mockEventRepository.appendWithProjection.mockResolvedValue(Result.fail(dbError))
+      mockEventRepository.appendWithProjection.mockResolvedValue(
+        Result.fail(dbError)
+      )
 
       const result = await service.updateName("1", "New Name")
 
@@ -229,8 +237,14 @@ describe("IngredientService", () => {
     })
 
     it("should return error if event repository fails", async () => {
-      const dbError = new DbQueryError("DB error", "deleteIngredient", "Ingredient")
-      mockEventRepository.appendWithProjection.mockResolvedValue(Result.fail(dbError))
+      const dbError = new DbQueryError(
+        "DB error",
+        "deleteIngredient",
+        "Ingredient"
+      )
+      mockEventRepository.appendWithProjection.mockResolvedValue(
+        Result.fail(dbError)
+      )
 
       const result = await service.deleteIngredient("1")
 
@@ -254,22 +268,40 @@ describe("IngredientService", () => {
   describe("rebuildProjection", () => {
     it("should call rebuild on the projection with all ingredient events", async () => {
       const mockEvents = [
-        { event_id: "e1", event_type: EventTypes.INGREDIENT_CREATED, aggregate_id: "i1" },
-        { event_id: "e2", event_type: EventTypes.INGREDIENT_UPDATED, aggregate_id: "i1" },
+        {
+          event_id: "e1",
+          event_type: EventTypes.INGREDIENT_CREATED,
+          aggregate_id: "i1",
+        },
+        {
+          event_id: "e2",
+          event_type: EventTypes.INGREDIENT_UPDATED,
+          aggregate_id: "i1",
+        },
       ]
-      mockEventRepository.getByAggregateType.mockResolvedValue(Result.ok(mockEvents as any))
+      mockEventRepository.getByAggregateType.mockResolvedValue(
+        Result.ok(mockEvents as DomainEventRow[])
+      )
       mockProjection.rebuild.mockResolvedValue(undefined)
 
       const result = await service.rebuildProjection()
 
-      expect(mockEventRepository.getByAggregateType).toHaveBeenCalledWith("ingredient")
+      expect(mockEventRepository.getByAggregateType).toHaveBeenCalledWith(
+        "ingredient"
+      )
       expect(mockProjection.rebuild).toHaveBeenCalledWith(mockEvents)
       expect(result.success).toBe(true)
     })
 
     it("should propagate error if getByAggregateType fails", async () => {
-      const dbError = new DbQueryError("DB error", "getByAggregateType", "Ingredient")
-      mockEventRepository.getByAggregateType.mockResolvedValue(Result.fail(dbError))
+      const dbError = new DbQueryError(
+        "DB error",
+        "getByAggregateType",
+        "Ingredient"
+      )
+      mockEventRepository.getByAggregateType.mockResolvedValue(
+        Result.fail(dbError)
+      )
 
       const result = await service.rebuildProjection()
 
@@ -279,7 +311,9 @@ describe("IngredientService", () => {
     })
 
     it("should return DbQueryError if projection.rebuild throws", async () => {
-      mockEventRepository.getByAggregateType.mockResolvedValue(Result.ok([] as any))
+      mockEventRepository.getByAggregateType.mockResolvedValue(
+        Result.ok([] as DomainEventRow[])
+      )
       mockProjection.rebuild.mockRejectedValue(new Error("rebuild failed"))
 
       const result = await service.rebuildProjection()
@@ -320,7 +354,9 @@ describe("IngredientService", () => {
       const result = await service.getCompletedIngredients("list-1")
 
       expect(mockRepository.getCompletedIngredients).toHaveBeenCalledTimes(1)
-      expect(mockRepository.getCompletedIngredients).toHaveBeenCalledWith("list-1")
+      expect(mockRepository.getCompletedIngredients).toHaveBeenCalledWith(
+        "list-1"
+      )
 
       expect(result.success).toBe(true)
       expect(result.getValue()).toEqual(mockCompletedIngredients)

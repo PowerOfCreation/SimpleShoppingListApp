@@ -9,12 +9,12 @@ const logger = createLogger("Migrations")
 
 type Migration = {
   version: number
-  migrate: (db: SQLite.SQLiteDatabase) => Promise<Result<void, DbMigrationError>>
+  migrate: (
+    db: SQLite.SQLiteDatabase
+  ) => Promise<Result<void, DbMigrationError>>
 }
 
-const MIGRATIONS: Migration[] = [
-  { version: 1, migrate: migrateToVersion1 },
-]
+const MIGRATIONS: Migration[] = [{ version: 1, migrate: migrateToVersion1 }]
 
 export async function executeMigrations(
   db: SQLite.SQLiteDatabase,
