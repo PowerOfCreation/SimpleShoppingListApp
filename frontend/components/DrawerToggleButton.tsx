@@ -1,6 +1,6 @@
 import { useNavigation } from "expo-router"
 import { Ionicons } from "@expo/vector-icons"
-import { TouchableOpacity } from "react-native"
+import { StyleSheet, TouchableOpacity } from "react-native"
 import type { ColorValue } from "react-native"
 
 type Props = {
@@ -12,16 +12,23 @@ export function DrawerToggleButton({
   tintColor,
   accessibilityLabel = "Toggle navigation menu",
 }: Props) {
-  const navigation = useNavigation() as { toggleDrawer: () => void }
+  const navigation = useNavigation()
 
   return (
     <TouchableOpacity
-      onPress={() => navigation.toggleDrawer()}
+      onPress={() => navigation.dispatch({ type: "TOGGLE_DRAWER" })}
       accessibilityLabel={accessibilityLabel}
       accessibilityRole="button"
-      style={{ marginLeft: 8, padding: 4 }}
+      style={styles.button}
     >
       <Ionicons name="menu" size={24} color={tintColor as string} />
     </TouchableOpacity>
   )
 }
+
+const styles = StyleSheet.create({
+  button: {
+    marginLeft: 8,
+    padding: 4,
+  },
+})
