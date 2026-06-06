@@ -76,6 +76,13 @@ export default function RootLayout() {
             headerShown: false,
           }}
         />
+        <Drawer.Screen
+          name="(events)"
+          options={{
+            drawerLabel: "Event Log",
+            headerShown: false,
+          }}
+        />
       </Drawer>
     </SafeAreaProvider>
   )

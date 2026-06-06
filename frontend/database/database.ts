@@ -1,7 +1,6 @@
 import * as SQLite from "expo-sqlite"
 import { createLogger } from "@/api/common/logger"
 import {
-  DbConnectionError,
   DbQueryError,
   DbMigrationError,
 } from "@/api/common/error-types"
@@ -12,7 +11,7 @@ const logger = createLogger("Database")
 /**
  * Database version number - increment this when schema changes
  */
-export const DB_VERSION = 4
+export const DB_VERSION = 1
 
 /**
  * Database file name
@@ -42,29 +41,6 @@ export function getDatabase(): SQLite.SQLiteDatabase {
  */
 export function resetDatabase(): void {
   dbInstance = null
-}
-
-/**
- * Checks if this is the first database initialization by looking for the database_version table
- * @param db SQLite database connection
- * @returns Result containing whether this is the first run
- */
-export async function checkDatabaseInitialized(
-  db: SQLite.SQLiteDatabase
-): Promise<Result<{ isFirstRun: boolean }, DbConnectionError>> {
-  try {
-    // Check if database_version table exists
-    const result = await db.getAllAsync<{ name: string }>(
-      `SELECT name FROM sqlite_master WHERE type='table' AND name='database_version';`
-    )
-    const isFirstRun = result.length === 0
-    return Result.ok({ isFirstRun })
-  } catch (error) {
-    // If we get an error like "no such table: sqlite_master", it's definitely a first run
-    // SQLite creates sqlite_master automatically, so if it doesn't exist, the DB is completely new
-    logger.info("Error checking database tables, assuming first run", error)
-    return Result.ok({ isFirstRun: true })
-  }
 }
 
 /**
