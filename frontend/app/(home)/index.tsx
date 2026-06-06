@@ -1,4 +1,5 @@
 import { ActionButton } from "@/components/ActionButton"
+import { Palette } from "@/constants/Colors"
 import React from "react"
 import { FlatList, StyleSheet, ActivityIndicator, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
@@ -115,8 +116,8 @@ export default function Index() {
     if (lists.length === 0) {
       return (
         <ThemedText style={styles.emptyListInfoTextStyle} type="default">
-          Press the &apos;+&apos; button at the bottom right to create your first shopping
-          list.
+          Press the &apos;+&apos; button at the bottom right to create your
+          first shopping list.
         </ThemedText>
       )
     }
@@ -156,7 +157,7 @@ const styles = StyleSheet.create({
     textAlign: "center",
   },
   errorTextStyle: {
-    color: "red",
+    color: Palette.error,
     textAlign: "center",
   },
 })

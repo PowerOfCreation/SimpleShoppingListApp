@@ -6,6 +6,7 @@ import {
 } from "react-native"
 import React from "react"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
+import { Colors } from "@/constants/Colors"
 
 type ActionProps = {
   testID?: string
@@ -30,14 +31,14 @@ export function ActionButton(props: ActionProps) {
 const styles = StyleSheet.create({
   button: {
     borderWidth: 1,
-    borderColor: "rgba(0,0,0,0.2)",
+    borderColor: Colors.light.actionButtonBorder,
     alignItems: "center",
     justifyContent: "center",
     width: 70,
     position: "absolute",
     right: 10,
     height: 70,
-    backgroundColor: "#fff",
+    backgroundColor: Colors.light.actionButtonBg,
     borderRadius: 100,
   },
   symbol: {
