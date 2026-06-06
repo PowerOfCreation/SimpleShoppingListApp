@@ -856,4 +856,140 @@ describe("Migrations", () => {
       expect(result.getError()).toBeInstanceOf(DbMigrationError)
     })
   })
+
+  describe("Migration to version 6 - Ingredient Events", () => {
+    beforeEach(async () => {
+      await db.execAsync(`
+        DROP TABLE IF EXISTS domain_events;
+        DROP TABLE IF EXISTS ingredients;
+        DROP TABLE IF EXISTS ingredient_lists;
+        DROP TABLE IF EXISTS database_version;
+      `)
+
+      // Set up version 5 schema
+      await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS ingredient_lists (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS ingredients (
+          id TEXT PRIMARY KEY,
+          name TEXT NOT NULL,
+          completed INTEGER NOT NULL DEFAULT 0,
+          list_id TEXT NOT NULL,
+          created_at INTEGER NOT NULL,
+          updated_at INTEGER NOT NULL,
+          completed_at INTEGER,
+          FOREIGN KEY (list_id) REFERENCES ingredient_lists(id) ON DELETE CASCADE
+        );
+
+        CREATE TABLE IF NOT EXISTS domain_events (
+          event_id       TEXT PRIMARY KEY,
+          event_type     TEXT NOT NULL,
+          aggregate_id   TEXT NOT NULL,
+          aggregate_type TEXT NOT NULL,
+          occurred_at    INTEGER NOT NULL,
+          client_id      TEXT NOT NULL,
+          payload        TEXT NOT NULL
+        );
+
+        CREATE TABLE IF NOT EXISTS database_version (
+          version INTEGER PRIMARY KEY,
+          migration_date INTEGER NOT NULL
+        );
+
+        INSERT INTO database_version (version, migration_date) VALUES (5, ${Date.now()});
+      `)
+
+      await db.execAsync(`
+        INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES
+        ('list-1', 'Groceries', 1000, 1000);
+      `)
+
+      await db.execAsync(`
+        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at, completed_at) VALUES
+        ('ing-1', 'Milk', 0, 'list-1', 1000, 1000, null),
+        ('ing-2', 'Eggs', 1, 'list-1', 2000, 2000, 2500);
+      `)
+    })
+
+    it("should synthesize ingredient.created events for all existing ingredients", async () => {
+      const { migrateToVersion6 } = jest.requireActual("../migrations")
+      const result = await migrateToVersion6(db)
+
+      expect(result.success).toBe(true)
+
+      const events = await db.getAllAsync<{
+        event_type: string
+        aggregate_id: string
+        aggregate_type: string
+        client_id: string
+        payload: string
+      }>(
+        `SELECT event_type, aggregate_id, aggregate_type, client_id, payload
+         FROM domain_events ORDER BY occurred_at ASC`
+      )
+
+      expect(events.length).toBe(2)
+      expect(events[0].event_type).toBe("ingredient.created")
+      expect(events[0].aggregate_id).toBe("ing-1")
+      expect(events[0].aggregate_type).toBe("ingredient")
+      expect(events[0].client_id).toBe("migration")
+      const payload0 = JSON.parse(events[0].payload)
+      expect(payload0.name).toBe("Milk")
+      expect(payload0.listId).toBe("list-1")
+      expect(payload0.completed).toBe(false)
+      expect(payload0.completedAt).toBeNull()
+
+      expect(events[1].aggregate_id).toBe("ing-2")
+      const payload1 = JSON.parse(events[1].payload)
+      expect(payload1.name).toBe("Eggs")
+      expect(payload1.completed).toBe(true)
+      expect(payload1.completedAt).toBe(2500)
+    })
+
+    it("should preserve occurred_at from original ingredient created_at", async () => {
+      const { migrateToVersion6 } = jest.requireActual("../migrations")
+      await migrateToVersion6(db)
+
+      const events = await db.getAllAsync<{
+        aggregate_id: string
+        occurred_at: number
+      }>(
+        `SELECT aggregate_id, occurred_at FROM domain_events ORDER BY occurred_at ASC`
+      )
+
+      expect(events[0].occurred_at).toBe(1000)
+      expect(events[1].occurred_at).toBe(2000)
+    })
+
+    it("should handle empty ingredients table gracefully", async () => {
+      await db.execAsync(`DELETE FROM ingredients`)
+
+      const { migrateToVersion6 } = jest.requireActual("../migrations")
+      const result = await migrateToVersion6(db)
+
+      expect(result.success).toBe(true)
+
+      const count = await db.getFirstAsync<{ count: number }>(
+        `SELECT COUNT(*) as count FROM domain_events`
+      )
+      expect(count?.count).toBe(0)
+    })
+
+    it("should handle migration errors gracefully", async () => {
+      jest.spyOn(db, "withTransactionAsync").mockImplementationOnce(() => {
+        throw new Error("Migration failed")
+      })
+
+      const { migrateToVersion6 } = jest.requireActual("../migrations")
+      const result = await migrateToVersion6(db)
+
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBeInstanceOf(DbMigrationError)
+    })
+  })
 })

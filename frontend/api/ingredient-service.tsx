@@ -2,10 +2,14 @@ import { Ingredient } from "@/types/Ingredient"
 import "react-native-get-random-values"
 import { v4 as uuidv4 } from "uuid"
 import { IngredientRepository } from "@/database/ingredient-repository"
+import { EventRepository } from "@/database/event-repository"
+import { IngredientProjection } from "@/database/ingredient-projection"
 import { getDatabase } from "@/database/database"
 import { createLogger } from "@/api/common/logger"
 import { Result } from "@/api/common/result"
 import { DbQueryError, ValidationError } from "@/api/common/error-types"
+import { EventTypes, AggregateTypes, DomainEventRow } from "@/types/DomainEvent"
+import { getClientId } from "@/api/common/client-id"
 
 const logger = createLogger("IngredientService")
 
@@ -13,9 +17,18 @@ export class IngredientService {
   ingredients: Ingredient[] = []
   initialLoad = true
   private repository: IngredientRepository
+  private eventRepository: EventRepository
+  private projection: IngredientProjection
 
-  constructor(repository?: IngredientRepository) {
-    this.repository = repository || new IngredientRepository(getDatabase())
+  constructor(
+    repository?: IngredientRepository,
+    eventRepository?: EventRepository,
+    projection?: IngredientProjection
+  ) {
+    const db = getDatabase()
+    this.repository = repository || new IngredientRepository(db)
+    this.eventRepository = eventRepository || new EventRepository(db)
+    this.projection = projection || new IngredientProjection(db)
   }
 
   async GetIngredients(
@@ -58,24 +71,35 @@ export class IngredientService {
 
     try {
       const now = Date.now()
-      const newIngredient: Ingredient = {
-        name: ingredientName,
-        completed: false,
-        list_id: listId,
-        id: uuidv4(),
-        created_at: now,
-        updated_at: now,
+      const ingredientId = uuidv4()
+      const event: DomainEventRow = {
+        event_id: uuidv4(),
+        event_type: EventTypes.INGREDIENT_CREATED,
+        aggregate_id: ingredientId,
+        aggregate_type: AggregateTypes.INGREDIENT,
+        occurred_at: now,
+        client_id: getClientId(),
+        payload: JSON.stringify({ name: ingredientName, listId }),
       }
 
-      // Add to repository
-      const result = await this.repository.add(newIngredient)
+      const result = await this.eventRepository.appendWithProjection(
+        event,
+        (db) => this.projection.handleCreated(db, event)
+      )
 
       if (!result.success) {
         logger.error("Error adding ingredient", result.getError())
         return result
       }
 
-      // Add to local cache
+      const newIngredient: Ingredient = {
+        name: ingredientName,
+        completed: false,
+        list_id: listId,
+        id: ingredientId,
+        created_at: now,
+        updated_at: now,
+      }
       this.ingredients.unshift(newIngredient)
 
       return Result.ok(undefined)
@@ -97,7 +121,22 @@ export class IngredientService {
     completed: boolean
   ): Promise<Result<void, DbQueryError>> {
     try {
-      const result = await this.repository.updateCompletion(id, completed)
+      const now = Date.now()
+      const completedAt = completed ? now : null
+      const event: DomainEventRow = {
+        event_id: uuidv4(),
+        event_type: EventTypes.INGREDIENT_UPDATED,
+        aggregate_id: id,
+        aggregate_type: AggregateTypes.INGREDIENT,
+        occurred_at: now,
+        client_id: getClientId(),
+        payload: JSON.stringify({ completed, completedAt }),
+      }
+
+      const result = await this.eventRepository.appendWithProjection(
+        event,
+        (db) => this.projection.handleUpdated(db, event)
+      )
 
       if (!result.success) {
         logger.error(
@@ -107,10 +146,8 @@ export class IngredientService {
         return result
       }
 
-      // Update local cache
       const index = this.ingredients.findIndex((ing) => ing.id === id)
       if (index !== -1) {
-        const now = Date.now()
         this.ingredients[index].completed = completed
         this.ingredients[index].updated_at = now
         this.ingredients[index].completed_at = completed ? now : undefined
@@ -143,7 +180,21 @@ export class IngredientService {
     }
 
     try {
-      const result = await this.repository.updateName(id, name)
+      const now = Date.now()
+      const event: DomainEventRow = {
+        event_id: uuidv4(),
+        event_type: EventTypes.INGREDIENT_UPDATED,
+        aggregate_id: id,
+        aggregate_type: AggregateTypes.INGREDIENT,
+        occurred_at: now,
+        client_id: getClientId(),
+        payload: JSON.stringify({ name }),
+      }
+
+      const result = await this.eventRepository.appendWithProjection(
+        event,
+        (db) => this.projection.handleUpdated(db, event)
+      )
 
       if (!result.success) {
         logger.error(
@@ -153,11 +204,10 @@ export class IngredientService {
         return result
       }
 
-      // Update local cache
       const index = this.ingredients.findIndex((ing) => ing.id === id)
       if (index !== -1) {
         this.ingredients[index].name = name
-        this.ingredients[index].updated_at = Date.now()
+        this.ingredients[index].updated_at = now
       }
 
       return Result.ok(undefined)
@@ -176,14 +226,26 @@ export class IngredientService {
 
   async deleteIngredient(id: string): Promise<Result<void, DbQueryError>> {
     try {
-      const result = await this.repository.remove(id)
+      const event: DomainEventRow = {
+        event_id: uuidv4(),
+        event_type: EventTypes.INGREDIENT_DELETED,
+        aggregate_id: id,
+        aggregate_type: AggregateTypes.INGREDIENT,
+        occurred_at: Date.now(),
+        client_id: getClientId(),
+        payload: JSON.stringify({}),
+      }
+
+      const result = await this.eventRepository.appendWithProjection(
+        event,
+        (db) => this.projection.handleDeleted(db, event)
+      )
 
       if (!result.success) {
         logger.error(`Error deleting ingredient ${id}`, result.getError())
         return result
       }
 
-      // Update local cache
       const index = this.ingredients.findIndex((ing) => ing.id === id)
       if (index !== -1) {
         this.ingredients.splice(index, 1)
@@ -221,6 +283,29 @@ export class IngredientService {
         new DbQueryError(
           "Failed to get completed ingredients",
           "getCompletedIngredients",
+          "Ingredient",
+          error
+        )
+      )
+    }
+  }
+
+  async rebuildProjection(): Promise<Result<void, DbQueryError>> {
+    const eventsResult = await this.eventRepository.getByAggregateType(
+      AggregateTypes.INGREDIENT
+    )
+    if (!eventsResult.success) {
+      return Result.fail(eventsResult.getError())
+    }
+    try {
+      await this.projection.rebuild(eventsResult.getValue()!)
+      return Result.ok(undefined)
+    } catch (error) {
+      logger.error("Error rebuilding projection", error)
+      return Result.fail(
+        new DbQueryError(
+          "Failed to rebuild projection",
+          "rebuildProjection",
           "Ingredient",
           error
         )

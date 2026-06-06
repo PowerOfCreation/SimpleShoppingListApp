@@ -102,6 +102,12 @@ export async function executeMigrations(
       if (!v5Result.success) {
         return v5Result
       }
+
+      // Backfill domain_events for all ingredients
+      const v6Result = await migrateToVersion6(db)
+      if (!v6Result.success) {
+        return v6Result
+      }
     } else {
       // Run version-specific migrations for existing databases
       if (currentVersion < 2) {
@@ -129,6 +135,13 @@ export async function executeMigrations(
         const v5Result = await migrateToVersion5(db)
         if (!v5Result.success) {
           return v5Result
+        }
+      }
+
+      if (currentVersion < 6) {
+        const v6Result = await migrateToVersion6(db)
+        if (!v6Result.success) {
+          return v6Result
         }
       }
     }
@@ -416,6 +429,59 @@ export async function migrateToVersion5(
       error
     )
     logger.error("Error migrating to version 5", migrationError)
+    return Result.fail(migrationError)
+  }
+}
+
+/**
+ * Migrate database from version 5 to version 6
+ * Synthesizes ingredient.created events for all existing ingredients rows.
+ * client_id is set to 'migration' for these synthetic events.
+ */
+export async function migrateToVersion6(
+  db: SQLite.SQLiteDatabase
+): Promise<Result<void, DbMigrationError>> {
+  try {
+    await db.withTransactionAsync(async () => {
+      const existingIngredients = await db.getAllAsync<{
+        id: string
+        name: string
+        list_id: string
+        completed: number
+        completed_at: number | null
+        created_at: number
+      }>(`SELECT id, name, list_id, completed, completed_at, created_at FROM ingredients`)
+
+      for (const ingredient of existingIngredients) {
+        await db.runAsync(
+          `INSERT INTO domain_events (event_id, event_type, aggregate_id, aggregate_type, occurred_at, client_id, payload)
+           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          uuidv4(),
+          EventTypes.INGREDIENT_CREATED,
+          ingredient.id,
+          AggregateTypes.INGREDIENT,
+          ingredient.created_at,
+          "migration",
+          JSON.stringify({
+            name: ingredient.name,
+            listId: ingredient.list_id,
+            completed: ingredient.completed === 1,
+            completedAt: ingredient.completed_at,
+          })
+        )
+      }
+
+      logger.info("Successfully migrated database to version 6")
+    })
+
+    return Result.ok(undefined)
+  } catch (error) {
+    const migrationError = new DbMigrationError(
+      "Failed to migrate to version 6",
+      6,
+      error
+    )
+    logger.error("Error migrating to version 6", migrationError)
     return Result.fail(migrationError)
   }
 }

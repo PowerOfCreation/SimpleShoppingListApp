@@ -12,8 +12,12 @@ export const EventTypes = {
   TODO_LIST_CREATED: "todo_list.created",
   TODO_LIST_UPDATED: "todo_list.updated",
   TODO_LIST_DELETED: "todo_list.deleted",
+  INGREDIENT_CREATED: "ingredient.created",
+  INGREDIENT_UPDATED: "ingredient.updated",
+  INGREDIENT_DELETED: "ingredient.deleted",
 } as const
 
 export const AggregateTypes = {
   TODO_LIST: "todo_list",
+  INGREDIENT: "ingredient",
 } as const
