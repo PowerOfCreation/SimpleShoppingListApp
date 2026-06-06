@@ -42,7 +42,10 @@ function EventCard({ event }: { event: DomainEventRow }) {
   }
 
   return (
-    <TouchableOpacity onPress={() => setExpanded((v) => !v)} activeOpacity={0.8}>
+    <TouchableOpacity
+      onPress={() => setExpanded((v) => !v)}
+      activeOpacity={0.8}
+    >
       <ThemedView style={[styles.card, { borderLeftColor: borderColor }]}>
         <View style={styles.cardHeader}>
           <View style={[styles.badge, { backgroundColor: borderColor }]}>
@@ -118,7 +121,9 @@ export default function EventLogScreen() {
   if (events.length === 0) {
     return (
       <View style={styles.centered}>
-        <ThemedText style={styles.emptyText}>Noch keine Events vorhanden.</ThemedText>
+        <ThemedText style={styles.emptyText}>
+          Noch keine Events vorhanden.
+        </ThemedText>
       </View>
     )
   }

@@ -4,7 +4,10 @@ import { DomainEventRow, EventTypes } from "@/types/DomainEvent"
 export class IngredientProjection {
   constructor(private readonly db: SQLiteDatabase) {}
 
-  async handleCreated(db: SQLiteDatabase, event: DomainEventRow): Promise<void> {
+  async handleCreated(
+    db: SQLiteDatabase,
+    event: DomainEventRow
+  ): Promise<void> {
     const { name, listId, completed, completedAt } = JSON.parse(event.payload)
     await db.runAsync(
       `INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at, completed_at)
@@ -19,7 +22,10 @@ export class IngredientProjection {
     )
   }
 
-  async handleUpdated(db: SQLiteDatabase, event: DomainEventRow): Promise<void> {
+  async handleUpdated(
+    db: SQLiteDatabase,
+    event: DomainEventRow
+  ): Promise<void> {
     const payload = JSON.parse(event.payload)
     if ("name" in payload) {
       await db.runAsync(
@@ -39,7 +45,10 @@ export class IngredientProjection {
     }
   }
 
-  async handleDeleted(db: SQLiteDatabase, event: DomainEventRow): Promise<void> {
+  async handleDeleted(
+    db: SQLiteDatabase,
+    event: DomainEventRow
+  ): Promise<void> {
     await db.runAsync(
       `DELETE FROM ingredients WHERE id = ?`,
       event.aggregate_id
