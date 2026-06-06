@@ -34,6 +34,10 @@ module.exports = [
   {
     rules: {
       "import/named": "error",
+      // React Compiler lint rule (react-hooks v7) — incompatible with the async
+      // data-fetching pattern used here (setState before first await in useCallback).
+      // Re-enable if the project adopts the React Compiler.
+      "react-hooks/set-state-in-effect": "off",
     },
   },
   prettierRecommended,
