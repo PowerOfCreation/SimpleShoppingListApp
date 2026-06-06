@@ -1,21 +1,20 @@
 import * as SQLite from "expo-sqlite"
 import { DB_VERSION, updateDatabaseVersion } from "@/database/database"
-import { getItem } from "../api/common/async-storage"
-import { Ingredient } from "../types/Ingredient"
 import { createLogger } from "@/api/common/logger"
 import { Result } from "@/api/common/result"
 import { DbMigrationError } from "@/api/common/error-types"
-import { NIL_UUID } from "@/constants/Uuids"
-import "react-native-get-random-values"
-import { v4 as uuidv4 } from "uuid"
-import { EventTypes, AggregateTypes } from "@/types/DomainEvent"
 
 const logger = createLogger("Migrations")
 
-/**
- * SQL statements for creating the database schema (version 4)
- * Version 4 adds completed_at column to track when ingredients are completed
- */
+const CREATE_INGREDIENT_LISTS_TABLE = `
+CREATE TABLE IF NOT EXISTS ingredient_lists (
+  id TEXT PRIMARY KEY,
+  name TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL
+);
+`
+
 const CREATE_INGREDIENTS_TABLE = `
 CREATE TABLE IF NOT EXISTS ingredients (
   id TEXT PRIMARY KEY,
@@ -36,15 +35,6 @@ CREATE TABLE IF NOT EXISTS database_version (
 );
 `
 
-const CREATE_INGREDIENT_LISTS_TABLE = `
-CREATE TABLE IF NOT EXISTS ingredient_lists (
-  id TEXT PRIMARY KEY,
-  name TEXT NOT NULL,
-  created_at INTEGER NOT NULL,
-  updated_at INTEGER NOT NULL
-);
-`
-
 const CREATE_DOMAIN_EVENTS_TABLE = `
 CREATE TABLE IF NOT EXISTS domain_events (
   event_id       TEXT PRIMARY KEY,
@@ -62,91 +52,69 @@ CREATE INDEX IF NOT EXISTS idx_domain_events_aggregate
 ON domain_events(aggregate_id, occurred_at);
 `
 
-/**
- * Execute database migrations
- * @param db SQLite database connection
- * @param isFirstRun Whether this is the first run of the app with SQLite
- * @param currentVersion Current database version
- * @returns Result containing void on success or DbMigrationError on failure
- */
+type Migration = {
+  version: number
+  migrate: (db: SQLite.SQLiteDatabase) => Promise<Result<void, DbMigrationError>>
+}
+
+export async function migrateToVersion1(
+  db: SQLite.SQLiteDatabase
+): Promise<Result<void, DbMigrationError>> {
+  try {
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(CREATE_INGREDIENT_LISTS_TABLE)
+      await db.runAsync(CREATE_INGREDIENTS_TABLE)
+      await db.runAsync(CREATE_DATABASE_VERSION_TABLE)
+      await db.runAsync(CREATE_DOMAIN_EVENTS_TABLE)
+      await db.runAsync(CREATE_DOMAIN_EVENTS_INDEX)
+    })
+
+    logger.info("Successfully migrated database to version 1")
+    return Result.ok(undefined)
+  } catch (error) {
+    const migrationError = new DbMigrationError(
+      "Failed to migrate to version 1",
+      1,
+      error
+    )
+    logger.error("Error migrating to version 1", migrationError)
+    return Result.fail(migrationError)
+  }
+}
+
+const MIGRATIONS: Migration[] = [
+  { version: 1, migrate: migrateToVersion1 },
+]
+
 export async function executeMigrations(
   db: SQLite.SQLiteDatabase,
-  isFirstRun: boolean,
   currentVersion: number = 0
 ): Promise<Result<void, DbMigrationError>> {
   try {
-    // Create tables if first run
-    if (isFirstRun || currentVersion === 0) {
-      const createResult = await createTables(db)
-      if (!createResult.success) {
-        return createResult
+    // One-time: devices from the old multi-migration system already have the current
+    // schema — just reset their version tracking to align with the new single-migration world.
+    if (currentVersion > 1) {
+      // Delete all existing version rows so getDatabaseVersion() returns the correct value next launch
+      await db.runAsync(`DELETE FROM database_version;`)
+      const resetResult = await updateDatabaseVersion(1, db)
+      if (!resetResult.success) {
+        return Result.fail(
+          new DbMigrationError(
+            "Failed to reset legacy database version",
+            1,
+            resetResult.getError()
+          )
+        )
       }
-
-      // Create default list on first run
-      const defaultListResult = await createDefaultList(db)
-      if (!defaultListResult.success) {
-        return Result.fail(defaultListResult.getError())
-      }
-      const defaultListId = defaultListResult.getValue()!
-
-      // If this is the first run, migrate data from AsyncStorage
-      if (isFirstRun) {
-        const migrateResult = await migrateFromAsyncStorage(db, defaultListId)
-        if (!migrateResult.success) {
-          return migrateResult
-        }
-      }
-
-      // Backfill domain_events for all lists (including default list just created)
-      const v5Result = await migrateToVersion5(db)
-      if (!v5Result.success) {
-        return v5Result
-      }
-
-      // Backfill domain_events for all ingredients
-      const v6Result = await migrateToVersion6(db)
-      if (!v6Result.success) {
-        return v6Result
-      }
-    } else {
-      // Run version-specific migrations for existing databases
-      if (currentVersion < 2) {
-        const v2Result = await migrateToVersion2(db)
-        if (!v2Result.success) {
-          return v2Result
-        }
-      }
-
-      if (currentVersion < 3) {
-        const v3Result = await migrateToVersion3(db)
-        if (!v3Result.success) {
-          return v3Result
-        }
-      }
-
-      if (currentVersion < 4) {
-        const v4Result = await migrateToVersion4(db)
-        if (!v4Result.success) {
-          return v4Result
-        }
-      }
-
-      if (currentVersion < 5) {
-        const v5Result = await migrateToVersion5(db)
-        if (!v5Result.success) {
-          return v5Result
-        }
-      }
-
-      if (currentVersion < 6) {
-        const v6Result = await migrateToVersion6(db)
-        if (!v6Result.success) {
-          return v6Result
-        }
-      }
+      currentVersion = 1
     }
 
-    // Update database version
+    for (const migration of MIGRATIONS) {
+      if (migration.version <= currentVersion) continue
+      const result = await migration.migrate(db)
+      if (!result.success) return result
+    }
+
     const versionResult = await updateDatabaseVersion(DB_VERSION, db)
     if (!versionResult.success) {
       return Result.fail(
@@ -166,388 +134,6 @@ export async function executeMigrations(
       error
     )
     logger.error("Error executing migrations", migrationError)
-    return Result.fail(migrationError)
-  }
-}
-
-/**
- * Create database tables
- * @returns Result containing void on success or DbMigrationError on failure
- */
-export async function createTables(
-  db: SQLite.SQLiteDatabase
-): Promise<Result<void, DbMigrationError>> {
-  try {
-    // Create tables in transaction to ensure atomicity
-    await db.withTransactionAsync(async () => {
-      // Create ingredients table
-      await db.runAsync(CREATE_INGREDIENTS_TABLE)
-
-      // Create database version table
-      await db.runAsync(CREATE_DATABASE_VERSION_TABLE)
-
-      // Create ingredient lists table
-      await db.runAsync(CREATE_INGREDIENT_LISTS_TABLE)
-
-      // Create domain events table (event store)
-      await db.runAsync(CREATE_DOMAIN_EVENTS_TABLE)
-      await db.runAsync(CREATE_DOMAIN_EVENTS_INDEX)
-    })
-
-    return Result.ok(undefined)
-  } catch (error) {
-    const migrationError = new DbMigrationError(
-      "Failed to create database tables",
-      DB_VERSION,
-      error
-    )
-    logger.error("Error creating database tables", migrationError)
-    return Result.fail(migrationError)
-  }
-}
-
-/**
- * Create default ingredient list
- * @param db SQLite database connection
- * @returns Result containing the default list ID on success or DbMigrationError on failure
- */
-export async function createDefaultList(
-  db: SQLite.SQLiteDatabase
-): Promise<Result<string, DbMigrationError>> {
-  try {
-    const now = Date.now()
-    const defaultListId = NIL_UUID
-
-    await db.runAsync(
-      `INSERT INTO ingredient_lists (id, name, created_at, updated_at)
-       VALUES (?, ?, ?, ?)`,
-      defaultListId,
-      "Standard List",
-      now,
-      now
-    )
-
-    logger.info("Created default ingredient list")
-    return Result.ok(defaultListId)
-  } catch (error) {
-    const migrationError = new DbMigrationError(
-      "Failed to create default ingredient list",
-      DB_VERSION,
-      error
-    )
-    logger.error("Error creating default list", migrationError)
-    return Result.fail(migrationError)
-  }
-}
-
-/**
- * Migrate data from AsyncStorage to SQLite
- * @param db SQLite database connection
- * @param defaultListId The ID of the default list to assign ingredients to
- * @returns Result containing void on success or DbMigrationError on failure
- */
-export async function migrateFromAsyncStorage(
-  db: SQLite.SQLiteDatabase,
-  defaultListId: string
-): Promise<Result<void, DbMigrationError>> {
-  try {
-    // Load ingredients from AsyncStorage
-    const ingredients: Ingredient[] = (await getItem("ingredients")) || []
-
-    if (ingredients.length === 0) {
-      logger.info("No ingredients found in AsyncStorage to migrate")
-      return Result.ok(undefined)
-    }
-
-    // Insert ingredients into SQLite in a transaction
-    await db.withTransactionAsync(async () => {
-      const now = Date.now()
-
-      for (const ingredient of ingredients) {
-        await db.runAsync(
-          `INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)`,
-          ingredient.id,
-          ingredient.name,
-          ingredient.completed ? 1 : 0,
-          defaultListId,
-          ingredient.created_at || now,
-          ingredient.updated_at || now
-        )
-      }
-    })
-
-    logger.info(
-      `Successfully migrated ${ingredients.length} ingredients from AsyncStorage`
-    )
-
-    return Result.ok(undefined)
-  } catch (error) {
-    const migrationError = new DbMigrationError(
-      "Failed to migrate data from AsyncStorage",
-      DB_VERSION,
-      error
-    )
-    logger.error("Error migrating data from AsyncStorage", migrationError)
-    return Result.fail(migrationError)
-  }
-}
-
-/**
- * Migrate database from version 2 to version 3
- * Adds foreign key constraint with cascade delete:
- * - Recreates ingredients table with foreign key constraint
- * - Cleans up orphaned ingredients (those referencing non-existent lists)
- * - Migrates valid ingredients to new table
- * @returns Result containing void on success or DbMigrationError on failure
- */
-export async function migrateToVersion3(
-  db: SQLite.SQLiteDatabase
-): Promise<Result<void, DbMigrationError>> {
-  try {
-    await db.withTransactionAsync(async () => {
-      // First, enable foreign key constraints (they're off by default in SQLite)
-      await db.execAsync(`PRAGMA foreign_keys = ON;`)
-
-      // Rename existing ingredients table
-      await db.runAsync(`
-        ALTER TABLE ingredients RENAME TO ingredients_old;
-      `)
-
-      // Create new ingredients table with foreign key constraint
-      await db.runAsync(`
-        CREATE TABLE ingredients (
-          id TEXT PRIMARY KEY,
-          name TEXT NOT NULL,
-          completed INTEGER NOT NULL DEFAULT 0,
-          list_id TEXT NOT NULL,
-          created_at INTEGER NOT NULL,
-          updated_at INTEGER NOT NULL,
-          FOREIGN KEY (list_id) REFERENCES ingredient_lists(id) ON DELETE CASCADE
-        );
-      `)
-
-      // Copy valid ingredients (only those with valid list_id references)
-      // This automatically cleans up orphaned ingredients
-      await db.runAsync(`
-        INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at)
-        SELECT i.id, i.name, i.completed, i.list_id, i.created_at, i.updated_at
-        FROM ingredients_old i
-        INNER JOIN ingredient_lists il ON i.list_id = il.id;
-      `)
-
-      // Drop old table
-      await db.runAsync(`DROP TABLE ingredients_old;`)
-
-      logger.info("Successfully migrated database to version 3")
-    })
-
-    return Result.ok(undefined)
-  } catch (error) {
-    const migrationError = new DbMigrationError(
-      "Failed to migrate to version 3",
-      3,
-      error
-    )
-    logger.error("Error migrating to version 3", migrationError)
-    return Result.fail(migrationError)
-  }
-}
-
-/**
- * Migrate database from version 3 to version 4
- * Adds completed_at column to track when ingredients are completed
- * @returns Result containing void on success or DbMigrationError on failure
- */
-export async function migrateToVersion4(
-  db: SQLite.SQLiteDatabase
-): Promise<Result<void, DbMigrationError>> {
-  try {
-    await db.withTransactionAsync(async () => {
-      // Add completed_at column to ingredients table
-      await db.runAsync(`
-        ALTER TABLE ingredients ADD COLUMN completed_at INTEGER;
-      `)
-
-      logger.info("Successfully migrated database to version 4")
-    })
-
-    return Result.ok(undefined)
-  } catch (error) {
-    const migrationError = new DbMigrationError(
-      "Failed to migrate to version 4",
-      4,
-      error
-    )
-    logger.error("Error migrating to version 4", migrationError)
-    return Result.fail(migrationError)
-  }
-}
-
-/**
- * Migrate database from version 4 to version 5
- * Introduces the domain_events event store table.
- * Synthesizes todo_list.created events for all existing ingredient_lists rows.
- * client_id is set to 'migration' for these synthetic events.
- */
-export async function migrateToVersion5(
-  db: SQLite.SQLiteDatabase
-): Promise<Result<void, DbMigrationError>> {
-  try {
-    await db.withTransactionAsync(async () => {
-      await db.runAsync(CREATE_DOMAIN_EVENTS_TABLE)
-      await db.runAsync(CREATE_DOMAIN_EVENTS_INDEX)
-
-      const existingLists = await db.getAllAsync<{
-        id: string
-        name: string
-        created_at: number
-      }>(`SELECT id, name, created_at FROM ingredient_lists`)
-
-      for (const list of existingLists) {
-        await db.runAsync(
-          `INSERT INTO domain_events (event_id, event_type, aggregate_id, aggregate_type, occurred_at, client_id, payload)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          uuidv4(),
-          EventTypes.TODO_LIST_CREATED,
-          list.id,
-          AggregateTypes.TODO_LIST,
-          list.created_at,
-          "migration",
-          JSON.stringify({ name: list.name })
-        )
-      }
-
-      logger.info("Successfully migrated database to version 5")
-    })
-
-    return Result.ok(undefined)
-  } catch (error) {
-    const migrationError = new DbMigrationError(
-      "Failed to migrate to version 5",
-      5,
-      error
-    )
-    logger.error("Error migrating to version 5", migrationError)
-    return Result.fail(migrationError)
-  }
-}
-
-/**
- * Migrate database from version 5 to version 6
- * Synthesizes ingredient.created events for all existing ingredients rows.
- * client_id is set to 'migration' for these synthetic events.
- */
-export async function migrateToVersion6(
-  db: SQLite.SQLiteDatabase
-): Promise<Result<void, DbMigrationError>> {
-  try {
-    await db.withTransactionAsync(async () => {
-      const existingIngredients = await db.getAllAsync<{
-        id: string
-        name: string
-        list_id: string
-        completed: number
-        completed_at: number | null
-        created_at: number
-      }>(`SELECT id, name, list_id, completed, completed_at, created_at FROM ingredients`)
-
-      for (const ingredient of existingIngredients) {
-        await db.runAsync(
-          `INSERT INTO domain_events (event_id, event_type, aggregate_id, aggregate_type, occurred_at, client_id, payload)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
-          uuidv4(),
-          EventTypes.INGREDIENT_CREATED,
-          ingredient.id,
-          AggregateTypes.INGREDIENT,
-          ingredient.created_at,
-          "migration",
-          JSON.stringify({
-            name: ingredient.name,
-            listId: ingredient.list_id,
-            completed: ingredient.completed === 1,
-            completedAt: ingredient.completed_at,
-          })
-        )
-      }
-
-      logger.info("Successfully migrated database to version 6")
-    })
-
-    return Result.ok(undefined)
-  } catch (error) {
-    const migrationError = new DbMigrationError(
-      "Failed to migrate to version 6",
-      6,
-      error
-    )
-    logger.error("Error migrating to version 6", migrationError)
-    return Result.fail(migrationError)
-  }
-}
-
-/**
- * Migrate database from version 1 to version 2
- * Adds ingredient lists functionality:
- * - Creates ingredient_lists table
- * - Adds list_id column to ingredients table
- * - Creates a default "Standard List"
- * - Assigns all existing ingredients to the default list
- * @returns Result containing void on success or DbMigrationError on failure
- */
-export async function migrateToVersion2(
-  db: SQLite.SQLiteDatabase
-): Promise<Result<void, DbMigrationError>> {
-  try {
-    await db.withTransactionAsync(async () => {
-      const now = Date.now()
-
-      // Create ingredient_lists table
-      await db.runAsync(CREATE_INGREDIENT_LISTS_TABLE)
-
-      // Use nil UUID as default list ID
-      const defaultListId = NIL_UUID
-
-      // Create default "Standard List"
-      await db.runAsync(
-        `INSERT INTO ingredient_lists (id, name, created_at, updated_at)
-         VALUES (?, ?, ?, ?)`,
-        defaultListId,
-        "Standard List",
-        now,
-        now
-      )
-
-      // Add list_id column to ingredients table
-      await db.runAsync(`
-        ALTER TABLE ingredients ADD COLUMN list_id TEXT;
-      `)
-
-      // Assign all existing ingredients to the default list
-      await db.runAsync(
-        `
-        UPDATE ingredients SET list_id = ?;
-      `,
-        defaultListId
-      )
-
-      // Update database version
-      await db.runAsync(
-        `INSERT OR REPLACE INTO database_version (version, migration_date)
-         VALUES (2, ?)`,
-        now
-      )
-    })
-
-    logger.info("Successfully migrated database to version 2")
-    return Result.ok(undefined)
-  } catch (error) {
-    const migrationError = new DbMigrationError(
-      "Failed to migrate to version 2",
-      2,
-      error
-    )
-    logger.error("Error migrating to version 2", migrationError)
     return Result.fail(migrationError)
   }
 }
