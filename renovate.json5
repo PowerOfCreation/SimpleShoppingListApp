@@ -1,49 +1,55 @@
 {
-  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
-  "repositories": ["PowerOfCreation/SimpleShoppingListApp"],
-  "minimumReleaseAge": "48 hours",
-  "prHourlyLimit": 10,
-  "extends": [
-    "config:best-practices",
-    "helpers:pinGitHubActionDigestsToSemver"
+  $schema: 'https://docs.renovatebot.com/renovate-schema.json',
+  repositories: [
+    'PowerOfCreation/SimpleShoppingListApp',
   ],
-  "packageRules": [
+  minimumReleaseAge: '48 hours',
+  prHourlyLimit: 10,
+  extends: [
+    'config:best-practices',
+    'helpers:pinGitHubActionDigestsToSemver',
+  ],
+  packageRules: [
     {
-      "matchUpdateTypes": ["pinDigest"],
-      "minimumReleaseAge": null
+      matchUpdateTypes: [
+        'pinDigest',
+      ],
+      minimumReleaseAge: null,
     },
     {
-      "matchPackageNames": [
-        "expo",
-        "react",
-        "react-dom",
-        "react-native",
-        "react-native-gesture-handler",
-        "react-native-reanimated",
-        "react-native-safe-area-context",
-        "react-native-screens",
-        "react-native-web",
-        "react-native-worklets",
-        "@react-native-async-storage/async-storage"
+      matchPackageNames: [
+        'expo',
+        'react',
+        'react-dom',
+        'react-native',
+        'react-native-gesture-handler',
+        'react-native-reanimated',
+        'react-native-safe-area-context',
+        'react-native-screens',
+        'react-native-web',
+        'react-native-worklets',
+        '@react-native-async-storage/async-storage',
+        '/^expo-/',
+        '/^@expo//',
+        '/^@react-navigation//',
       ],
-      "matchPackagePatterns": ["^expo-", "^@expo/", "^@react-navigation/"],
-      "groupName": "expo sdk",
-      "groupSlug": "expo-sdk",
-      "rangeStrategy": "replace"
-    }
+      groupName: 'expo sdk',
+      groupSlug: 'expo-sdk',
+      rangeStrategy: 'replace',
+    },
   ],
-  "customManagers": [
+  customManagers: [
     {
-      "customType": "regex",
-      "managerFilePatterns": [
-        "/^\\.github\\/workflows\\/renovate\\.yml$/"
+      customType: 'regex',
+      managerFilePatterns: [
+        '/^\\.github\\/workflows\\/renovate\\.yml$/',
       ],
-      "matchStrings": [
-        "renovate-version: (?<currentValue>[\\d.]+)@(?<currentDigest>sha256:[a-f0-9]+)"
+      matchStrings: [
+        'renovate-version: (?<currentValue>[\\d.]+)@(?<currentDigest>sha256:[a-f0-9]+)',
       ],
-      "depNameTemplate": "ghcr.io/renovatebot/renovate",
-      "datasourceTemplate": "docker",
-      "versioningTemplate": "semver"
-    }
-  ]
+      depNameTemplate: 'ghcr.io/renovatebot/renovate',
+      datasourceTemplate: 'docker',
+      versioningTemplate: 'semver',
+    },
+  ],
 }
