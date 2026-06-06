@@ -91,24 +91,6 @@ export async function executeMigrations(
   currentVersion: number = 0
 ): Promise<Result<void, DbMigrationError>> {
   try {
-    // One-time: devices from the old multi-migration system already have the current
-    // schema — just reset their version tracking to align with the new single-migration world.
-    if (currentVersion > 1) {
-      // Delete all existing version rows so getDatabaseVersion() returns the correct value next launch
-      await db.runAsync(`DELETE FROM database_version;`)
-      const resetResult = await updateDatabaseVersion(1, db)
-      if (!resetResult.success) {
-        return Result.fail(
-          new DbMigrationError(
-            "Failed to reset legacy database version",
-            1,
-            resetResult.getError()
-          )
-        )
-      }
-      currentVersion = 1
-    }
-
     for (const migration of MIGRATIONS) {
       if (migration.version <= currentVersion) continue
       const result = await migration.migrate(db)
