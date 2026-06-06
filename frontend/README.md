@@ -1,40 +1,56 @@
 # Simple Shopping List App
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+This is an [Expo](https://expo.dev) project (bare workflow, React Native, Android focus).
 
-## Get started
-
-1. Install dependencies
-
-   ```bash
-   pnpm install
-   ```
-
-2. Start the app
-
-   ```bash
-    pnpm expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-# Get Release Build
+## Setup
 
 ```bash
-pnpm expo run:android --variant release
+pnpm install
 ```
 
-Interesting links:
-- https://reactnative.dev/docs/signed-apk-android
-- https://github.com/expo/eas-cli/issues/1300#issuecomment-1834275766
+## Android builds
 
-# Running tests locally
+Two separate apps can be installed in parallel on the same device:
+
+| | Dev App | Prod App |
+|---|---|---|
+| **Package** | `de.lightdevsolutions.sholist.dev` | `de.lightdevsolutions.sholist` |
+| **App name** | sholist Dev | sholist |
+| **Metro / Fast Refresh** | yes | no |
+| **Dev menu** | yes (shake or `adb shell input keyevent 82`) | no |
+
+### Development (connects to Metro)
+
+```bash
+pnpm android:dev
+```
+
+Keep Metro running in a second terminal:
+
+```bash
+pnpm expo start
+```
+
+### Production / Release (standalone)
+
+```bash
+pnpm android:prod
+```
+
+### Reinstall from scratch
+
+```bash
+adb uninstall de.lightdevsolutions.sholist.dev   # Dev App
+adb uninstall de.lightdevsolutions.sholist        # Prod App
+```
+
+## Tests
 
 ```bash
 pnpm test
 ```
+
+## Useful links
+
+- [Signed APK for Android](https://reactnative.dev/docs/signed-apk-android)
+- [Expo bare workflow](https://docs.expo.dev/workflow/overview/)
