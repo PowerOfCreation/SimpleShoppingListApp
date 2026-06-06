@@ -26,9 +26,10 @@
         "react-native-worklets",
         "@react-native-async-storage/async-storage"
       ],
-      "matchPackagePatterns": ["^expo-", "^@expo/"],
+      "matchPackagePatterns": ["^expo-", "^@expo/", "^@react-navigation/"],
       "groupName": "expo sdk",
-      "groupSlug": "expo-sdk"
+      "groupSlug": "expo-sdk",
+      "rangeStrategy": "replace"
     }
   ],
   "customManagers": [
