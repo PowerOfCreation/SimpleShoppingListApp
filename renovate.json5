@@ -11,6 +11,24 @@
     {
       "matchUpdateTypes": ["pinDigest"],
       "minimumReleaseAge": null
+    },
+    {
+      "matchPackageNames": [
+        "expo",
+        "react",
+        "react-dom",
+        "react-native",
+        "react-native-gesture-handler",
+        "react-native-reanimated",
+        "react-native-safe-area-context",
+        "react-native-screens",
+        "react-native-web",
+        "react-native-worklets",
+        "@react-native-async-storage/async-storage"
+      ],
+      "matchPackagePatterns": ["^expo-", "^@expo/"],
+      "groupName": "expo sdk",
+      "groupSlug": "expo-sdk"
     }
   ],
   "customManagers": [
