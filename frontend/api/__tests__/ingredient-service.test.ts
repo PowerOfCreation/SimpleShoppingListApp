@@ -251,6 +251,45 @@ describe("IngredientService", () => {
     })
   })
 
+  describe("rebuildProjection", () => {
+    it("should call rebuild on the projection with all ingredient events", async () => {
+      const mockEvents = [
+        { event_id: "e1", event_type: EventTypes.INGREDIENT_CREATED, aggregate_id: "i1" },
+        { event_id: "e2", event_type: EventTypes.INGREDIENT_UPDATED, aggregate_id: "i1" },
+      ]
+      mockEventRepository.getByAggregateType.mockResolvedValue(Result.ok(mockEvents as any))
+      mockProjection.rebuild.mockResolvedValue(undefined)
+
+      const result = await service.rebuildProjection()
+
+      expect(mockEventRepository.getByAggregateType).toHaveBeenCalledWith("ingredient")
+      expect(mockProjection.rebuild).toHaveBeenCalledWith(mockEvents)
+      expect(result.success).toBe(true)
+    })
+
+    it("should propagate error if getByAggregateType fails", async () => {
+      const dbError = new DbQueryError("DB error", "getByAggregateType", "Ingredient")
+      mockEventRepository.getByAggregateType.mockResolvedValue(Result.fail(dbError))
+
+      const result = await service.rebuildProjection()
+
+      expect(mockProjection.rebuild).not.toHaveBeenCalled()
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBe(dbError)
+    })
+
+    it("should return DbQueryError if projection.rebuild throws", async () => {
+      mockEventRepository.getByAggregateType.mockResolvedValue(Result.ok([] as any))
+      mockProjection.rebuild.mockRejectedValue(new Error("rebuild failed"))
+
+      const result = await service.rebuildProjection()
+
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBeInstanceOf(DbQueryError)
+      expect(result.getError().message).toBe("Failed to rebuild projection")
+    })
+  })
+
   describe("getCompletedIngredients", () => {
     it("should get completed ingredients for the given list from the repository", async () => {
       const mockCompletedIngredients: Ingredient[] = [
