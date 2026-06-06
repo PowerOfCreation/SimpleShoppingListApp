@@ -7,7 +7,7 @@ import { Ingredient } from "@/types/Ingredient"
 import * as SQLite from "expo-sqlite"
 import { DbQueryError, ValidationError } from "@/api/common/error-types"
 import { Result } from "@/api/common/result"
-import { EventTypes } from "@/types/DomainEvent"
+import { DomainEventRow, EventTypes } from "@/types/DomainEvent"
 
 jest.mock("@/database/ingredient-repository")
 const MockIngredientRepository = IngredientRepository as jest.MockedClass<
@@ -280,7 +280,7 @@ describe("IngredientService", () => {
         },
       ]
       mockEventRepository.getByAggregateType.mockResolvedValue(
-        Result.ok(mockEvents as any)
+        Result.ok(mockEvents as DomainEventRow[])
       )
       mockProjection.rebuild.mockResolvedValue(undefined)
 
@@ -312,7 +312,7 @@ describe("IngredientService", () => {
 
     it("should return DbQueryError if projection.rebuild throws", async () => {
       mockEventRepository.getByAggregateType.mockResolvedValue(
-        Result.ok([] as any)
+        Result.ok([] as DomainEventRow[])
       )
       mockProjection.rebuild.mockRejectedValue(new Error("rebuild failed"))
 

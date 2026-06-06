@@ -1,14 +1,14 @@
 import * as SQLite from "expo-sqlite"
 import { EventRepository } from "../event-repository"
 import { getDatabase } from "../database"
-import { AggregateTypes, EventTypes } from "@/types/DomainEvent"
+import { AggregateTypes, DomainEventRow, EventTypes } from "@/types/DomainEvent"
 
 jest.mock("../database", () => {
   const originalModule = jest.requireActual("../database")
   return { ...originalModule, DB_NAME: ":memory:" }
 })
 
-const makeEvent = (overrides: Partial<ReturnType<typeof baseEvent>> = {}) => ({
+const makeEvent = (overrides: Partial<DomainEventRow> = {}) => ({
   ...baseEvent(),
   ...overrides,
 })
@@ -52,7 +52,7 @@ describe("EventRepository", () => {
       const result = await repo.append(makeEvent())
 
       expect(result.success).toBe(true)
-      const row = await db.getFirstAsync<any>(
+      const row = await db.getFirstAsync<DomainEventRow>(
         `SELECT * FROM domain_events WHERE event_id = 'evt-1'`
       )
       expect(row).toMatchObject({ event_id: "evt-1", aggregate_id: "agg-1" })

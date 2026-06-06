@@ -60,9 +60,15 @@ describe("IngredientProjection", () => {
     it("inserts a row with correct data", async () => {
       await projection.handleCreated(db, makeEvent())
 
-      const row = await db.getFirstAsync<any>(
-        `SELECT * FROM ingredients WHERE id = 'ing-1'`
-      )
+      const row = await db.getFirstAsync<{
+        id: string
+        name: string
+        completed: number
+        list_id: string
+        created_at: number
+        updated_at: number
+        completed_at: number | null
+      }>(`SELECT * FROM ingredients WHERE id = 'ing-1'`)
       expect(row).toMatchObject({
         id: "ing-1",
         name: "Milk",
@@ -92,7 +98,7 @@ describe("IngredientProjection", () => {
         })
       )
 
-      const row = await db.getFirstAsync<any>(
+      const row = await db.getFirstAsync<{ name: string; updated_at: number }>(
         `SELECT name, updated_at FROM ingredients WHERE id = 'ing-1'`
       )
       expect(row).toEqual({ name: "Oat Milk", updated_at: 2000 })
@@ -108,7 +114,11 @@ describe("IngredientProjection", () => {
         })
       )
 
-      const row = await db.getFirstAsync<any>(
+      const row = await db.getFirstAsync<{
+        completed: number
+        completed_at: number | null
+        updated_at: number
+      }>(
         `SELECT completed, completed_at, updated_at FROM ingredients WHERE id = 'ing-1'`
       )
       expect(row).toEqual({
@@ -132,9 +142,10 @@ describe("IngredientProjection", () => {
         })
       )
 
-      const row = await db.getFirstAsync<any>(
-        `SELECT completed, completed_at FROM ingredients WHERE id = 'ing-1'`
-      )
+      const row = await db.getFirstAsync<{
+        completed: number
+        completed_at: number | null
+      }>(`SELECT completed, completed_at FROM ingredients WHERE id = 'ing-1'`)
       expect(row).toEqual({ completed: 0, completed_at: null })
     })
   })
@@ -206,7 +217,7 @@ describe("IngredientProjection", () => {
 
       await projection.rebuild(events)
 
-      const rows = await db.getAllAsync<any>(
+      const rows = await db.getAllAsync<{ id: string; name: string }>(
         `SELECT id, name FROM ingredients ORDER BY id`
       )
       expect(rows).toEqual([{ id: "a", name: "Green Apples" }])
