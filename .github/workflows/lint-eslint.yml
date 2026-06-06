@@ -16,7 +16,7 @@ jobs:
 
     steps:
       - name: 📦 Checkout project repo
-        uses: actions/checkout@v6
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6
         with:
           fetch-depth: 0
           sparse-checkout: |
@@ -28,7 +28,7 @@ jobs:
 
       - name: 🏃‍♂️ Run ESLint on PR
         if: github.event_name == 'pull_request'
-        uses: reviewdog/action-eslint@v1
+        uses: reviewdog/action-eslint@556a3fdaf8b4201d4d74d406013386aa4f7dab96 # v1
         with:
           workdir: frontend
           github_token: ${{ secrets.GITHUB_TOKEN }}
