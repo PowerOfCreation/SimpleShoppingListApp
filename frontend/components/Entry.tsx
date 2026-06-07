@@ -9,6 +9,7 @@ import {
 import { ThemedText } from "./ThemedText"
 import React, { forwardRef } from "react"
 import Feather from "@expo/vector-icons/Feather"
+import { Colors, Palette } from "@/constants/Colors"
 import { ThemedTextInput } from "./ThemedTextInput"
 import { MaterialIcons } from "@expo/vector-icons"
 
@@ -78,7 +79,7 @@ export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
       <Feather
         name={props.isCompleted ? "check-circle" : "circle"}
         size={26}
-        color="#1999b3"
+        color={Palette.primary}
       />
 
       {props.isEdited ? (
@@ -97,21 +98,25 @@ export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
             style={styles.actionButton}
             onPress={() => props.onSaveEditing(text)}
           >
-            <MaterialIcons name="check" size={20} color="#34C759" />
+            <MaterialIcons name="check" size={20} color={Palette.success} />
           </TouchableOpacity>
           <TouchableOpacity
             testID={`cancel-button-${props.id}`}
             style={styles.actionButton}
             onPress={props.onCancelEditing}
           >
-            <MaterialIcons name="close" size={20} color="#8E8E93" />
+            <MaterialIcons name="close" size={20} color={Palette.neutral} />
           </TouchableOpacity>
           <TouchableOpacity
             testID={`delete-button-${props.id}`}
             style={styles.actionButton}
             onPress={handleDeletePress}
           >
-            <MaterialIcons name="delete" size={20} color="#ff3b30" />
+            <MaterialIcons
+              name="delete"
+              size={20}
+              color={Palette.destructive}
+            />
           </TouchableOpacity>
         </View>
       ) : (
@@ -132,27 +137,27 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 60,
     borderTopWidth: 1,
-    borderBlockColor: "gray",
+    borderBlockColor: Colors.dark.divider,
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
   },
   completedBackground: {
-    backgroundColor: "#121212",
+    backgroundColor: Colors.dark.cardSurfaceCompleted,
   },
   uncompletedBackground: {
-    backgroundColor: "#2e2e2e",
+    backgroundColor: Colors.dark.cardSurface,
   },
   baseText: {
     left: 20,
     flex: 1,
   },
   completedText: {
-    color: "#00400b",
+    color: Colors.dark.completedItemText,
     textDecorationLine: "line-through",
   },
   defaultText: {
-    color: "white",
+    color: Colors.dark.defaultItemText,
     textDecorationLine: "none",
   },
   editContainer: {

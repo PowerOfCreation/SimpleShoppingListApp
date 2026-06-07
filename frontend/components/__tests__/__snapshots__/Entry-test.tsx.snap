@@ -33,7 +33,7 @@ exports[`Entry renders correctly 1`] = `
     {
       "alignItems": "center",
       "backgroundColor": "#2e2e2e",
-      "borderBlockColor": "gray",
+      "borderBlockColor": "#808080",
       "borderTopWidth": 1,
       "display": "flex",
       "flexDirection": "row",
@@ -64,7 +64,7 @@ exports[`Entry renders correctly 1`] = `
           },
           [
             {
-              "color": "white",
+              "color": "#ffffff",
               "textDecorationLine": "none",
             },
           ],
@@ -108,7 +108,7 @@ exports[`Entry renders correctly in edit mode 1`] = `
     {
       "alignItems": "center",
       "backgroundColor": "#2e2e2e",
-      "borderBlockColor": "gray",
+      "borderBlockColor": "#808080",
       "borderTopWidth": 1,
       "display": "flex",
       "flexDirection": "row",
