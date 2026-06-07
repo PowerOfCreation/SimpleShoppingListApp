@@ -1,5 +1,4 @@
-import { screen } from "@testing-library/react-native"
-import { waitFor } from "@testing-library/react-native"
+import { screen, waitFor } from "@testing-library/react-native"
 import { renderRouter } from "expo-router/testing-library"
 import ViewShoppingList from "../view_shopping_list"
 import { IngredientRepository } from "@/database/ingredient-repository"

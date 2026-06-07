@@ -12,6 +12,7 @@ import { useFocusEffect } from "expo-router"
 
 import { DomainEventRow } from "@/types/DomainEvent"
 import { ThemedText } from "@/components/ThemedText"
+import { Colors, Palette } from "@/constants/Colors"
 import { ThemedView } from "@/components/ThemedView"
 import { useEvents } from "@/hooks/useEvents"
 import { useThemeColor } from "@/hooks/useThemeColor"
@@ -172,7 +173,7 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     borderLeftWidth: 4,
     padding: 14,
-    shadowColor: "#000",
+    shadowColor: Palette.shadow,
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.08,
     shadowRadius: 3,
@@ -194,7 +195,7 @@ const styles = StyleSheet.create({
   badgeText: {
     fontSize: 12,
     fontWeight: "600",
-    color: "#fff",
+    color: Palette.white,
   },
   timestamp: {
     fontSize: 12,
@@ -215,7 +216,7 @@ const styles = StyleSheet.create({
   payloadContainer: {
     marginTop: 10,
     borderTopWidth: StyleSheet.hairlineWidth,
-    borderTopColor: "#ccc",
+    borderTopColor: Colors.light.dividerSubtle,
     paddingTop: 8,
   },
   payloadText: {
@@ -228,7 +229,7 @@ const styles = StyleSheet.create({
     textAlign: "right",
   },
   errorText: {
-    color: "red",
+    color: Palette.error,
     textAlign: "center",
   },
   emptyText: {
