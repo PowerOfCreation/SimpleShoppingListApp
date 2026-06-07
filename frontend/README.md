@@ -12,13 +12,15 @@ pnpm install
 
 Two separate apps can be installed in parallel on the same device. The app identifier is controlled via the `APP_VARIANT` environment variable in `app.config.js` — the `android/` and `ios/` folders are **not committed** and are generated on demand by `expo prebuild` (CNG pattern).
 
-| | Dev App | Prod App |
-|---|---|---|
-| **Package** | `de.lightdevsolutions.sholist.dev` | `de.lightdevsolutions.sholist` |
-| **App name** | sholist (Dev) | sholist |
-| **Scheme** | `sholist-dev://` | `sholist://` |
-| **Metro / Fast Refresh** | yes | no |
-| **Dev menu** | yes (shake or `adb shell input keyevent 82`) | no |
+| | Dev App | Prod (USB) | Prod (Standalone APK) |
+|---|---|---|---|
+| **Package** | `de.lightdevsolutions.sholist.dev` | `de.lightdevsolutions.sholist` | `de.lightdevsolutions.sholist` |
+| **App name** | sholist (Dev) | sholist | sholist |
+| **Scheme** | `sholist-dev://` | `sholist://` | `sholist://` |
+| **Metro / Fast Refresh** | yes | yes (lädt JS von Metro) | no – JS in APK eingebettet |
+| **Dev menu** | yes (shake or `adb shell input keyevent 82`) | no | no |
+| **Läuft ohne USB** | no | **no** | **yes** |
+| **Befehl** | `android:dev` | `android:prod` | `android:prod:apk` |
 
 ### Development (connects to Metro)
 
@@ -29,14 +31,29 @@ pnpm android:dev   # APP_VARIANT=development expo run:android
 Keep Metro running in a second terminal:
 
 ```bash
-pnpm start:dev     # APP_VARIANT=development expo start
+pnpm start
 ```
 
-### Production / Release (standalone)
+### Production / Release – mit USB (JS von Metro)
 
 ```bash
 pnpm android:prod
 ```
+
+> Startet Metro und lädt den JS-Bundle zur Laufzeit vom PC. Nützlich für schnelle Release-Variant-Tests, aber die App funktioniert **nicht** nach dem Trennen der USB-Verbindung.
+
+### Production / Release – Standalone APK (kein USB nötig)
+
+```bash
+pnpm android:prod:apk
+```
+
+Baut eine echte Standalone-APK: `expo prebuild` regeneriert `android/` aus `app.config.js`, danach bettet Gradle den JS-Bundle fest in die APK ein. Die App läuft nach der Installation vollständig ohne USB, Metro oder PC-Verbindung.
+
+> **Hinweis:** `expo prebuild --clean` ist nur nötig, wenn sich `app.config.js` geändert hat. Für schnelle Iterationen ohne Config-Änderungen reicht:
+> ```bash
+> cd android && ./gradlew assembleRelease && adb install -r app/build/outputs/apk/release/app-release.apk
+> ```
 
 ### Reinstall from scratch
 

@@ -9,6 +9,7 @@
     "android": "expo run:android",
     "android:dev": "APP_VARIANT=development expo run:android",
     "android:prod": "expo run:android --variant release",
+    "android:prod:apk": "expo prebuild --clean && cd android && ./gradlew assembleRelease && cd .. && adb install -r android/app/build/outputs/apk/release/app-release.apk && APP_VARIANT=development expo prebuild --clean",
     "ios": "expo run:ios",
     "web": "expo start --web",
     "test": "jest --coverage --silent",
