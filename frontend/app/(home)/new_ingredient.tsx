@@ -4,6 +4,7 @@ import { Pressable, View, StyleSheet, TextInput, FlatList } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedTextInput } from "@/components/ThemedTextInput"
+import { Colors, Palette } from "@/constants/Colors"
 import { ingredientService } from "@/api/ingredient-service"
 import { useCompletedIngredients } from "@/hooks/useCompletedIngredients"
 import { Ingredient } from "@/types/Ingredient"
@@ -131,7 +132,7 @@ const styles = StyleSheet.create({
     marginRight: 15,
   },
   invalidInputExplanationStyle: {
-    color: "red",
+    color: Palette.error,
   },
   completedIngredientsContainer: {
     flex: 1,
@@ -152,7 +153,7 @@ const styles = StyleSheet.create({
     paddingVertical: 12,
     paddingHorizontal: 15,
     borderBottomWidth: 1,
-    borderBottomColor: "#e0e0e0",
+    borderBottomColor: Colors.light.divider,
   },
   completedIngredientName: {
     fontSize: 16,

@@ -1,8 +1,13 @@
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { Drawer } from "expo-router/drawer"
-import { useColorScheme } from "react-native"
+import {
+  useColorScheme,
+  Text,
+  View,
+  ActivityIndicator,
+  StyleSheet,
+} from "react-native"
 import React, { useEffect, useState } from "react"
-import { Text, View, ActivityIndicator, StyleSheet } from "react-native"
 import { initializeAndMigrateDatabase } from "@/database/data-migration"
 import { createLogger } from "@/api/common/logger"
 import { getDatabase } from "@/database/database"

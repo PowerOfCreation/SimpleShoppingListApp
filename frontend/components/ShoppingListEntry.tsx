@@ -10,6 +10,7 @@ import { ThemedText } from "./ThemedText"
 import React, { forwardRef } from "react"
 import { ThemedTextInput } from "./ThemedTextInput"
 import { MaterialIcons } from "@expo/vector-icons"
+import { Colors, Palette } from "@/constants/Colors"
 
 export type ShoppingListEntryProps = {
   id: string
@@ -84,21 +85,25 @@ export const ShoppingListEntry = forwardRef<TextInput, ShoppingListEntryProps>(
               style={styles.actionButton}
               onPress={() => props.onSaveEditing(text)}
             >
-              <MaterialIcons name="check" size={20} color="#34C759" />
+              <MaterialIcons name="check" size={20} color={Palette.success} />
             </TouchableOpacity>
             <TouchableOpacity
               testID={`cancel-button-${props.id}`}
               style={styles.actionButton}
               onPress={props.onCancelEditing}
             >
-              <MaterialIcons name="close" size={20} color="#8E8E93" />
+              <MaterialIcons name="close" size={20} color={Palette.neutral} />
             </TouchableOpacity>
             <TouchableOpacity
               testID={`delete-button-${props.id}`}
               style={styles.actionButton}
               onPress={handleDeletePress}
             >
-              <MaterialIcons name="delete" size={20} color="#ff3b30" />
+              <MaterialIcons
+                name="delete"
+                size={20}
+                color={Palette.destructive}
+              />
             </TouchableOpacity>
           </View>
         ) : (
@@ -150,7 +155,7 @@ const styles = StyleSheet.create({
   listItem: {
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#e0e0e0",
+    borderBottomColor: Colors.light.divider,
   },
   listContent: {
     flexDirection: "row",
@@ -179,10 +184,10 @@ const styles = StyleSheet.create({
     overflow: "hidden",
   },
   progressCompleted: {
-    backgroundColor: "#2196F3",
+    backgroundColor: Palette.progressCompleted,
   },
   progressIncomplete: {
-    backgroundColor: "#FF9800",
+    backgroundColor: Palette.progressIncomplete,
   },
   editContainer: {
     flexDirection: "row",

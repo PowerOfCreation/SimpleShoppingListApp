@@ -3,6 +3,7 @@ import React from "react"
 import { Pressable, View, StyleSheet, TextInput } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { ThemedText } from "@/components/ThemedText"
+import { Palette } from "@/constants/Colors"
 import { ThemedTextInput } from "@/components/ThemedTextInput"
 import { shoppingListService } from "@/api/shopping-list-service"
 
@@ -81,6 +82,6 @@ const styles = StyleSheet.create({
     marginRight: 15,
   },
   invalidInputExplanationStyle: {
-    color: "red",
+    color: Palette.error,
   },
 })
