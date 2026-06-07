@@ -1,5 +1,9 @@
 const IS_DEV = process.env.APP_VARIANT === 'development';
 
+// Only build for the target device architecture in dev to avoid freezing the system.
+// For release builds, all architectures are included automatically by the release script.
+const ANDROID_ARCHS = IS_DEV ? 'arm64-v8a' : 'armeabi-v7a,arm64-v8a,x86,x86_64';
+
 export default {
   name: IS_DEV ? 'sholist (Dev)' : 'sholist',
   slug: 'sholist',
@@ -29,6 +33,17 @@ export default {
     favicon: './assets/images/favicon.png',
   },
   plugins: [
+    [
+      'expo-build-properties',
+      {
+        android: {
+          gradleProperties: {
+            'reactNativeArchitectures': ANDROID_ARCHS,
+            'org.gradle.workers.max': '4',
+          },
+        },
+      },
+    ],
     'expo-router',
     'expo-font',
     'expo-sqlite',

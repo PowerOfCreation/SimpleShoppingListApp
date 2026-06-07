@@ -3,8 +3,8 @@
   "main": "expo-router/entry",
   "version": "1.0.0",
   "scripts": {
-    "start": "expo start",
-    "start:dev": "APP_VARIANT=development expo start",
+    "start": "APP_VARIANT=development expo start",
+    "start:prod": "expo start",
     "reset-project": "node ./scripts/reset-project.js",
     "android": "expo run:android",
     "android:dev": "APP_VARIANT=development expo run:android",
@@ -65,6 +65,7 @@
     "eslint-plugin-jest": "29.15.2",
     "eslint-plugin-prettier": "5.5.6",
     "eslint-plugin-react-native": "4.1.0",
+    "expo-build-properties": "56.0.17",
     "expo-sqlite-mock": "4.0.0",
     "globals": "15.15.0",
     "jest": "29.7.0",
