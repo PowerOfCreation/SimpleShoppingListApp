@@ -44,7 +44,7 @@ export const Colors = {
     actionButtonBorder: "rgba(255,255,255,0.15)",
     cardSurface: "#2e2e2e",
     cardSurfaceCompleted: "#121212",
-    completedItemText: "#4caf50",
+    completedItemText: "#00400b",
     defaultItemText: "#ffffff",
   },
 }
