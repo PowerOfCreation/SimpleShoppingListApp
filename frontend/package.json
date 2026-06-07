@@ -53,8 +53,8 @@
     "@types/jest": "29.5.14",
     "@types/react": "19.2.14",
     "@types/react-test-renderer": "19.1.0",
-    "@typescript-eslint/eslint-plugin": "8.57.1",
-    "@typescript-eslint/parser": "8.57.1",
+    "@typescript-eslint/eslint-plugin": "8.60.1",
+    "@typescript-eslint/parser": "8.60.1",
     "eslint": "8.57.1",
     "eslint-config-expo": "55.0.1",
     "eslint-config-prettier": "9.1.0",
@@ -72,7 +72,7 @@
     "react-test-renderer": "19.2.0",
     "ts-node": "10.9.2",
     "typescript": "5.9.3",
-    "typescript-eslint": "8.57.1"
+    "typescript-eslint": "8.60.1"
   },
   "private": true,
   "expo": {
