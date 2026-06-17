@@ -12,6 +12,7 @@ import {
 import { SafeAreaView } from "react-native-safe-area-context"
 import { router, useFocusEffect, useNavigation } from "expo-router"
 import { MaterialIcons } from "@expo/vector-icons"
+import { setPreference } from "@/database/preferences-repository"
 
 import { Ingredient } from "@/types/Ingredient"
 import { ThemedText } from "@/components/ThemedText"
@@ -32,6 +33,12 @@ export default function ViewShoppingList() {
   } = useIngredients()
   const [ingredientToEdit, setIngredientToEdit] = React.useState<string>("")
   const navigation = useNavigation()
+
+  React.useEffect(() => {
+    if (listId) {
+      setPreference("last_viewed_list_id", listId)
+    }
+  }, [listId])
 
   // Memoize the header right component to avoid recreating on every render
   const headerRightComponent = React.useCallback(

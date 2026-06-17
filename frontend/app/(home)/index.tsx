@@ -4,6 +4,7 @@ import React from "react"
 import { FlatList, StyleSheet, ActivityIndicator, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { router, useFocusEffect } from "expo-router"
+import { getPreference } from "@/database/preferences-repository"
 
 import { ShoppingListOverview } from "@/types/ShoppingListOverview"
 import { ThemedText } from "@/components/ThemedText"
@@ -17,6 +18,19 @@ const logger = createLogger("Index")
 export default function Index() {
   const { lists, isLoading, error, refetch, updateList } = useShoppingLists()
   const [listToEdit, setListToEdit] = React.useState<string>("")
+  const [isCheckingPreference, setIsCheckingPreference] = React.useState(true)
+  const hasNavigatedRef = React.useRef(false)
+
+  React.useEffect(() => {
+    if (hasNavigatedRef.current || isLoading) return
+    getPreference("last_viewed_list_id").then((lastId) => {
+      hasNavigatedRef.current = true
+      if (lastId && lists.some((l) => l.id === lastId)) {
+        router.push(`/view_shopping_list?listId=${lastId}`)
+      }
+      setIsCheckingPreference(false)
+    })
+  }, [isLoading, lists])
 
   // Refetch shopping lists when screen comes into focus
   useFocusEffect(
@@ -97,7 +111,7 @@ export default function Index() {
   }
 
   const renderContent = () => {
-    if (isLoading) {
+    if (isLoading || isCheckingPreference) {
       return (
         <View style={styles.centered}>
           <ActivityIndicator size="large" accessibilityHint="loading data" />

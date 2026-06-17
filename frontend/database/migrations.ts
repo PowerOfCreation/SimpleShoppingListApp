@@ -4,6 +4,7 @@ import { createLogger } from "@/api/common/logger"
 import { Result } from "@/api/common/result"
 import { DbMigrationError } from "@/api/common/error-types"
 import { migrateToVersion1 } from "@/database/migrations/migration-1"
+import { migrateToVersion2 } from "@/database/migrations/migration-2"
 
 const logger = createLogger("Migrations")
 
@@ -14,7 +15,10 @@ type Migration = {
   ) => Promise<Result<void, DbMigrationError>>
 }
 
-const MIGRATIONS: Migration[] = [{ version: 1, migrate: migrateToVersion1 }]
+const MIGRATIONS: Migration[] = [
+  { version: 1, migrate: migrateToVersion1 },
+  { version: 2, migrate: migrateToVersion2 },
+]
 
 export async function executeMigrations(
   db: SQLite.SQLiteDatabase,
