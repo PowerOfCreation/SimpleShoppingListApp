@@ -2,6 +2,7 @@ import * as React from "react"
 import { render, fireEvent } from "@testing-library/react-native"
 import { Entry, EntryProps } from "../Entry"
 import { Alert } from "react-native"
+import { Priority } from "@/types/Priority"
 
 // Mock Alert
 jest.spyOn(Alert, "alert")
@@ -224,5 +225,49 @@ describe("Entry", () => {
         expect.objectContaining({ text: "Delete", style: "destructive" }),
       ])
     )
+  })
+
+  it("opens the priority picker when Change priority is pressed in the context menu", () => {
+    const { getByTestId, queryByTestId } = render(<Entry {...defaultProps} />)
+
+    fireEvent(getByTestId("entry-component-1"), "longPress")
+    fireEvent.press(getByTestId("entry-context-priority-1"))
+
+    expect(getByTestId("entry-priority-picker-1-option-0")).toBeTruthy()
+    expect(queryByTestId("entry-context-rename-1")).toBeFalsy()
+  })
+
+  it("calls onSetPriority when a priority is picked and applied", () => {
+    const onSetPriority = jest.fn()
+    const { getByTestId } = render(
+      <Entry {...defaultProps} onSetPriority={onSetPriority} />
+    )
+
+    fireEvent(getByTestId("entry-component-1"), "longPress")
+    fireEvent.press(getByTestId("entry-context-priority-1"))
+    fireEvent.press(
+      getByTestId(`entry-priority-picker-1-option-${Priority.DAYS_4_PLUS}`)
+    )
+    fireEvent.press(getByTestId("entry-priority-picker-1-apply"))
+
+    expect(onSetPriority).toHaveBeenCalledWith(Priority.DAYS_4_PLUS)
+  })
+
+  it("calls onClearPriority when None is picked and applied", () => {
+    const onClearPriority = jest.fn()
+    const { getByTestId } = render(
+      <Entry
+        {...defaultProps}
+        priority={Priority.NOW}
+        onClearPriority={onClearPriority}
+      />
+    )
+
+    fireEvent(getByTestId("entry-component-1"), "longPress")
+    fireEvent.press(getByTestId("entry-context-priority-1"))
+    fireEvent.press(getByTestId("entry-priority-picker-1-none"))
+    fireEvent.press(getByTestId("entry-priority-picker-1-apply"))
+
+    expect(onClearPriority).toHaveBeenCalledTimes(1)
   })
 })

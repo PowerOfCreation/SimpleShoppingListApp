@@ -279,6 +279,52 @@ export class IngredientService {
     }
   }
 
+  async clearPriority(id: string): Promise<Result<void, DbQueryError>> {
+    try {
+      const now = Date.now()
+      const event: DomainEventRow = {
+        event_id: uuidv4(),
+        event_type: EventTypes.INGREDIENT_PRIORITY_CLEARED,
+        aggregate_id: id,
+        aggregate_type: AggregateTypes.INGREDIENT,
+        occurred_at: now,
+        client_id: getClientId(),
+        payload: JSON.stringify({}),
+      }
+
+      const result = await this.eventRepository.appendWithProjection(
+        event,
+        (db) => this.projection.handlePriorityCleared(db, event)
+      )
+
+      if (!result.success) {
+        logger.error(
+          `Error clearing priority for ingredient ${id}`,
+          result.getError()
+        )
+        return result
+      }
+
+      const index = this.ingredients.findIndex((ing) => ing.id === id)
+      if (index !== -1) {
+        this.ingredients[index].priority = undefined
+        this.ingredients[index].updated_at = now
+      }
+
+      return Result.ok(undefined)
+    } catch (error) {
+      logger.error(`Error clearing priority for ingredient ${id}`, error)
+      return Result.fail(
+        new DbQueryError(
+          `Failed to clear priority for ingredient ${id}`,
+          "clearPriority",
+          "Ingredient",
+          error
+        )
+      )
+    }
+  }
+
   async deleteIngredient(id: string): Promise<Result<void, DbQueryError>> {
     try {
       const event: DomainEventRow = {

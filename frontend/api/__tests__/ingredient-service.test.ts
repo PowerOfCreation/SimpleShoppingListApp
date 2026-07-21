@@ -66,6 +66,7 @@ describe("IngredientService", () => {
       handleCreated: jest.fn(),
       handleUpdated: jest.fn(),
       handlePrioritySet: jest.fn(),
+      handlePriorityCleared: jest.fn(),
       handleDeleted: jest.fn(),
       rebuild: jest.fn(),
     } as unknown as jest.Mocked<IngredientProjection>
@@ -227,7 +228,10 @@ describe("IngredientService", () => {
     it("should append an ingredient.priority_set event with priority payload", async () => {
       const ingredientId = "1"
 
-      const result = await service.setPriority(ingredientId, Priority.DAYS_1_TO_3)
+      const result = await service.setPriority(
+        ingredientId,
+        Priority.DAYS_1_TO_3
+      )
 
       expect(mockEventRepository.appendWithProjection).toHaveBeenCalledTimes(1)
 
@@ -257,6 +261,38 @@ describe("IngredientService", () => {
       )
 
       const result = await service.setPriority("1", Priority.NOW)
+
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBe(dbError)
+    })
+  })
+
+  describe("clearPriority", () => {
+    it("should append an ingredient.priority_cleared event", async () => {
+      const ingredientId = "1"
+
+      const result = await service.clearPriority(ingredientId)
+
+      expect(mockEventRepository.appendWithProjection).toHaveBeenCalledTimes(1)
+
+      const [event] = mockEventRepository.appendWithProjection.mock.calls[0]
+      expect(event.event_type).toBe(EventTypes.INGREDIENT_PRIORITY_CLEARED)
+      expect(event.aggregate_id).toBe(ingredientId)
+
+      expect(result.success).toBe(true)
+    })
+
+    it("should return error if event repository fails", async () => {
+      const dbError = new DbQueryError(
+        "DB error",
+        "clearPriority",
+        "Ingredient"
+      )
+      mockEventRepository.appendWithProjection.mockResolvedValue(
+        Result.fail(dbError)
+      )
+
+      const result = await service.clearPriority("1")
 
       expect(result.success).toBe(false)
       expect(result.getError()).toBe(dbError)

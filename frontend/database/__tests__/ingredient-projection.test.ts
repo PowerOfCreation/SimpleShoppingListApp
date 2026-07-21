@@ -193,6 +193,48 @@ describe("IngredientProjection", () => {
     })
   })
 
+  describe("handlePriorityCleared", () => {
+    beforeEach(async () => {
+      await db.execAsync(
+        `INSERT INTO ingredients VALUES ('ing-1','Milk',0,'list-1',1000,1000,NULL,100)`
+      )
+    })
+
+    it("sets priority back to null and updates updated_at", async () => {
+      await projection.handlePriorityCleared(
+        db,
+        makeEvent({
+          event_type: EventTypes.INGREDIENT_PRIORITY_CLEARED,
+          occurred_at: 2600,
+          payload: "{}",
+        })
+      )
+
+      const row = await db.getFirstAsync<{
+        priority: number | null
+        updated_at: number
+      }>(`SELECT priority, updated_at FROM ingredients WHERE id = 'ing-1'`)
+      expect(row).toEqual({ priority: null, updated_at: 2600 })
+    })
+
+    it("does not touch name or completed", async () => {
+      await projection.handlePriorityCleared(
+        db,
+        makeEvent({
+          event_type: EventTypes.INGREDIENT_PRIORITY_CLEARED,
+          occurred_at: 2600,
+          payload: "{}",
+        })
+      )
+
+      const row = await db.getFirstAsync<{
+        name: string
+        completed: number
+      }>(`SELECT name, completed FROM ingredients WHERE id = 'ing-1'`)
+      expect(row).toEqual({ name: "Milk", completed: 0 })
+    })
+  })
+
   describe("handleDeleted", () => {
     it("removes the row", async () => {
       await db.execAsync(
@@ -263,6 +305,13 @@ describe("IngredientProjection", () => {
           occurred_at: 4000,
           payload: "{}",
         }),
+        makeEvent({
+          event_id: "e6",
+          event_type: EventTypes.INGREDIENT_PRIORITY_CLEARED,
+          aggregate_id: "a",
+          occurred_at: 4500,
+          payload: "{}",
+        }),
       ]
 
       await projection.rebuild(events)
@@ -272,7 +321,7 @@ describe("IngredientProjection", () => {
         name: string
         priority: number | null
       }>(`SELECT id, name, priority FROM ingredients ORDER BY id`)
-      expect(rows).toEqual([{ id: "a", name: "Green Apples", priority: 200 }])
+      expect(rows).toEqual([{ id: "a", name: "Green Apples", priority: null }])
     })
   })
 })

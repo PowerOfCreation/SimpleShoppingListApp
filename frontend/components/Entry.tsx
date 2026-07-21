@@ -10,6 +10,7 @@ import { ThemedText } from "./ThemedText"
 import React, { forwardRef } from "react"
 import { ThemedTextInput } from "./ThemedTextInput"
 import { ContextMenu } from "./ContextMenu"
+import { PriorityPicker } from "./PriorityPicker"
 import { MaterialIcons } from "@expo/vector-icons"
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { Palette } from "@/constants/Colors"
@@ -28,6 +29,8 @@ export type EntryProps = {
   onCancelEditing: () => void
   onSaveEditing: (text: string) => void
   onDelete?: () => void
+  onSetPriority?: (priority: Priority) => void
+  onClearPriority?: () => void
 }
 
 export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
@@ -36,6 +39,7 @@ export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
 ) {
   const [text, onChangeText] = React.useState(props.ingredientName)
   const [showContextMenu, setShowContextMenu] = React.useState(false)
+  const [showPriorityPicker, setShowPriorityPicker] = React.useState(false)
 
   const dividerColor = useThemeColor({}, "divider")
   const accentColor = useThemeColor({}, "accent")
@@ -169,12 +173,31 @@ export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
             onPress: props.onRename,
           },
           {
+            label: "Change priority",
+            testID: `entry-context-priority-${props.id}`,
+            onPress: () => setShowPriorityPicker(true),
+          },
+          {
             label: "Delete",
             testID: `entry-context-delete-${props.id}`,
             destructive: true,
             onPress: handleDeletePress,
           },
         ]}
+      />
+      <PriorityPicker
+        testID={`entry-priority-picker-${props.id}`}
+        visible={showPriorityPicker}
+        title={props.ingredientName}
+        currentPriority={props.priority}
+        onClose={() => setShowPriorityPicker(false)}
+        onApply={(priority) => {
+          if (priority === undefined) {
+            props.onClearPriority?.()
+          } else {
+            props.onSetPriority?.(priority)
+          }
+        }}
       />
     </>
   )

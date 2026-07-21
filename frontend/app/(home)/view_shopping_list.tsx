@@ -33,6 +33,8 @@ export default function ViewShoppingList() {
     sortSignal,
     toggleCompletion,
     updateName,
+    setPriority,
+    clearPriority,
     deleteIngredient,
     sortIngredients,
   } = useIngredients()
@@ -130,6 +132,8 @@ export default function ViewShoppingList() {
           await handleChangeName(item.id, text)
         }}
         onDelete={() => handleDeleteIngredient(item.id)}
+        onSetPriority={(priority) => setPriority(item.id, priority)}
+        onClearPriority={() => clearPriority(item.id)}
       />
     )
   }

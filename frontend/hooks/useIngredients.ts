@@ -1,6 +1,7 @@
 import React from "react"
 import { useLocalSearchParams } from "expo-router"
 import { Ingredient } from "@/types/Ingredient"
+import { Priority } from "@/types/Priority"
 import { SortMode } from "@/types/SortMode"
 import { ingredientService } from "@/api/ingredient-service"
 import { createLogger } from "@/api/common/logger"
@@ -146,6 +147,86 @@ export function useIngredients() {
   )
 
   /**
+   * Set ingredient priority
+   * Uses optimistic update
+   */
+  const setPriority = React.useCallback(
+    async (id: string, priority: Priority) => {
+      const ingredient = ingredients.find((ing) => ing.id === id)
+      if (!ingredient) return
+
+      const previousPriority = ingredient.priority
+
+      // Optimistic update
+      setIngredients((prev) =>
+        prev.map((ing) => (ing.id === id ? { ...ing, priority } : ing))
+      )
+
+      try {
+        const result = await ingredientService.setPriority(id, priority)
+        if (!result.success) {
+          // Revert on error
+          setIngredients((prev) =>
+            prev.map((ing) =>
+              ing.id === id ? { ...ing, priority: previousPriority } : ing
+            )
+          )
+        }
+      } catch (err) {
+        logger.error("Error setting priority", err)
+        // Revert on error
+        setIngredients((prev) =>
+          prev.map((ing) =>
+            ing.id === id ? { ...ing, priority: previousPriority } : ing
+          )
+        )
+      }
+    },
+    [ingredients]
+  )
+
+  /**
+   * Clear ingredient priority
+   * Uses optimistic update
+   */
+  const clearPriority = React.useCallback(
+    async (id: string) => {
+      const ingredient = ingredients.find((ing) => ing.id === id)
+      if (!ingredient) return
+
+      const previousPriority = ingredient.priority
+
+      // Optimistic update
+      setIngredients((prev) =>
+        prev.map((ing) =>
+          ing.id === id ? { ...ing, priority: undefined } : ing
+        )
+      )
+
+      try {
+        const result = await ingredientService.clearPriority(id)
+        if (!result.success) {
+          // Revert on error
+          setIngredients((prev) =>
+            prev.map((ing) =>
+              ing.id === id ? { ...ing, priority: previousPriority } : ing
+            )
+          )
+        }
+      } catch (err) {
+        logger.error("Error clearing priority", err)
+        // Revert on error
+        setIngredients((prev) =>
+          prev.map((ing) =>
+            ing.id === id ? { ...ing, priority: previousPriority } : ing
+          )
+        )
+      }
+    },
+    [ingredients]
+  )
+
+  /**
    * Delete ingredient
    */
   const deleteIngredient = React.useCallback(
@@ -193,6 +274,8 @@ export function useIngredients() {
     // Business operations
     toggleCompletion,
     updateName,
+    setPriority,
+    clearPriority,
     deleteIngredient,
     sortIngredients,
   }
