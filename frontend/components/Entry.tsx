@@ -9,9 +9,10 @@ import {
 import { ThemedText } from "./ThemedText"
 import React, { forwardRef } from "react"
 import Feather from "@expo/vector-icons/Feather"
-import { Colors, Palette } from "@/constants/Colors"
+import { Palette } from "@/constants/Colors"
 import { ThemedTextInput } from "./ThemedTextInput"
 import { MaterialIcons } from "@expo/vector-icons"
+import { useThemeColor } from "@/hooks/useThemeColor"
 
 export type EntryProps = {
   id: string
@@ -32,14 +33,24 @@ export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
 ) {
   const [text, onChangeText] = React.useState(props.ingredientName)
 
+  const dividerColor = useThemeColor({}, "divider")
+  const cardSurfaceColor = useThemeColor({}, "cardSurface")
+  const cardSurfaceCompletedColor = useThemeColor({}, "cardSurfaceCompleted")
+  const completedItemTextColor = useThemeColor({}, "completedItemText")
+  const defaultItemTextColor = useThemeColor({}, "defaultItemText")
+
   const getBackgroundColor = () => {
-    return props.isCompleted
-      ? styles.completedBackground
-      : styles.uncompletedBackground
+    return {
+      backgroundColor: props.isCompleted
+        ? cardSurfaceCompletedColor
+        : cardSurfaceColor,
+    }
   }
 
   const getTextStyles = () => {
-    return props.isCompleted ? [styles.completedText] : [styles.defaultText]
+    return props.isCompleted
+      ? [styles.completedText, { color: completedItemTextColor }]
+      : [styles.defaultText, { color: defaultItemTextColor }]
   }
 
   React.useEffect(() => {
@@ -71,7 +82,11 @@ export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
   return (
     <TouchableOpacity
       testID={`entry-component-${props.id}`}
-      style={[getBackgroundColor(), styles.buttonStyle]}
+      style={[
+        styles.buttonStyle,
+        { borderBlockColor: dividerColor },
+        getBackgroundColor(),
+      ]}
       onPress={props.onToggleComplete}
       onLongPress={props.onLongPress}
       onPressOut={props.onPressOut}
@@ -137,27 +152,18 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 60,
     borderTopWidth: 1,
-    borderBlockColor: Colors.dark.divider,
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
-  },
-  completedBackground: {
-    backgroundColor: Colors.dark.cardSurfaceCompleted,
-  },
-  uncompletedBackground: {
-    backgroundColor: Colors.dark.cardSurface,
   },
   baseText: {
     left: 20,
     flex: 1,
   },
   completedText: {
-    color: Colors.dark.completedItemText,
     textDecorationLine: "line-through",
   },
   defaultText: {
-    color: Colors.dark.defaultItemText,
     textDecorationLine: "none",
   },
   editContainer: {
