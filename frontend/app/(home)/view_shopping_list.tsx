@@ -18,6 +18,7 @@ import { Ingredient } from "@/types/Ingredient"
 import { ThemedText } from "@/components/ThemedText"
 import { SystemMessage } from "@/components/SystemMessage"
 import { useIngredients } from "@/hooks/useIngredients"
+import { useThemeColor } from "@/hooks/useThemeColor"
 import { formatSortMode } from "@/utils/sortIngredients"
 
 export default function ViewShoppingList() {
@@ -42,6 +43,7 @@ export default function ViewShoppingList() {
   const isFirstSortModeRender = React.useRef(true)
   const isFirstSortSignalRender = React.useRef(true)
   const navigation = useNavigation()
+  const dividerColor = useThemeColor({}, "divider")
 
   React.useEffect(() => {
     if (listId) {
@@ -175,7 +177,8 @@ export default function ViewShoppingList() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["bottom"]}>
+      <View style={[styles.headerDivider, { backgroundColor: dividerColor }]} />
       <SystemMessage
         message={sortModeMessage}
         onHide={() => setSortModeMessage(null)}
@@ -195,6 +198,10 @@ export default function ViewShoppingList() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  headerDivider: {
+    height: 1,
+    width: "100%",
   },
   centered: {
     flex: 1,

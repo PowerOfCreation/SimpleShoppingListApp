@@ -9,6 +9,7 @@ import { getPreference } from "@/database/preferences-repository"
 import { ShoppingListOverview } from "@/types/ShoppingListOverview"
 import { ThemedText } from "@/components/ThemedText"
 import { useShoppingLists } from "@/hooks/useShoppingLists"
+import { useThemeColor } from "@/hooks/useThemeColor"
 import { ShoppingListEntry } from "@/components/ShoppingListEntry"
 import { shoppingListService } from "@/api/shopping-list-service"
 import { createLogger } from "@/api/common/logger"
@@ -17,6 +18,7 @@ const logger = createLogger("Index")
 
 export default function Index() {
   const { lists, isLoading, error, refetch, updateList } = useShoppingLists()
+  const dividerColor = useThemeColor({}, "divider")
   const [listToEdit, setListToEdit] = React.useState<string>("")
   const [isCheckingPreference, setIsCheckingPreference] = React.useState(true)
   const hasNavigatedRef = React.useRef(false)
@@ -149,7 +151,8 @@ export default function Index() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["bottom"]}>
+      <View style={[styles.headerDivider, { backgroundColor: dividerColor }]} />
       {renderContent()}
       <ActionButton testID="add-button" symbol="+" onPress={handleAddList} />
     </SafeAreaView>
@@ -159,6 +162,10 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  headerDivider: {
+    height: 1,
+    width: "100%",
   },
   centered: {
     flex: 1,
