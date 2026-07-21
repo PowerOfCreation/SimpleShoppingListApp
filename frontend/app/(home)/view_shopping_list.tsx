@@ -115,10 +115,6 @@ export default function ViewShoppingList() {
     await deleteIngredient(id)
   }
 
-  const entryLongPress = (id: string) => {
-    setIngredientToEdit(id)
-  }
-
   const renderEntry = ({ item }: { item: Ingredient }) => {
     return (
       <Entry
@@ -127,7 +123,7 @@ export default function ViewShoppingList() {
         isCompleted={item.completed}
         priority={item.priority}
         onToggleComplete={() => toggleCompletion(item.id)}
-        onLongPress={() => entryLongPress(item.id)}
+        onRename={() => setIngredientToEdit(item.id)}
         isEdited={ingredientToEdit === item.id}
         onCancelEditing={() => setIngredientToEdit("")}
         onSaveEditing={async (text) => {

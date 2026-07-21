@@ -12,7 +12,7 @@ const defaultProps: EntryProps = {
   ingredientName: "Default Ingredient",
   isCompleted: false,
   onToggleComplete: jest.fn(),
-  onLongPress: jest.fn(),
+  onRename: jest.fn(),
   isEdited: false,
   onCancelEditing: jest.fn(),
   onSaveEditing: jest.fn(),
@@ -178,5 +178,51 @@ describe("Entry", () => {
     fireEvent(input, "submitEditing")
 
     expect(onSaveEditing).toHaveBeenCalledWith("Updated Ingredient Name")
+  })
+
+  it("does not show the context menu by default", () => {
+    const { queryByTestId } = render(<Entry {...defaultProps} />)
+
+    expect(queryByTestId("entry-context-rename-1")).toBeFalsy()
+    expect(queryByTestId("entry-context-delete-1")).toBeFalsy()
+  })
+
+  it("opens the context menu on long press instead of entering rename mode directly", () => {
+    const { getByTestId, queryByTestId } = render(<Entry {...defaultProps} />)
+
+    fireEvent(getByTestId("entry-component-1"), "longPress")
+
+    expect(getByTestId("entry-context-rename-1")).toBeTruthy()
+    expect(getByTestId("entry-context-delete-1")).toBeTruthy()
+    expect(queryByTestId("entry-input-1")).toBeFalsy()
+  })
+
+  it("calls onRename and closes the menu when Rename is pressed", () => {
+    const onRename = jest.fn()
+    const { getByTestId, queryByTestId } = render(
+      <Entry {...defaultProps} onRename={onRename} />
+    )
+
+    fireEvent(getByTestId("entry-component-1"), "longPress")
+    fireEvent.press(getByTestId("entry-context-rename-1"))
+
+    expect(onRename).toHaveBeenCalledTimes(1)
+    expect(queryByTestId("entry-context-rename-1")).toBeFalsy()
+  })
+
+  it("shows delete confirmation alert when Delete is pressed in the context menu", () => {
+    const { getByTestId } = render(<Entry {...defaultProps} />)
+
+    fireEvent(getByTestId("entry-component-1"), "longPress")
+    fireEvent.press(getByTestId("entry-context-delete-1"))
+
+    expect(Alert.alert).toHaveBeenCalledWith(
+      "Delete Ingredient",
+      'Do you really want to delete "Default Ingredient"?',
+      expect.arrayContaining([
+        expect.objectContaining({ text: "Cancel", style: "cancel" }),
+        expect.objectContaining({ text: "Delete", style: "destructive" }),
+      ])
+    )
   })
 })

@@ -9,6 +9,7 @@ import {
 import { ThemedText } from "./ThemedText"
 import React, { forwardRef } from "react"
 import { ThemedTextInput } from "./ThemedTextInput"
+import { ContextMenu } from "./ContextMenu"
 import { MaterialIcons } from "@expo/vector-icons"
 import { Palette } from "@/constants/Colors"
 import { useThemeColor } from "@/hooks/useThemeColor"
@@ -20,7 +21,7 @@ export type ShoppingListEntryProps = {
   totalCount?: number
   completedCount?: number
   onPress: (event: GestureResponderEvent) => void
-  onLongPress: (event: GestureResponderEvent) => void
+  onRename: () => void
   onPressOut?: (event: GestureResponderEvent) => void
   isEdited: boolean
   onCancelEditing: () => void
@@ -31,6 +32,7 @@ export type ShoppingListEntryProps = {
 export const ShoppingListEntry = forwardRef<TextInput, ShoppingListEntryProps>(
   function ShoppingListEntry(props: ShoppingListEntryProps, ref) {
     const [text, onChangeText] = React.useState(props.listName)
+    const [showContextMenu, setShowContextMenu] = React.useState(false)
 
     const dividerColor = useThemeColor({}, "divider")
     const textSecondaryColor = useThemeColor({}, "textSecondary")
@@ -68,98 +70,121 @@ export const ShoppingListEntry = forwardRef<TextInput, ShoppingListEntryProps>(
     }
 
     return (
-      <TouchableOpacity
-        testID={`shopping-list-entry-${props.id}`}
-        style={[styles.listItem, { borderBottomColor: dividerColor }]}
-        onPress={props.onPress}
-        onLongPress={props.onLongPress}
-        onPressOut={props.onPressOut}
-      >
-        {props.isEdited ? (
-          <View style={styles.editContainer}>
-            <ThemedTextInput
-              testID={`shopping-list-input-${props.id}`}
-              onChangeText={onChangeText}
-              onSubmit={() => props.onSaveEditing(text)}
-              value={text}
-              placeholder={""}
-              autoFocus={true}
-              ref={ref}
-            />
-            <TouchableOpacity
-              testID={`save-button-${props.id}`}
-              style={styles.actionButton}
-              onPress={() => props.onSaveEditing(text)}
-            >
-              <MaterialIcons name="check" size={20} color={Palette.success} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              testID={`cancel-button-${props.id}`}
-              style={styles.actionButton}
-              onPress={props.onCancelEditing}
-            >
-              <MaterialIcons name="close" size={20} color={Palette.neutral} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              testID={`delete-button-${props.id}`}
-              style={styles.actionButton}
-              onPress={handleDeletePress}
-            >
-              <MaterialIcons
-                name="delete"
-                size={20}
-                color={Palette.destructive}
+      <>
+        <TouchableOpacity
+          testID={`shopping-list-entry-${props.id}`}
+          style={[styles.listItem, { borderBottomColor: dividerColor }]}
+          onPress={props.onPress}
+          onLongPress={() => setShowContextMenu(true)}
+          onPressOut={props.onPressOut}
+        >
+          {props.isEdited ? (
+            <View style={styles.editContainer}>
+              <ThemedTextInput
+                testID={`shopping-list-input-${props.id}`}
+                onChangeText={onChangeText}
+                onSubmit={() => props.onSaveEditing(text)}
+                value={text}
+                placeholder={""}
+                autoFocus={true}
+                ref={ref}
               />
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <>
-            <View style={styles.listContent}>
-              <View style={styles.listInfo}>
-                <ThemedText type="defaultSemiBold">{props.listName}</ThemedText>
-                <ThemedText
-                  style={[styles.listDate, { color: textSecondaryColor }]}
-                  type="default"
-                >
-                  {new Date(props.createdAt).toLocaleDateString()}
-                </ThemedText>
-              </View>
-              {props.totalCount !== undefined &&
-                props.completedCount !== undefined && (
+              <TouchableOpacity
+                testID={`save-button-${props.id}`}
+                style={styles.actionButton}
+                onPress={() => props.onSaveEditing(text)}
+              >
+                <MaterialIcons name="check" size={20} color={Palette.success} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID={`cancel-button-${props.id}`}
+                style={styles.actionButton}
+                onPress={props.onCancelEditing}
+              >
+                <MaterialIcons name="close" size={20} color={Palette.neutral} />
+              </TouchableOpacity>
+              <TouchableOpacity
+                testID={`delete-button-${props.id}`}
+                style={styles.actionButton}
+                onPress={handleDeletePress}
+              >
+                <MaterialIcons
+                  name="delete"
+                  size={20}
+                  color={Palette.destructive}
+                />
+              </TouchableOpacity>
+            </View>
+          ) : (
+            <>
+              <View style={styles.listContent}>
+                <View style={styles.listInfo}>
+                  <ThemedText type="defaultSemiBold">
+                    {props.listName}
+                  </ThemedText>
                   <ThemedText
-                    style={[styles.listCount, { color: textSecondaryColor }]}
+                    style={[styles.listDate, { color: textSecondaryColor }]}
                     type="default"
                   >
-                    {props.completedCount}/{props.totalCount}
+                    {new Date(props.createdAt).toLocaleDateString()}
                   </ThemedText>
-                )}
-            </View>
-            {props.totalCount !== undefined &&
-              props.completedCount !== undefined &&
-              props.totalCount > 0 && (
-                <View
-                  style={[
-                    styles.progressBar,
-                    { backgroundColor: dividerColor },
-                  ]}
-                >
-                  <View
-                    style={{
-                      flex: props.completedCount,
-                      backgroundColor: accentColor,
-                    }}
-                  />
-                  <View
-                    style={{
-                      flex: props.totalCount - props.completedCount,
-                      backgroundColor: amberColor,
-                    }}
-                  />
                 </View>
-              )}
-          </>
-        )}
-      </TouchableOpacity>
+                {props.totalCount !== undefined &&
+                  props.completedCount !== undefined && (
+                    <ThemedText
+                      style={[styles.listCount, { color: textSecondaryColor }]}
+                      type="default"
+                    >
+                      {props.completedCount}/{props.totalCount}
+                    </ThemedText>
+                  )}
+              </View>
+              {props.totalCount !== undefined &&
+                props.completedCount !== undefined &&
+                props.totalCount > 0 && (
+                  <View
+                    style={[
+                      styles.progressBar,
+                      { backgroundColor: dividerColor },
+                    ]}
+                  >
+                    <View
+                      style={{
+                        flex: props.completedCount,
+                        backgroundColor: accentColor,
+                      }}
+                    />
+                    <View
+                      style={{
+                        flex: props.totalCount - props.completedCount,
+                        backgroundColor: amberColor,
+                      }}
+                    />
+                  </View>
+                )}
+            </>
+          )}
+        </TouchableOpacity>
+        <ContextMenu
+          testID={`shopping-list-context-menu-${props.id}`}
+          visible={showContextMenu}
+          title={props.listName}
+          onClose={() => setShowContextMenu(false)}
+          options={[
+            {
+              label: "Rename",
+              testID: `shopping-list-context-rename-${props.id}`,
+              onPress: props.onRename,
+            },
+            {
+              label: "Delete",
+              testID: `shopping-list-context-delete-${props.id}`,
+              destructive: true,
+              onPress: handleDeletePress,
+            },
+          ]}
+        />
+      </>
     )
   }
 )

@@ -65,10 +65,6 @@ export default function Index() {
     }
   }
 
-  const handleLongPress = (id: string) => {
-    setListToEdit(id)
-  }
-
   const handleDeleteList = async (id: string) => {
     const list = lists.find((l) => l.id === id)
     if (!list) return
@@ -97,7 +93,7 @@ export default function Index() {
         totalCount={item.totalCount}
         completedCount={item.completedCount}
         onPress={() => handleSelectList(item.id)}
-        onLongPress={() => handleLongPress(item.id)}
+        onRename={() => setListToEdit(item.id)}
         isEdited={listToEdit === item.id}
         onCancelEditing={() => setListToEdit("")}
         onSaveEditing={async (text) => {

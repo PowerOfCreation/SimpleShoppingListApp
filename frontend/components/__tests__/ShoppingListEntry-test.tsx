@@ -14,7 +14,7 @@ const defaultProps: ShoppingListEntryProps = {
   totalCount: 5,
   completedCount: 2,
   onPress: jest.fn(),
-  onLongPress: jest.fn(),
+  onRename: jest.fn(),
   isEdited: false,
   onCancelEditing: jest.fn(),
   onSaveEditing: jest.fn(),
@@ -104,15 +104,45 @@ describe("ShoppingListEntry", () => {
     expect(onPress).toHaveBeenCalledTimes(1)
   })
 
-  it("calls onLongPress when long pressed", () => {
-    const onLongPress = jest.fn()
-    const { getByTestId } = render(
-      <ShoppingListEntry {...defaultProps} onLongPress={onLongPress} />
+  it("opens the context menu on long press instead of entering rename mode directly", () => {
+    const { getByTestId, queryByTestId } = render(
+      <ShoppingListEntry {...defaultProps} />
     )
 
     fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
 
-    expect(onLongPress).toHaveBeenCalledTimes(1)
+    expect(getByTestId("shopping-list-context-rename-1")).toBeTruthy()
+    expect(getByTestId("shopping-list-context-delete-1")).toBeTruthy()
+    expect(queryByTestId("shopping-list-input-1")).toBeFalsy()
+  })
+
+  it("calls onRename and closes the menu when Rename is pressed", () => {
+    const onRename = jest.fn()
+    const { getByTestId, queryByTestId } = render(
+      <ShoppingListEntry {...defaultProps} onRename={onRename} />
+    )
+
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+    fireEvent.press(getByTestId("shopping-list-context-rename-1"))
+
+    expect(onRename).toHaveBeenCalledTimes(1)
+    expect(queryByTestId("shopping-list-context-rename-1")).toBeFalsy()
+  })
+
+  it("shows delete confirmation alert when Delete is pressed in the context menu", () => {
+    const { getByTestId } = render(<ShoppingListEntry {...defaultProps} />)
+
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+    fireEvent.press(getByTestId("shopping-list-context-delete-1"))
+
+    expect(Alert.alert).toHaveBeenCalledWith(
+      "Delete Shopping List",
+      'Do you really want to delete list "Default Shopping List" with 5 ingredients?',
+      expect.arrayContaining([
+        expect.objectContaining({ text: "Cancel", style: "cancel" }),
+        expect.objectContaining({ text: "Delete", style: "destructive" }),
+      ])
+    )
   })
 
   it("shows input field when in edit mode", () => {
