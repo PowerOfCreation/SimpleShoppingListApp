@@ -15,6 +15,7 @@ export const EventTypes = {
   INGREDIENT_CREATED: "ingredient.created",
   INGREDIENT_UPDATED: "ingredient.updated",
   INGREDIENT_DELETED: "ingredient.deleted",
+  INGREDIENT_PRIORITY_SET: "ingredient.priority_set",
 } as const
 
 export const AggregateTypes = {

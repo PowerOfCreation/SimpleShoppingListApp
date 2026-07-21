@@ -34,7 +34,8 @@ describe("IngredientRepository", () => {
         list_id TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
-        completed_at INTEGER
+        completed_at INTEGER,
+        priority INTEGER
       );
     `)
   })
@@ -140,6 +141,7 @@ describe("IngredientRepository", () => {
         created_at: now,
         updated_at: now,
         completed_at: null,
+        priority: null,
       })
     })
 
@@ -177,6 +179,7 @@ describe("IngredientRepository", () => {
         created_at: 1000,
         updated_at: 2000,
         completed_at: null,
+        priority: null,
       })
     })
   })
@@ -224,6 +227,7 @@ describe("IngredientRepository", () => {
         created_at: 1000, // Should not change
         updated_at: now, // Should update
         completed_at: null,
+        priority: null,
       })
     })
   })
@@ -263,6 +267,7 @@ describe("IngredientRepository", () => {
         created_at: 1000, // Should not change
         updated_at: now, // Should update
         completed_at: now, // Should be set to now
+        priority: null,
       })
     })
   })
@@ -302,6 +307,7 @@ describe("IngredientRepository", () => {
         created_at: 1000, // Should not change
         updated_at: now, // Should update
         completed_at: null,
+        priority: null,
       })
     })
 

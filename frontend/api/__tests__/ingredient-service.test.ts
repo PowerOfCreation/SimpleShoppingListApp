@@ -8,6 +8,7 @@ import * as SQLite from "expo-sqlite"
 import { DbQueryError, ValidationError } from "@/api/common/error-types"
 import { Result } from "@/api/common/result"
 import { DomainEventRow, EventTypes } from "@/types/DomainEvent"
+import { Priority } from "@/types/Priority"
 
 jest.mock("@/database/ingredient-repository")
 const MockIngredientRepository = IngredientRepository as jest.MockedClass<
@@ -64,6 +65,7 @@ describe("IngredientService", () => {
     mockProjection = {
       handleCreated: jest.fn(),
       handleUpdated: jest.fn(),
+      handlePrioritySet: jest.fn(),
       handleDeleted: jest.fn(),
       rebuild: jest.fn(),
     } as unknown as jest.Mocked<IngredientProjection>
@@ -215,6 +217,46 @@ describe("IngredientService", () => {
       )
 
       const result = await service.updateName("1", "New Name")
+
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBe(dbError)
+    })
+  })
+
+  describe("setPriority", () => {
+    it("should append an ingredient.priority_set event with priority payload", async () => {
+      const ingredientId = "1"
+
+      const result = await service.setPriority(ingredientId, Priority.DAYS_1_TO_3)
+
+      expect(mockEventRepository.appendWithProjection).toHaveBeenCalledTimes(1)
+
+      const [event] = mockEventRepository.appendWithProjection.mock.calls[0]
+      expect(event.event_type).toBe(EventTypes.INGREDIENT_PRIORITY_SET)
+      expect(event.aggregate_id).toBe(ingredientId)
+      const payload = JSON.parse(event.payload)
+      expect(payload.priority).toBe(Priority.DAYS_1_TO_3)
+
+      expect(result.success).toBe(true)
+    })
+
+    it("should return error for an invalid priority", async () => {
+      const result = await service.setPriority("1", 999 as Priority)
+
+      expect(mockEventRepository.appendWithProjection).not.toHaveBeenCalled()
+
+      expect(result.success).toBe(false)
+      expect(result.getError()).toBeInstanceOf(ValidationError)
+      expect(result.getError().message).toBe("Invalid priority")
+    })
+
+    it("should return error if event repository fails", async () => {
+      const dbError = new DbQueryError("DB error", "setPriority", "Ingredient")
+      mockEventRepository.appendWithProjection.mockResolvedValue(
+        Result.fail(dbError)
+      )
+
+      const result = await service.setPriority("1", Priority.NOW)
 
       expect(result.success).toBe(false)
       expect(result.getError()).toBe(dbError)

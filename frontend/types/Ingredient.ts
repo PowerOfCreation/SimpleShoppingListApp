@@ -1,3 +1,5 @@
+import { Priority } from "@/types/Priority"
+
 export type Ingredient = {
   id: string
   name: string
@@ -6,4 +8,5 @@ export type Ingredient = {
   created_at?: number
   updated_at?: number
   completed_at?: number
+  priority?: Priority
 }

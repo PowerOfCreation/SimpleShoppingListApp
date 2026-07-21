@@ -51,7 +51,8 @@ describe("IngredientProjection", () => {
         list_id TEXT NOT NULL,
         created_at INTEGER NOT NULL,
         updated_at INTEGER NOT NULL,
-        completed_at INTEGER
+        completed_at INTEGER,
+        priority INTEGER
       )
     `)
   })
@@ -84,7 +85,7 @@ describe("IngredientProjection", () => {
   describe("handleUpdated", () => {
     beforeEach(async () => {
       await db.execAsync(
-        `INSERT INTO ingredients VALUES ('ing-1','Milk',0,'list-1',1000,1000,NULL)`
+        `INSERT INTO ingredients VALUES ('ing-1','Milk',0,'list-1',1000,1000,NULL,NULL)`
       )
     })
 
@@ -150,10 +151,52 @@ describe("IngredientProjection", () => {
     })
   })
 
+  describe("handlePrioritySet", () => {
+    beforeEach(async () => {
+      await db.execAsync(
+        `INSERT INTO ingredients VALUES ('ing-1','Milk',0,'list-1',1000,1000,NULL,NULL)`
+      )
+    })
+
+    it("updates priority and updated_at", async () => {
+      await projection.handlePrioritySet(
+        db,
+        makeEvent({
+          event_type: EventTypes.INGREDIENT_PRIORITY_SET,
+          occurred_at: 2500,
+          payload: JSON.stringify({ priority: 100 }),
+        })
+      )
+
+      const row = await db.getFirstAsync<{
+        priority: number | null
+        updated_at: number
+      }>(`SELECT priority, updated_at FROM ingredients WHERE id = 'ing-1'`)
+      expect(row).toEqual({ priority: 100, updated_at: 2500 })
+    })
+
+    it("does not touch name or completed", async () => {
+      await projection.handlePrioritySet(
+        db,
+        makeEvent({
+          event_type: EventTypes.INGREDIENT_PRIORITY_SET,
+          occurred_at: 2500,
+          payload: JSON.stringify({ priority: 0 }),
+        })
+      )
+
+      const row = await db.getFirstAsync<{
+        name: string
+        completed: number
+      }>(`SELECT name, completed FROM ingredients WHERE id = 'ing-1'`)
+      expect(row).toEqual({ name: "Milk", completed: 0 })
+    })
+  })
+
   describe("handleDeleted", () => {
     it("removes the row", async () => {
       await db.execAsync(
-        `INSERT INTO ingredients VALUES ('ing-1','Milk',0,'list-1',1000,1000,NULL)`
+        `INSERT INTO ingredients VALUES ('ing-1','Milk',0,'list-1',1000,1000,NULL,NULL)`
       )
 
       await projection.handleDeleted(
@@ -171,7 +214,7 @@ describe("IngredientProjection", () => {
   describe("rebuild", () => {
     it("clears existing data and replays all event types", async () => {
       await db.execAsync(
-        `INSERT INTO ingredients VALUES ('stale','Old',0,'list-1',1,1,NULL)`
+        `INSERT INTO ingredients VALUES ('stale','Old',0,'list-1',1,1,NULL,NULL)`
       )
 
       const events = [
@@ -208,6 +251,13 @@ describe("IngredientProjection", () => {
         }),
         makeEvent({
           event_id: "e4",
+          event_type: EventTypes.INGREDIENT_PRIORITY_SET,
+          aggregate_id: "a",
+          occurred_at: 3500,
+          payload: JSON.stringify({ priority: 200 }),
+        }),
+        makeEvent({
+          event_id: "e5",
           event_type: EventTypes.INGREDIENT_DELETED,
           aggregate_id: "b",
           occurred_at: 4000,
@@ -217,10 +267,12 @@ describe("IngredientProjection", () => {
 
       await projection.rebuild(events)
 
-      const rows = await db.getAllAsync<{ id: string; name: string }>(
-        `SELECT id, name FROM ingredients ORDER BY id`
-      )
-      expect(rows).toEqual([{ id: "a", name: "Green Apples" }])
+      const rows = await db.getAllAsync<{
+        id: string
+        name: string
+        priority: number | null
+      }>(`SELECT id, name, priority FROM ingredients ORDER BY id`)
+      expect(rows).toEqual([{ id: "a", name: "Green Apples", priority: 200 }])
     })
   })
 })

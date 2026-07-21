@@ -5,6 +5,7 @@ import { Result } from "@/api/common/result"
 import { DbMigrationError } from "@/api/common/error-types"
 import { migrateToVersion1 } from "@/database/migrations/migration-1"
 import { migrateToVersion2 } from "@/database/migrations/migration-2"
+import { migrateToVersion3 } from "@/database/migrations/migration-3"
 
 const logger = createLogger("Migrations")
 
@@ -18,6 +19,7 @@ type Migration = {
 const MIGRATIONS: Migration[] = [
   { version: 1, migrate: migrateToVersion1 },
   { version: 2, migrate: migrateToVersion2 },
+  { version: 3, migrate: migrateToVersion3 },
 ]
 
 export async function executeMigrations(

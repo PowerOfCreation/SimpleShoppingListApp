@@ -10,6 +10,7 @@ import { Result } from "@/api/common/result"
 import { DbQueryError, ValidationError } from "@/api/common/error-types"
 import { EventTypes, AggregateTypes, DomainEventRow } from "@/types/DomainEvent"
 import { getClientId } from "@/api/common/client-id"
+import { Priority } from "@/types/Priority"
 
 const logger = createLogger("IngredientService")
 
@@ -217,6 +218,60 @@ export class IngredientService {
         new DbQueryError(
           `Failed to update name for ingredient ${id}`,
           "updateName",
+          "Ingredient",
+          error
+        )
+      )
+    }
+  }
+
+  async setPriority(
+    id: string,
+    priority: Priority
+  ): Promise<Result<void, ValidationError | DbQueryError>> {
+    if (!Object.values(Priority).includes(priority)) {
+      const error = new ValidationError("Invalid priority", "priority")
+      return Result.fail(error)
+    }
+
+    try {
+      const now = Date.now()
+      const event: DomainEventRow = {
+        event_id: uuidv4(),
+        event_type: EventTypes.INGREDIENT_PRIORITY_SET,
+        aggregate_id: id,
+        aggregate_type: AggregateTypes.INGREDIENT,
+        occurred_at: now,
+        client_id: getClientId(),
+        payload: JSON.stringify({ priority }),
+      }
+
+      const result = await this.eventRepository.appendWithProjection(
+        event,
+        (db) => this.projection.handlePrioritySet(db, event)
+      )
+
+      if (!result.success) {
+        logger.error(
+          `Error updating priority for ingredient ${id}`,
+          result.getError()
+        )
+        return result
+      }
+
+      const index = this.ingredients.findIndex((ing) => ing.id === id)
+      if (index !== -1) {
+        this.ingredients[index].priority = priority
+        this.ingredients[index].updated_at = now
+      }
+
+      return Result.ok(undefined)
+    } catch (error) {
+      logger.error(`Error updating priority for ingredient ${id}`, error)
+      return Result.fail(
+        new DbQueryError(
+          `Failed to update priority for ingredient ${id}`,
+          "setPriority",
           "Ingredient",
           error
         )
