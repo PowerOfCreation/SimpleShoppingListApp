@@ -16,7 +16,9 @@ import { setPreference } from "@/database/preferences-repository"
 
 import { Ingredient } from "@/types/Ingredient"
 import { ThemedText } from "@/components/ThemedText"
+import { SystemMessage } from "@/components/SystemMessage"
 import { useIngredients } from "@/hooks/useIngredients"
+import { formatSortMode } from "@/utils/sortIngredients"
 
 export default function ViewShoppingList() {
   const {
@@ -26,12 +28,19 @@ export default function ViewShoppingList() {
     refetch,
     listName,
     listId,
+    sortMode,
+    sortSignal,
     toggleCompletion,
     updateName,
     deleteIngredient,
     sortIngredients,
   } = useIngredients()
   const [ingredientToEdit, setIngredientToEdit] = React.useState<string>("")
+  const [sortModeMessage, setSortModeMessage] = React.useState<string | null>(
+    null
+  )
+  const isFirstSortModeRender = React.useRef(true)
+  const isFirstSortSignalRender = React.useRef(true)
   const navigation = useNavigation()
 
   React.useEffect(() => {
@@ -39,6 +48,25 @@ export default function ViewShoppingList() {
       setPreference("last_viewed_list_id", listId)
     }
   }, [listId])
+
+  // Announce the active sort mode whenever the user switches it,
+  // but not on initial mount
+  React.useEffect(() => {
+    if (isFirstSortModeRender.current) {
+      isFirstSortModeRender.current = false
+      return
+    }
+    setSortModeMessage(formatSortMode(sortMode))
+  }, [sortMode])
+
+  // Announce a plain re-sort (list was out of order, mode didn't change)
+  React.useEffect(() => {
+    if (isFirstSortSignalRender.current) {
+      isFirstSortSignalRender.current = false
+      return
+    }
+    setSortModeMessage("Sorted")
+  }, [sortSignal])
 
   // Memoize the header right component to avoid recreating on every render
   const headerRightComponent = React.useCallback(
@@ -49,7 +77,12 @@ export default function ViewShoppingList() {
         accessibilityLabel="Sort list"
         accessibilityHint="Moves completed items to the bottom"
       >
-        <MaterialIcons name="sort" size={24} color="#007AFF" />
+        <MaterialIcons
+          name="sort"
+          size={24}
+          color="#007AFF"
+          style={styles.sortIcon}
+        />
       </TouchableOpacity>
     ),
     [sortIngredients]
@@ -143,6 +176,10 @@ export default function ViewShoppingList() {
 
   return (
     <SafeAreaView style={styles.container}>
+      <SystemMessage
+        message={sortModeMessage}
+        onHide={() => setSortModeMessage(null)}
+      />
       {renderContent()}
       <ActionButton
         testID="add-button"
@@ -176,5 +213,8 @@ const styles = StyleSheet.create({
   sortButton: {
     marginRight: 16,
     padding: 4,
+  },
+  sortIcon: {
+    transform: [{ scaleX: -1 }],
   },
 })

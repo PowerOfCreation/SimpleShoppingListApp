@@ -1,10 +1,12 @@
 import React from "react"
 import { useLocalSearchParams } from "expo-router"
 import { Ingredient } from "@/types/Ingredient"
+import { SortMode } from "@/types/SortMode"
 import { ingredientService } from "@/api/ingredient-service"
 import { createLogger } from "@/api/common/logger"
 import { IngredientListRepository } from "@/database/ingredient-list-repository"
 import { getDatabase } from "@/database/database"
+import { isSortedByMode, sortIngredientsByMode } from "@/utils/sortIngredients"
 
 const logger = createLogger("useIngredients")
 
@@ -19,6 +21,11 @@ export function useIngredients() {
   const [isLoading, setIsLoading] = React.useState(false)
   const [error, setError] = React.useState<string | null>(null)
   const [listName, setListName] = React.useState<string | null>(null)
+  // Matches the DB's default ordering (completed ASC, created_at DESC)
+  const [sortMode, setSortMode] = React.useState<SortMode>(SortMode.DATE)
+  // Bumped whenever the list is just re-sorted without switching mode,
+  // so the UI can show feedback even when sortMode itself didn't change
+  const [sortSignal, setSortSignal] = React.useState(0)
 
   const loadIngredients = React.useCallback(async () => {
     setIsLoading(true)
@@ -33,14 +40,14 @@ export function useIngredients() {
         return
       }
 
-      setIngredients(result.getValue() || [])
+      setIngredients(sortIngredientsByMode(result.getValue() || [], sortMode))
     } catch (err) {
       setError("Failed to load ingredients")
       logger.error("Error loading ingredients", err)
     } finally {
       setIsLoading(false)
     }
-  }, [listId])
+  }, [listId, sortMode])
 
   // Load list name when listId changes
   React.useEffect(() => {
@@ -157,23 +164,22 @@ export function useIngredients() {
   )
 
   /**
-   * Apply sorting to ingredients
-   * Sorts by completion (incomplete first) then by creation date (newest first)
-   * This is the "manual sort" that applies database ordering
+   * Apply sorting to ingredients, or switch sort mode.
+   * If the list is currently out of order (e.g. an item was just completed
+   * and stayed in place), pressing sort just re-sorts using the active mode.
+   * If the list is already sorted, pressing sort switches to the other mode.
    */
   const sortIngredients = React.useCallback(() => {
-    setIngredients((prev) => {
-      const sorted = [...prev].sort((a, b) => {
-        // First by completion (incomplete first)
-        if (a.completed !== b.completed) {
-          return a.completed ? 1 : -1
-        }
-        // Then by creation date (newest first)
-        return (b.created_at || 0) - (a.created_at || 0)
-      })
-      return sorted
-    })
-  }, [])
+    if (isSortedByMode(ingredients, sortMode)) {
+      const nextMode =
+        sortMode === SortMode.DATE ? SortMode.PRIORITY : SortMode.DATE
+      setSortMode(nextMode)
+      setIngredients(sortIngredientsByMode(ingredients, nextMode))
+    } else {
+      setIngredients(sortIngredientsByMode(ingredients, sortMode))
+      setSortSignal((prev) => prev + 1)
+    }
+  }, [ingredients, sortMode])
 
   return {
     ingredients,
@@ -182,6 +188,8 @@ export function useIngredients() {
     refetch: loadIngredients,
     listName,
     listId,
+    sortMode,
+    sortSignal,
     // Business operations
     toggleCompletion,
     updateName,
