@@ -61,7 +61,7 @@ export class IngredientService {
   async AddIngredients(
     ingredientName: string,
     listId: string
-  ): Promise<Result<void, ValidationError | DbQueryError>> {
+  ): Promise<Result<Ingredient, ValidationError | DbQueryError>> {
     if (!ingredientName.trim()) {
       const error = new ValidationError(
         "Ingredient name can't be empty",
@@ -90,7 +90,7 @@ export class IngredientService {
 
       if (!result.success) {
         logger.error("Error adding ingredient", result.getError())
-        return result
+        return Result.fail(result.getError())
       }
 
       const newIngredient: Ingredient = {
@@ -103,7 +103,7 @@ export class IngredientService {
       }
       this.ingredients.unshift(newIngredient)
 
-      return Result.ok(undefined)
+      return Result.ok(newIngredient)
     } catch (error) {
       logger.error("Error adding ingredient", error)
       return Result.fail(
