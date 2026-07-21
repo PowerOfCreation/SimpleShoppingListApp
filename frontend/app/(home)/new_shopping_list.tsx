@@ -4,11 +4,13 @@ import { Pressable, View, StyleSheet, TextInput } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { ThemedText } from "@/components/ThemedText"
 import { Palette } from "@/constants/Colors"
+import { useThemeColor } from "@/hooks/useThemeColor"
 import { ThemedTextInput } from "@/components/ThemedTextInput"
 import { shoppingListService } from "@/api/shopping-list-service"
 
 export default function NewShoppingList() {
   const [text, onChangeText] = React.useState("")
+  const accentColor = useThemeColor({}, "accent")
   const [invalidInputExplanation, setInvalidInputExplanation] =
     React.useState("")
   const inputRef = React.useRef<TextInput>(null)
@@ -56,7 +58,9 @@ export default function NewShoppingList() {
           style={styles.buttonStyle}
           onPress={() => createShoppingList(text)}
         >
-          <ThemedText>Create</ThemedText>
+          <ThemedText style={{ color: accentColor, fontWeight: "600" }}>
+            Create
+          </ThemedText>
         </Pressable>
       </View>
       {invalidInputExplanation ? (
@@ -72,16 +76,20 @@ const styles = StyleSheet.create({
   searchBarContainer: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    width: "100%",
   },
   containerStyle: {
     flex: 1,
-    alignItems: "center",
   },
   buttonStyle: {
-    margin: 5,
-    marginRight: 15,
+    paddingHorizontal: 4,
   },
   invalidInputExplanationStyle: {
     color: Palette.error,
+    paddingHorizontal: 18,
+    marginTop: 8,
   },
 })

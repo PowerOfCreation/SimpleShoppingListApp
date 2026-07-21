@@ -90,6 +90,7 @@ export default function ViewShoppingList() {
         id={item.id}
         ingredientName={item.name}
         isCompleted={item.completed}
+        priority={item.priority}
         onToggleComplete={() => toggleCompletion(item.id)}
         onLongPress={() => entryLongPress(item.id)}
         isEdited={ingredientToEdit === item.id}

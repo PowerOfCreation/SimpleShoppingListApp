@@ -52,10 +52,11 @@ export const ThemedTextInput = forwardRef<TextInput, ThemedTextInputParams>(
 const styles = StyleSheet.create({
   input: {
     flex: 1,
-    top: 0,
     height: 40,
-    margin: 12,
-    borderWidth: 1,
-    padding: 10,
+    borderWidth: 1.4,
+    borderRadius: 8,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    fontSize: 14,
   },
 })

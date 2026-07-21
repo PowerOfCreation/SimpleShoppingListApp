@@ -8,16 +8,18 @@ import {
 } from "react-native"
 import { ThemedText } from "./ThemedText"
 import React, { forwardRef } from "react"
-import Feather from "@expo/vector-icons/Feather"
-import { Palette } from "@/constants/Colors"
 import { ThemedTextInput } from "./ThemedTextInput"
 import { MaterialIcons } from "@expo/vector-icons"
 import { useThemeColor } from "@/hooks/useThemeColor"
+import { Palette } from "@/constants/Colors"
+import { Priority } from "@/types/Priority"
+import { formatPriority, priorityColorKey } from "@/utils/priority"
 
 export type EntryProps = {
   id: string
   ingredientName: string
   isCompleted: boolean
+  priority?: Priority
   onToggleComplete: (event: GestureResponderEvent) => void
   onLongPress: (event: GestureResponderEvent) => void
   onPressOut?: (event: GestureResponderEvent) => void
@@ -34,24 +36,23 @@ export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
   const [text, onChangeText] = React.useState(props.ingredientName)
 
   const dividerColor = useThemeColor({}, "divider")
-  const cardSurfaceColor = useThemeColor({}, "cardSurface")
-  const cardSurfaceCompletedColor = useThemeColor({}, "cardSurfaceCompleted")
-  const completedItemTextColor = useThemeColor({}, "completedItemText")
-  const defaultItemTextColor = useThemeColor({}, "defaultItemText")
-
-  const getBackgroundColor = () => {
-    return {
-      backgroundColor: props.isCompleted
-        ? cardSurfaceCompletedColor
-        : cardSurfaceColor,
-    }
-  }
+  const accentColor = useThemeColor({}, "accent")
+  const onAccentColor = useThemeColor({}, "onAccent")
+  const textColor = useThemeColor({}, "text")
+  const textSecondaryColor = useThemeColor({}, "textSecondary")
+  const dangerColor = useThemeColor({}, "danger")
+  const priorityColor = useThemeColor(
+    {},
+    props.priority !== undefined ? priorityColorKey(props.priority) : "accent"
+  )
 
   const getTextStyles = () => {
     return props.isCompleted
-      ? [styles.completedText, { color: completedItemTextColor }]
-      : [styles.defaultText, { color: defaultItemTextColor }]
+      ? [styles.completedText, { color: textSecondaryColor }]
+      : [styles.defaultText, { color: textColor }]
   }
+
+  const showPriorityBadge = !props.isCompleted && props.priority !== undefined
 
   React.useEffect(() => {
     onChangeText(props.ingredientName)
@@ -82,20 +83,18 @@ export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
   return (
     <TouchableOpacity
       testID={`entry-component-${props.id}`}
-      style={[
-        styles.buttonStyle,
-        { borderBlockColor: dividerColor },
-        getBackgroundColor(),
-      ]}
+      style={[styles.buttonStyle, { borderBottomColor: dividerColor }]}
       onPress={props.onToggleComplete}
       onLongPress={props.onLongPress}
       onPressOut={props.onPressOut}
     >
-      <Feather
-        name={props.isCompleted ? "check-circle" : "circle"}
-        size={26}
-        color={Palette.primary}
-      />
+      {props.isCompleted ? (
+        <View style={[styles.checkbox, { backgroundColor: accentColor }]}>
+          <MaterialIcons name="check" size={14} color={onAccentColor} />
+        </View>
+      ) : (
+        <View style={[styles.checkbox, { borderColor: accentColor }]} />
+      )}
 
       {props.isEdited ? (
         <View style={styles.editContainer}>
@@ -127,20 +126,26 @@ export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
             style={styles.actionButton}
             onPress={handleDeletePress}
           >
-            <MaterialIcons
-              name="delete"
-              size={20}
-              color={Palette.destructive}
-            />
+            <MaterialIcons name="delete" size={20} color={dangerColor} />
           </TouchableOpacity>
         </View>
       ) : (
-        <ThemedText
-          style={[styles.baseText, getTextStyles()]}
-          type="defaultSemiBold"
-        >
-          {props.ingredientName}
-        </ThemedText>
+        <>
+          <ThemedText style={[styles.baseText, getTextStyles()]} type="default">
+            {props.ingredientName}
+          </ThemedText>
+          {showPriorityBadge && (
+            <View
+              style={[styles.priorityBadge, { backgroundColor: priorityColor }]}
+            >
+              <ThemedText
+                style={[styles.priorityBadgeText, { color: onAccentColor }]}
+              >
+                {formatPriority(props.priority!)}
+              </ThemedText>
+            </View>
+          )}
+        </>
       )}
     </TouchableOpacity>
   )
@@ -148,16 +153,26 @@ export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
 
 const styles = StyleSheet.create({
   buttonStyle: {
-    paddingLeft: 15,
+    paddingHorizontal: 18,
     width: "100%",
-    height: 60,
-    borderTopWidth: 1,
+    minHeight: 55,
+    paddingVertical: 13,
+    borderBottomWidth: 1,
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
+    gap: 12,
+  },
+  checkbox: {
+    width: 20,
+    height: 20,
+    borderRadius: 10,
+    borderWidth: 2,
+    flexShrink: 0,
+    alignItems: "center",
+    justifyContent: "center",
   },
   baseText: {
-    left: 20,
     flex: 1,
   },
   completedText: {
@@ -166,11 +181,21 @@ const styles = StyleSheet.create({
   defaultText: {
     textDecorationLine: "none",
   },
+  priorityBadge: {
+    borderRadius: 100,
+    paddingHorizontal: 9,
+    paddingVertical: 3,
+    flexShrink: 0,
+  },
+  priorityBadgeText: {
+    fontSize: 10.5,
+    fontWeight: "700",
+    lineHeight: 14,
+  },
   editContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    marginLeft: -4,
+    gap: 8,
     flex: 1,
   },
   actionButton: {

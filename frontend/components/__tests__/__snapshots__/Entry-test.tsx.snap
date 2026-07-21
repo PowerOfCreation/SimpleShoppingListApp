@@ -32,42 +32,58 @@ exports[`Entry renders correctly 1`] = `
   style={
     {
       "alignItems": "center",
-      "backgroundColor": "#f5f5f5",
-      "borderBlockColor": "#e0e0e0",
-      "borderTopWidth": 1,
+      "borderBottomColor": "#d9dfe3",
+      "borderBottomWidth": 1,
       "display": "flex",
       "flexDirection": "row",
-      "height": 60,
+      "gap": 12,
+      "minHeight": 55,
       "opacity": 1,
-      "paddingLeft": 15,
+      "paddingHorizontal": 18,
+      "paddingVertical": 13,
       "width": "100%",
     }
   }
   testID="entry-component-1"
 >
-  <Text />
+  <View
+    style={
+      [
+        {
+          "alignItems": "center",
+          "borderRadius": 10,
+          "borderWidth": 2,
+          "flexShrink": 0,
+          "height": 20,
+          "justifyContent": "center",
+          "width": 20,
+        },
+        {
+          "borderColor": "#026fd7",
+        },
+      ]
+    }
+  />
   <Text
     style={
       [
         {
-          "color": "#11181C",
+          "color": "#0e171e",
         },
         {
           "fontSize": 16,
-          "fontWeight": "600",
           "lineHeight": 24,
         },
         [
           {
             "flex": 1,
-            "left": 20,
           },
           [
             {
               "textDecorationLine": "none",
             },
             {
-              "color": "#333333",
+              "color": "#0e171e",
             },
           ],
         ],
@@ -109,28 +125,45 @@ exports[`Entry renders correctly in edit mode 1`] = `
   style={
     {
       "alignItems": "center",
-      "backgroundColor": "#f5f5f5",
-      "borderBlockColor": "#e0e0e0",
-      "borderTopWidth": 1,
+      "borderBottomColor": "#d9dfe3",
+      "borderBottomWidth": 1,
       "display": "flex",
       "flexDirection": "row",
-      "height": 60,
+      "gap": 12,
+      "minHeight": 55,
       "opacity": 1,
-      "paddingLeft": 15,
+      "paddingHorizontal": 18,
+      "paddingVertical": 13,
       "width": "100%",
     }
   }
   testID="entry-component-1"
 >
-  <Text />
+  <View
+    style={
+      [
+        {
+          "alignItems": "center",
+          "borderRadius": 10,
+          "borderWidth": 2,
+          "flexShrink": 0,
+          "height": 20,
+          "justifyContent": "center",
+          "width": 20,
+        },
+        {
+          "borderColor": "#026fd7",
+        },
+      ]
+    }
+  />
   <View
     style={
       {
         "alignItems": "center",
         "flex": 1,
         "flexDirection": "row",
-        "gap": 4,
-        "marginLeft": -4,
+        "gap": 8,
       }
     }
   >
@@ -144,16 +177,17 @@ exports[`Entry renders correctly in edit mode 1`] = `
       style={
         [
           {
-            "borderWidth": 1,
+            "borderRadius": 8,
+            "borderWidth": 1.4,
             "flex": 1,
+            "fontSize": 14,
             "height": 40,
-            "margin": 12,
-            "padding": 10,
-            "top": 0,
+            "paddingHorizontal": 11,
+            "paddingVertical": 9,
           },
           {
-            "borderColor": "#11181C",
-            "color": "#11181C",
+            "borderColor": "#0e171e",
+            "color": "#0e171e",
           },
         ]
       }

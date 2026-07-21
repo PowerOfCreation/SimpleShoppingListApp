@@ -31,10 +31,11 @@ exports[`ShoppingListEntry renders correctly in edit mode 1`] = `
   onStartShouldSetResponder={[Function]}
   style={
     {
-      "borderBottomColor": "#e0e0e0",
+      "borderBottomColor": "#d9dfe3",
       "borderBottomWidth": 1,
       "opacity": 1,
-      "padding": 16,
+      "paddingHorizontal": 18,
+      "paddingVertical": 14,
     }
   }
   testID="shopping-list-entry-1"
@@ -44,8 +45,7 @@ exports[`ShoppingListEntry renders correctly in edit mode 1`] = `
       {
         "alignItems": "center",
         "flexDirection": "row",
-        "gap": 4,
-        "marginLeft": -12,
+        "gap": 8,
       }
     }
   >
@@ -59,16 +59,17 @@ exports[`ShoppingListEntry renders correctly in edit mode 1`] = `
       style={
         [
           {
-            "borderWidth": 1,
+            "borderRadius": 8,
+            "borderWidth": 1.4,
             "flex": 1,
+            "fontSize": 14,
             "height": 40,
-            "margin": 12,
-            "padding": 10,
-            "top": 0,
+            "paddingHorizontal": 11,
+            "paddingVertical": 9,
           },
           {
-            "borderColor": "#11181C",
-            "color": "#11181C",
+            "borderColor": "#0e171e",
+            "color": "#0e171e",
           },
         ]
       }
@@ -230,10 +231,11 @@ exports[`ShoppingListEntry renders correctly in non-edit mode 1`] = `
   onStartShouldSetResponder={[Function]}
   style={
     {
-      "borderBottomColor": "#e0e0e0",
+      "borderBottomColor": "#d9dfe3",
       "borderBottomWidth": 1,
       "opacity": 1,
-      "padding": 16,
+      "paddingHorizontal": 18,
+      "paddingVertical": 14,
     }
   }
   testID="shopping-list-entry-1"
@@ -241,7 +243,7 @@ exports[`ShoppingListEntry renders correctly in non-edit mode 1`] = `
   <View
     style={
       {
-        "alignItems": "center",
+        "alignItems": "baseline",
         "flexDirection": "row",
         "justifyContent": "space-between",
       }
@@ -258,10 +260,11 @@ exports[`ShoppingListEntry renders correctly in non-edit mode 1`] = `
         style={
           [
             {
-              "color": "#11181C",
+              "color": "#0e171e",
             },
             {
               "fontSize": 16,
+              "fontWeight": "600",
               "lineHeight": 24,
             },
             undefined,
@@ -274,17 +277,21 @@ exports[`ShoppingListEntry renders correctly in non-edit mode 1`] = `
         style={
           [
             {
-              "color": "#11181C",
+              "color": "#0e171e",
             },
             {
               "fontSize": 16,
               "lineHeight": 24,
             },
-            {
-              "fontSize": 12,
-              "marginTop": 4,
-              "opacity": 0.6,
-            },
+            [
+              {
+                "fontSize": 12,
+                "marginTop": 2,
+              },
+              {
+                "color": "#515960",
+              },
+            ],
           ]
         }
       >
@@ -295,18 +302,21 @@ exports[`ShoppingListEntry renders correctly in non-edit mode 1`] = `
       style={
         [
           {
-            "color": "#11181C",
+            "color": "#0e171e",
           },
           {
             "fontSize": 16,
             "lineHeight": 24,
           },
-          {
-            "fontSize": 16,
-            "fontWeight": "600",
-            "marginLeft": 12,
-            "opacity": 0.7,
-          },
+          [
+            {
+              "fontSize": 13,
+              "marginLeft": 12,
+            },
+            {
+              "color": "#515960",
+            },
+          ],
         ]
       }
     >
@@ -317,37 +327,34 @@ exports[`ShoppingListEntry renders correctly in non-edit mode 1`] = `
   </View>
   <View
     style={
-      {
-        "borderRadius": 2,
-        "flexDirection": "row",
-        "height": 4,
-        "marginTop": 8,
-        "overflow": "hidden",
-      }
+      [
+        {
+          "borderRadius": 4,
+          "flexDirection": "row",
+          "height": 8,
+          "marginTop": 8,
+          "overflow": "hidden",
+        },
+        {
+          "backgroundColor": "#d9dfe3",
+        },
+      ]
     }
   >
     <View
       style={
-        [
-          {
-            "backgroundColor": "#2196F3",
-          },
-          {
-            "flex": 2,
-          },
-        ]
+        {
+          "backgroundColor": "#026fd7",
+          "flex": 2,
+        }
       }
     />
     <View
       style={
-        [
-          {
-            "backgroundColor": "#FF9800",
-          },
-          {
-            "flex": 3,
-          },
-        ]
+        {
+          "backgroundColor": "#bc5e00",
+          "flex": 3,
+        }
       }
     />
   </View>
@@ -385,10 +392,11 @@ exports[`ShoppingListEntry renders correctly without counts 1`] = `
   onStartShouldSetResponder={[Function]}
   style={
     {
-      "borderBottomColor": "#e0e0e0",
+      "borderBottomColor": "#d9dfe3",
       "borderBottomWidth": 1,
       "opacity": 1,
-      "padding": 16,
+      "paddingHorizontal": 18,
+      "paddingVertical": 14,
     }
   }
   testID="shopping-list-entry-1"
@@ -396,7 +404,7 @@ exports[`ShoppingListEntry renders correctly without counts 1`] = `
   <View
     style={
       {
-        "alignItems": "center",
+        "alignItems": "baseline",
         "flexDirection": "row",
         "justifyContent": "space-between",
       }
@@ -413,10 +421,11 @@ exports[`ShoppingListEntry renders correctly without counts 1`] = `
         style={
           [
             {
-              "color": "#11181C",
+              "color": "#0e171e",
             },
             {
               "fontSize": 16,
+              "fontWeight": "600",
               "lineHeight": 24,
             },
             undefined,
@@ -429,17 +438,21 @@ exports[`ShoppingListEntry renders correctly without counts 1`] = `
         style={
           [
             {
-              "color": "#11181C",
+              "color": "#0e171e",
             },
             {
               "fontSize": 16,
               "lineHeight": 24,
             },
-            {
-              "fontSize": 12,
-              "marginTop": 4,
-              "opacity": 0.6,
-            },
+            [
+              {
+                "fontSize": 12,
+                "marginTop": 2,
+              },
+              {
+                "color": "#515960",
+              },
+            ],
           ]
         }
       >

@@ -4,17 +4,34 @@ import { Pressable, View, StyleSheet, TextInput, FlatList } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { ThemedText } from "@/components/ThemedText"
 import { ThemedTextInput } from "@/components/ThemedTextInput"
-import { Colors, Palette } from "@/constants/Colors"
+import { Palette } from "@/constants/Colors"
+import { useThemeColor } from "@/hooks/useThemeColor"
 import { ingredientService } from "@/api/ingredient-service"
 import { useCompletedIngredients } from "@/hooks/useCompletedIngredients"
 import { Ingredient } from "@/types/Ingredient"
+import { Priority } from "@/types/Priority"
+import { formatPriority, PRIORITY_OPTIONS } from "@/utils/priority"
 
 export default function NewIngredient() {
   const { listId } = useLocalSearchParams<{ listId: string }>()
   const [text, onChangeText] = React.useState("")
   const [invalidInputExplanation, setInvalidInputExplanation] =
     React.useState("")
+  const [priority, setPriority] = React.useState<Priority | undefined>(
+    undefined
+  )
+  const [showPriorityPicker, setShowPriorityPicker] = React.useState(false)
   const inputRef = React.useRef<TextInput>(null)
+
+  const dividerColor = useThemeColor({}, "divider")
+  const textSecondaryColor = useThemeColor({}, "textSecondary")
+  const accentColor = useThemeColor({}, "accent")
+  const onAccentColor = useThemeColor({}, "onAccent")
+  const priorityColors: Record<Priority, string> = {
+    [Priority.NOW]: useThemeColor({}, "prioUrgent"),
+    [Priority.DAYS_1_TO_3]: useThemeColor({}, "prio13"),
+    [Priority.DAYS_4_PLUS]: useThemeColor({}, "prio4plus"),
+  }
 
   const { completedIngredients } = useCompletedIngredients(listId)
 
@@ -54,7 +71,13 @@ export default function NewIngredient() {
       return
     }
 
+    if (priority !== undefined) {
+      await ingredientService.setPriority(result.getValue()!.id, priority)
+    }
+
     onChangeText("")
+    setPriority(undefined)
+    setShowPriorityPicker(false)
     router.back()
   }
 
@@ -64,7 +87,10 @@ export default function NewIngredient() {
 
   const renderCompletedIngredient = ({ item }: { item: Ingredient }) => (
     <Pressable
-      style={styles.completedIngredientItem}
+      style={[
+        styles.completedIngredientItem,
+        { borderBottomColor: dividerColor },
+      ]}
       onPress={() => {
         onChangeText(item.name)
         inputRef.current?.focus()
@@ -75,6 +101,31 @@ export default function NewIngredient() {
       </ThemedText>
     </Pressable>
   )
+
+  const renderPriorityOption = (option: Priority) => {
+    const selected = priority === option
+    return (
+      <Pressable
+        key={option}
+        onPress={() => setPriority(selected ? undefined : option)}
+        style={[
+          styles.priorityPill,
+          selected
+            ? { backgroundColor: priorityColors[option] }
+            : { borderWidth: 1.4, borderColor: dividerColor },
+        ]}
+      >
+        <ThemedText
+          style={[
+            styles.priorityPillText,
+            { color: selected ? onAccentColor : textSecondaryColor },
+          ]}
+        >
+          {formatPriority(option)}
+        </ThemedText>
+      </Pressable>
+    )
+  }
 
   return (
     <SafeAreaView style={styles.containerStyle}>
@@ -92,7 +143,9 @@ export default function NewIngredient() {
           style={styles.buttonStyle}
           onPress={() => addIngredient(text)}
         >
-          <ThemedText>Add</ThemedText>
+          <ThemedText style={{ color: accentColor, fontWeight: "600" }}>
+            Add
+          </ThemedText>
         </Pressable>
       </View>
       {invalidInputExplanation ? (
@@ -101,9 +154,36 @@ export default function NewIngredient() {
         </ThemedText>
       ) : null}
 
+      {showPriorityPicker ? (
+        <View style={styles.priorityContainer}>
+          <ThemedText
+            style={[styles.sectionLabel, { color: textSecondaryColor }]}
+          >
+            Priority (optional)
+          </ThemedText>
+          <View style={styles.priorityOptions}>
+            {PRIORITY_OPTIONS.map(renderPriorityOption)}
+          </View>
+        </View>
+      ) : (
+        <Pressable
+          style={styles.priorityContainer}
+          onPress={() => setShowPriorityPicker(true)}
+        >
+          <ThemedText style={{ color: accentColor, fontSize: 13 }}>
+            + Add priority (optional)
+          </ThemedText>
+        </Pressable>
+      )}
+
       {filteredCompletedIngredients.length > 0 && (
         <View style={styles.completedIngredientsContainer}>
-          <ThemedText style={styles.completedIngredientsHeader}>
+          <ThemedText
+            style={[
+              styles.completedIngredientsHeader,
+              { color: textSecondaryColor },
+            ]}
+          >
             Previously completed
           </ThemedText>
           <FlatList
@@ -122,40 +202,68 @@ const styles = StyleSheet.create({
   searchBarContainer: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 10,
+    paddingHorizontal: 18,
+    paddingTop: 16,
+    width: "100%",
   },
   containerStyle: {
     flex: 1,
-    alignItems: "center",
   },
   buttonStyle: {
-    margin: 5,
-    marginRight: 15,
+    paddingHorizontal: 4,
   },
   invalidInputExplanationStyle: {
     color: Palette.error,
+    paddingHorizontal: 18,
+    marginTop: 8,
+  },
+  priorityContainer: {
+    paddingHorizontal: 18,
+    marginTop: 18,
+  },
+  sectionLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+  },
+  priorityOptions: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 8,
+    marginTop: 8,
+  },
+  priorityPill: {
+    borderRadius: 100,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+  },
+  priorityPillText: {
+    fontSize: 12,
+    fontWeight: "700",
   },
   completedIngredientsContainer: {
     flex: 1,
     width: "100%",
     marginTop: 20,
-    paddingHorizontal: 15,
+    paddingHorizontal: 18,
   },
   completedIngredientsHeader: {
-    fontSize: 16,
-    fontWeight: "600",
-    marginBottom: 10,
-    opacity: 0.6,
+    fontSize: 11,
+    fontWeight: "700",
+    letterSpacing: 0.4,
+    textTransform: "uppercase",
+    marginBottom: 8,
   },
   completedIngredientsList: {
     flex: 1,
   },
   completedIngredientItem: {
-    paddingVertical: 12,
-    paddingHorizontal: 15,
+    paddingVertical: 11,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.light.divider,
   },
   completedIngredientName: {
-    fontSize: 16,
+    fontSize: 14,
   },
 })

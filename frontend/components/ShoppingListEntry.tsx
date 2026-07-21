@@ -10,7 +10,8 @@ import { ThemedText } from "./ThemedText"
 import React, { forwardRef } from "react"
 import { ThemedTextInput } from "./ThemedTextInput"
 import { MaterialIcons } from "@expo/vector-icons"
-import { Colors, Palette } from "@/constants/Colors"
+import { Palette } from "@/constants/Colors"
+import { useThemeColor } from "@/hooks/useThemeColor"
 
 export type ShoppingListEntryProps = {
   id: string
@@ -30,6 +31,11 @@ export type ShoppingListEntryProps = {
 export const ShoppingListEntry = forwardRef<TextInput, ShoppingListEntryProps>(
   function ShoppingListEntry(props: ShoppingListEntryProps, ref) {
     const [text, onChangeText] = React.useState(props.listName)
+
+    const dividerColor = useThemeColor({}, "divider")
+    const textSecondaryColor = useThemeColor({}, "textSecondary")
+    const accentColor = useThemeColor({}, "accent")
+    const amberColor = useThemeColor({}, "amber")
 
     React.useEffect(() => {
       onChangeText(props.listName)
@@ -64,7 +70,7 @@ export const ShoppingListEntry = forwardRef<TextInput, ShoppingListEntryProps>(
     return (
       <TouchableOpacity
         testID={`shopping-list-entry-${props.id}`}
-        style={styles.listItem}
+        style={[styles.listItem, { borderBottomColor: dividerColor }]}
         onPress={props.onPress}
         onLongPress={props.onLongPress}
         onPressOut={props.onPressOut}
@@ -110,14 +116,20 @@ export const ShoppingListEntry = forwardRef<TextInput, ShoppingListEntryProps>(
           <>
             <View style={styles.listContent}>
               <View style={styles.listInfo}>
-                <ThemedText type="default">{props.listName}</ThemedText>
-                <ThemedText style={styles.listDate} type="default">
+                <ThemedText type="defaultSemiBold">{props.listName}</ThemedText>
+                <ThemedText
+                  style={[styles.listDate, { color: textSecondaryColor }]}
+                  type="default"
+                >
                   {new Date(props.createdAt).toLocaleDateString()}
                 </ThemedText>
               </View>
               {props.totalCount !== undefined &&
                 props.completedCount !== undefined && (
-                  <ThemedText style={styles.listCount} type="default">
+                  <ThemedText
+                    style={[styles.listCount, { color: textSecondaryColor }]}
+                    type="default"
+                  >
                     {props.completedCount}/{props.totalCount}
                   </ThemedText>
                 )}
@@ -125,22 +137,23 @@ export const ShoppingListEntry = forwardRef<TextInput, ShoppingListEntryProps>(
             {props.totalCount !== undefined &&
               props.completedCount !== undefined &&
               props.totalCount > 0 && (
-                <View style={styles.progressBar}>
+                <View
+                  style={[
+                    styles.progressBar,
+                    { backgroundColor: dividerColor },
+                  ]}
+                >
                   <View
-                    style={[
-                      styles.progressCompleted,
-                      {
-                        flex: props.completedCount,
-                      },
-                    ]}
+                    style={{
+                      flex: props.completedCount,
+                      backgroundColor: accentColor,
+                    }}
                   />
                   <View
-                    style={[
-                      styles.progressIncomplete,
-                      {
-                        flex: props.totalCount - props.completedCount,
-                      },
-                    ]}
+                    style={{
+                      flex: props.totalCount - props.completedCount,
+                      backgroundColor: amberColor,
+                    }}
                   />
                 </View>
               )}
@@ -153,47 +166,37 @@ export const ShoppingListEntry = forwardRef<TextInput, ShoppingListEntryProps>(
 
 const styles = StyleSheet.create({
   listItem: {
-    padding: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.light.divider,
   },
   listContent: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "baseline",
   },
   listInfo: {
     flex: 1,
   },
   listDate: {
     fontSize: 12,
-    marginTop: 4,
-    opacity: 0.6,
+    marginTop: 2,
   },
   listCount: {
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: 13,
     marginLeft: 12,
-    opacity: 0.7,
   },
   progressBar: {
     flexDirection: "row",
-    height: 4,
+    height: 8,
     marginTop: 8,
-    borderRadius: 2,
+    borderRadius: 4,
     overflow: "hidden",
-  },
-  progressCompleted: {
-    backgroundColor: Palette.progressCompleted,
-  },
-  progressIncomplete: {
-    backgroundColor: Palette.progressIncomplete,
   },
   editContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 4,
-    marginLeft: -12,
+    gap: 8,
   },
   actionButton: {
     padding: 4,
