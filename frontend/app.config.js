@@ -1,4 +1,7 @@
-const { withAndroidManifest, withAndroidStyles } = require("@expo/config-plugins")
+const {
+  withAndroidManifest,
+  withAndroidStyles,
+} = require("@expo/config-plugins")
 
 const IS_DEV = process.env.APP_VARIANT === "development"
 
