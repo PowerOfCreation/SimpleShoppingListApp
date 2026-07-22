@@ -57,7 +57,12 @@ export function PriorityPicker(props: PriorityPickerProps) {
       <Pressable
         key={option}
         testID={`${testIDPrefix}-option-${option}`}
-        style={[styles.row, { borderBottomColor: dividerColor }]}
+        style={({ pressed }) => [
+          styles.row,
+          { borderBottomColor: dividerColor },
+          pressed && styles.rowPressed,
+        ]}
+        android_ripple={{ color: dividerColor }}
         onPress={() => setSelected(option)}
       >
         <View
@@ -100,7 +105,12 @@ export function PriorityPicker(props: PriorityPickerProps) {
           {PRIORITY_OPTIONS.map(renderOption)}
           <Pressable
             testID={`${testIDPrefix}-none`}
-            style={[styles.row, styles.lastRow]}
+            style={({ pressed }) => [
+              styles.row,
+              styles.lastRow,
+              pressed && styles.rowPressed,
+            ]}
+            android_ripple={{ color: dividerColor }}
             onPress={() => setSelected(undefined)}
           >
             <ThemedText style={{ color: textSecondaryColor }}>None</ThemedText>
@@ -163,7 +173,7 @@ const styles = StyleSheet.create({
     marginTop: 8,
   },
   subtitle: {
-    fontSize: 12,
+    fontSize: 15,
     marginTop: 2,
     marginBottom: 10,
   },
@@ -180,6 +190,9 @@ const styles = StyleSheet.create({
   },
   lastRow: {
     borderBottomWidth: 0,
+  },
+  rowPressed: {
+    opacity: 0.6,
   },
   pill: {
     borderRadius: 100,

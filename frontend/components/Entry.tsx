@@ -2,18 +2,16 @@ import {
   GestureResponderEvent,
   TouchableOpacity,
   StyleSheet,
-  TextInput,
   View,
-  Alert,
 } from "react-native"
 import { ThemedText } from "./ThemedText"
-import React, { forwardRef } from "react"
-import { ThemedTextInput } from "./ThemedTextInput"
+import React from "react"
 import { ContextMenu } from "./ContextMenu"
 import { PriorityPicker } from "./PriorityPicker"
+import { RenameSheet } from "./RenameSheet"
+import { ConfirmDialog } from "./ConfirmDialog"
 import { MaterialIcons } from "@expo/vector-icons"
 import { useThemeColor } from "@/hooks/useThemeColor"
-import { Palette } from "@/constants/Colors"
 import { Priority } from "@/types/Priority"
 import { formatPriority, priorityColorKey } from "@/utils/priority"
 
@@ -23,30 +21,24 @@ export type EntryProps = {
   isCompleted: boolean
   priority?: Priority
   onToggleComplete: (event: GestureResponderEvent) => void
-  onRename: () => void
+  onRename: (newName: string) => void
   onPressOut?: (event: GestureResponderEvent) => void
-  isEdited: boolean
-  onCancelEditing: () => void
-  onSaveEditing: (text: string) => void
   onDelete?: () => void
   onSetPriority?: (priority: Priority) => void
   onClearPriority?: () => void
 }
 
-export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
-  props: EntryProps,
-  ref
-) {
-  const [text, onChangeText] = React.useState(props.ingredientName)
+export function Entry(props: EntryProps) {
   const [showContextMenu, setShowContextMenu] = React.useState(false)
   const [showPriorityPicker, setShowPriorityPicker] = React.useState(false)
+  const [showRenameSheet, setShowRenameSheet] = React.useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
 
   const dividerColor = useThemeColor({}, "divider")
   const accentColor = useThemeColor({}, "accent")
   const onAccentColor = useThemeColor({}, "onAccent")
   const textColor = useThemeColor({}, "text")
   const textSecondaryColor = useThemeColor({}, "textSecondary")
-  const dangerColor = useThemeColor({}, "danger")
   const priorityColor = useThemeColor(
     {},
     props.priority !== undefined ? priorityColorKey(props.priority) : "accent"
@@ -59,32 +51,6 @@ export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
   }
 
   const showPriorityBadge = !props.isCompleted && props.priority !== undefined
-
-  React.useEffect(() => {
-    onChangeText(props.ingredientName)
-  }, [props.isEdited, props.ingredientName])
-
-  const handleDeletePress = () => {
-    Alert.alert(
-      "Delete Ingredient",
-      `Do you really want to delete "${props.ingredientName}"?`,
-      [
-        {
-          text: "Cancel",
-          style: "cancel",
-        },
-        {
-          text: "Delete",
-          style: "destructive",
-          onPress: () => {
-            if (props.onDelete) {
-              props.onDelete()
-            }
-          },
-        },
-      ]
-    )
-  }
 
   return (
     <>
@@ -103,62 +69,19 @@ export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
           <View style={[styles.checkbox, { borderColor: accentColor }]} />
         )}
 
-        {props.isEdited ? (
-          <View style={styles.editContainer}>
-            <ThemedTextInput
-              testID={`entry-input-${props.id}`}
-              onChangeText={onChangeText}
-              onSubmit={() => props.onSaveEditing(text)}
-              value={text}
-              placeholder={""}
-              autoFocus={true}
-              ref={ref}
-            />
-            <TouchableOpacity
-              testID={`save-button-${props.id}`}
-              style={styles.actionButton}
-              onPress={() => props.onSaveEditing(text)}
-            >
-              <MaterialIcons name="check" size={20} color={Palette.success} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              testID={`cancel-button-${props.id}`}
-              style={styles.actionButton}
-              onPress={props.onCancelEditing}
-            >
-              <MaterialIcons name="close" size={20} color={Palette.neutral} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              testID={`delete-button-${props.id}`}
-              style={styles.actionButton}
-              onPress={handleDeletePress}
-            >
-              <MaterialIcons name="delete" size={20} color={dangerColor} />
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <>
+        <ThemedText style={[styles.baseText, getTextStyles()]} type="default">
+          {props.ingredientName}
+        </ThemedText>
+        {showPriorityBadge && (
+          <View
+            style={[styles.priorityBadge, { backgroundColor: priorityColor }]}
+          >
             <ThemedText
-              style={[styles.baseText, getTextStyles()]}
-              type="default"
+              style={[styles.priorityBadgeText, { color: onAccentColor }]}
             >
-              {props.ingredientName}
+              {formatPriority(props.priority!)}
             </ThemedText>
-            {showPriorityBadge && (
-              <View
-                style={[
-                  styles.priorityBadge,
-                  { backgroundColor: priorityColor },
-                ]}
-              >
-                <ThemedText
-                  style={[styles.priorityBadgeText, { color: onAccentColor }]}
-                >
-                  {formatPriority(props.priority!)}
-                </ThemedText>
-              </View>
-            )}
-          </>
+          </View>
         )}
       </TouchableOpacity>
       <ContextMenu
@@ -170,7 +93,7 @@ export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
           {
             label: "Rename",
             testID: `entry-context-rename-${props.id}`,
-            onPress: props.onRename,
+            onPress: () => setShowRenameSheet(true),
           },
           {
             label: "Change priority",
@@ -181,7 +104,7 @@ export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
             label: "Delete",
             testID: `entry-context-delete-${props.id}`,
             destructive: true,
-            onPress: handleDeletePress,
+            onPress: () => setShowDeleteConfirm(true),
           },
         ]}
       />
@@ -199,9 +122,26 @@ export const Entry = forwardRef<TextInput, EntryProps>(function Entry(
           }
         }}
       />
+      <RenameSheet
+        testID={`entry-rename-sheet-${props.id}`}
+        visible={showRenameSheet}
+        initialValue={props.ingredientName}
+        onClose={() => setShowRenameSheet(false)}
+        onSave={props.onRename}
+      />
+      <ConfirmDialog
+        testID={`entry-delete-confirm-${props.id}`}
+        visible={showDeleteConfirm}
+        title="Delete entry?"
+        message={`"${props.ingredientName}" will be permanently removed from the list.`}
+        confirmLabel="Delete"
+        destructive
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={() => props.onDelete?.()}
+      />
     </>
   )
-})
+}
 
 const styles = StyleSheet.create({
   buttonStyle: {
@@ -244,16 +184,5 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
     lineHeight: 16,
-  },
-  editContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    flex: 1,
-  },
-  actionButton: {
-    padding: 4,
-    justifyContent: "center",
-    alignItems: "center",
   },
 })

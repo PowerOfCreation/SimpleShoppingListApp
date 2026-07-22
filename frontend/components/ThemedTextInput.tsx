@@ -12,6 +12,7 @@ export type ThemedTextInputParams = {
   borderColor?: string
   autoFocus?: boolean
   showSoftInputOnFocus?: boolean
+  selectTextOnFocus?: boolean
   ref?: LegacyRef<TextInput>
 }
 
@@ -20,6 +21,7 @@ export const ThemedTextInput = forwardRef<TextInput, ThemedTextInputParams>(
     {
       autoFocus = false, // Default value of false
       showSoftInputOnFocus = true,
+      selectTextOnFocus = false,
       ...props
     }: ThemedTextInputParams,
     ref
@@ -43,6 +45,7 @@ export const ThemedTextInput = forwardRef<TextInput, ThemedTextInputParams>(
         onSubmitEditing={() => props.onSubmit(props.value)}
         autoFocus={autoFocus}
         showSoftInputOnFocus={showSoftInputOnFocus}
+        selectTextOnFocus={selectTextOnFocus}
         ref={ref}
       />
     )

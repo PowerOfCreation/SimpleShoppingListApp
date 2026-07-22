@@ -1,11 +1,7 @@
 import * as React from "react"
 import { render, fireEvent } from "@testing-library/react-native"
 import { Entry, EntryProps } from "../Entry"
-import { Alert } from "react-native"
 import { Priority } from "@/types/Priority"
-
-// Mock Alert
-jest.spyOn(Alert, "alert")
 
 // Define default props
 const defaultProps: EntryProps = {
@@ -14,9 +10,6 @@ const defaultProps: EntryProps = {
   isCompleted: false,
   onToggleComplete: jest.fn(),
   onRename: jest.fn(),
-  isEdited: false,
-  onCancelEditing: jest.fn(),
-  onSaveEditing: jest.fn(),
   onDelete: jest.fn(),
 }
 
@@ -27,12 +20,6 @@ describe("Entry", () => {
 
   it(`renders correctly`, () => {
     const { toJSON } = render(<Entry {...defaultProps} ingredientName={""} />)
-
-    expect(toJSON()).toMatchSnapshot()
-  })
-
-  it("renders correctly in edit mode", () => {
-    const { toJSON } = render(<Entry {...defaultProps} isEdited={true} />)
 
     expect(toJSON()).toMatchSnapshot()
   })
@@ -61,126 +48,6 @@ describe("Entry", () => {
     })
   })
 
-  it("shows input field when in edit mode", () => {
-    const { getByTestId } = render(<Entry {...defaultProps} isEdited={true} />)
-
-    expect(getByTestId("entry-input-1")).toBeTruthy()
-  })
-
-  it("shows save, cancel, and delete buttons when in edit mode", () => {
-    const { getByTestId } = render(<Entry {...defaultProps} isEdited={true} />)
-
-    expect(getByTestId("save-button-1")).toBeTruthy()
-    expect(getByTestId("cancel-button-1")).toBeTruthy()
-    expect(getByTestId("delete-button-1")).toBeTruthy()
-  })
-
-  it("calls onSaveEditing when save button is pressed", () => {
-    const onSaveEditing = jest.fn()
-    const { getByTestId } = render(
-      <Entry {...defaultProps} isEdited={true} onSaveEditing={onSaveEditing} />
-    )
-
-    fireEvent.press(getByTestId("save-button-1"))
-
-    expect(onSaveEditing).toHaveBeenCalledTimes(1)
-    expect(onSaveEditing).toHaveBeenCalledWith("Default Ingredient")
-  })
-
-  it("calls onCancelEditing when cancel button is pressed", () => {
-    const onCancelEditing = jest.fn()
-    const { getByTestId } = render(
-      <Entry
-        {...defaultProps}
-        isEdited={true}
-        onCancelEditing={onCancelEditing}
-      />
-    )
-
-    fireEvent.press(getByTestId("cancel-button-1"))
-
-    expect(onCancelEditing).toHaveBeenCalledTimes(1)
-  })
-
-  it("updates input value when text changes", () => {
-    const { getByTestId } = render(<Entry {...defaultProps} isEdited={true} />)
-
-    const input = getByTestId("entry-input-1")
-    fireEvent.changeText(input, "New Ingredient Name")
-
-    expect(input.props.value).toBe("New Ingredient Name")
-  })
-
-  it("shows delete confirmation alert when delete button is pressed", () => {
-    const { getByTestId } = render(<Entry {...defaultProps} isEdited={true} />)
-
-    fireEvent.press(getByTestId("delete-button-1"))
-
-    expect(Alert.alert).toHaveBeenCalledWith(
-      "Delete Ingredient",
-      'Do you really want to delete "Default Ingredient"?',
-      expect.arrayContaining([
-        expect.objectContaining({ text: "Cancel", style: "cancel" }),
-        expect.objectContaining({ text: "Delete", style: "destructive" }),
-      ])
-    )
-  })
-
-  it("calls onDelete when delete is confirmed in alert", () => {
-    const onDelete = jest.fn()
-    const { getByTestId } = render(
-      <Entry {...defaultProps} isEdited={true} onDelete={onDelete} />
-    )
-
-    fireEvent.press(getByTestId("delete-button-1"))
-
-    // Get the alert buttons and simulate pressing "Delete"
-    const alertCalls = (Alert.alert as jest.Mock).mock.calls
-    const lastCall = alertCalls[alertCalls.length - 1]
-    const buttons = lastCall[2]
-    const deleteButton = buttons.find(
-      (btn: { text: string; onPress?: () => void }) => btn.text === "Delete"
-    )
-
-    deleteButton.onPress()
-
-    expect(onDelete).toHaveBeenCalledTimes(1)
-  })
-
-  it("does not call onDelete when delete is cancelled in alert", () => {
-    const onDelete = jest.fn()
-    const { getByTestId } = render(
-      <Entry {...defaultProps} isEdited={true} onDelete={onDelete} />
-    )
-
-    fireEvent.press(getByTestId("delete-button-1"))
-
-    // Get the alert buttons and simulate pressing "Cancel" (which doesn't have an onPress)
-    const alertCalls = (Alert.alert as jest.Mock).mock.calls
-    const lastCall = alertCalls[alertCalls.length - 1]
-    const buttons = lastCall[2]
-    const cancelButton = buttons.find(
-      (btn: { text: string; onPress?: () => void }) => btn.text === "Cancel"
-    )
-
-    // Cancel button doesn't have an onPress handler (it just dismisses)
-    expect(cancelButton.onPress).toBeUndefined()
-    expect(onDelete).not.toHaveBeenCalled()
-  })
-
-  it("calls onSaveEditing when input is submitted", () => {
-    const onSaveEditing = jest.fn()
-    const { getByTestId } = render(
-      <Entry {...defaultProps} isEdited={true} onSaveEditing={onSaveEditing} />
-    )
-
-    const input = getByTestId("entry-input-1")
-    fireEvent.changeText(input, "Updated Ingredient Name")
-    fireEvent(input, "submitEditing")
-
-    expect(onSaveEditing).toHaveBeenCalledWith("Updated Ingredient Name")
-  })
-
   it("does not show the context menu by default", () => {
     const { queryByTestId } = render(<Entry {...defaultProps} />)
 
@@ -188,17 +55,37 @@ describe("Entry", () => {
     expect(queryByTestId("entry-context-delete-1")).toBeFalsy()
   })
 
-  it("opens the context menu on long press instead of entering rename mode directly", () => {
-    const { getByTestId, queryByTestId } = render(<Entry {...defaultProps} />)
+  it("opens the context menu on long press", () => {
+    const { getByTestId } = render(<Entry {...defaultProps} />)
 
     fireEvent(getByTestId("entry-component-1"), "longPress")
 
     expect(getByTestId("entry-context-rename-1")).toBeTruthy()
     expect(getByTestId("entry-context-delete-1")).toBeTruthy()
-    expect(queryByTestId("entry-input-1")).toBeFalsy()
   })
 
-  it("calls onRename and closes the menu when Rename is pressed", () => {
+  it("opens the rename sheet when Rename is pressed in the context menu", () => {
+    const { getByTestId, queryByTestId } = render(<Entry {...defaultProps} />)
+
+    fireEvent(getByTestId("entry-component-1"), "longPress")
+    fireEvent.press(getByTestId("entry-context-rename-1"))
+
+    expect(getByTestId("entry-rename-sheet-1-input")).toBeTruthy()
+    expect(queryByTestId("entry-context-rename-1")).toBeFalsy()
+  })
+
+  it("pre-fills the rename input with the current name", () => {
+    const { getByTestId } = render(<Entry {...defaultProps} />)
+
+    fireEvent(getByTestId("entry-component-1"), "longPress")
+    fireEvent.press(getByTestId("entry-context-rename-1"))
+
+    expect(getByTestId("entry-rename-sheet-1-input").props.value).toBe(
+      "Default Ingredient"
+    )
+  })
+
+  it("calls onRename with the new name when Save is pressed", () => {
     const onRename = jest.fn()
     const { getByTestId, queryByTestId } = render(
       <Entry {...defaultProps} onRename={onRename} />
@@ -206,25 +93,82 @@ describe("Entry", () => {
 
     fireEvent(getByTestId("entry-component-1"), "longPress")
     fireEvent.press(getByTestId("entry-context-rename-1"))
+    fireEvent.changeText(
+      getByTestId("entry-rename-sheet-1-input"),
+      "New Ingredient Name"
+    )
+    fireEvent.press(getByTestId("entry-rename-sheet-1-save"))
 
-    expect(onRename).toHaveBeenCalledTimes(1)
-    expect(queryByTestId("entry-context-rename-1")).toBeFalsy()
+    expect(onRename).toHaveBeenCalledWith("New Ingredient Name")
+    expect(queryByTestId("entry-rename-sheet-1-input")).toBeFalsy()
   })
 
-  it("shows delete confirmation alert when Delete is pressed in the context menu", () => {
+  it("does not call onRename when the rename input is submitted empty", () => {
+    const onRename = jest.fn()
+    const { getByTestId } = render(
+      <Entry {...defaultProps} onRename={onRename} />
+    )
+
+    fireEvent(getByTestId("entry-component-1"), "longPress")
+    fireEvent.press(getByTestId("entry-context-rename-1"))
+    fireEvent.changeText(getByTestId("entry-rename-sheet-1-input"), "   ")
+    fireEvent.press(getByTestId("entry-rename-sheet-1-save"))
+
+    expect(onRename).not.toHaveBeenCalled()
+  })
+
+  it("discards the rename when Cancel is pressed", () => {
+    const onRename = jest.fn()
+    const { getByTestId, queryByTestId } = render(
+      <Entry {...defaultProps} onRename={onRename} />
+    )
+
+    fireEvent(getByTestId("entry-component-1"), "longPress")
+    fireEvent.press(getByTestId("entry-context-rename-1"))
+    fireEvent.changeText(
+      getByTestId("entry-rename-sheet-1-input"),
+      "Something else"
+    )
+    fireEvent.press(getByTestId("entry-rename-sheet-1-cancel"))
+
+    expect(onRename).not.toHaveBeenCalled()
+    expect(queryByTestId("entry-rename-sheet-1-input")).toBeFalsy()
+  })
+
+  it("opens the delete confirmation when Delete is pressed in the context menu", () => {
     const { getByTestId } = render(<Entry {...defaultProps} />)
 
     fireEvent(getByTestId("entry-component-1"), "longPress")
     fireEvent.press(getByTestId("entry-context-delete-1"))
 
-    expect(Alert.alert).toHaveBeenCalledWith(
-      "Delete Ingredient",
-      'Do you really want to delete "Default Ingredient"?',
-      expect.arrayContaining([
-        expect.objectContaining({ text: "Cancel", style: "cancel" }),
-        expect.objectContaining({ text: "Delete", style: "destructive" }),
-      ])
+    expect(getByTestId("entry-delete-confirm-1-confirm")).toBeTruthy()
+  })
+
+  it("calls onDelete when delete is confirmed", () => {
+    const onDelete = jest.fn()
+    const { getByTestId } = render(
+      <Entry {...defaultProps} onDelete={onDelete} />
     )
+
+    fireEvent(getByTestId("entry-component-1"), "longPress")
+    fireEvent.press(getByTestId("entry-context-delete-1"))
+    fireEvent.press(getByTestId("entry-delete-confirm-1-confirm"))
+
+    expect(onDelete).toHaveBeenCalledTimes(1)
+  })
+
+  it("does not call onDelete when delete is cancelled", () => {
+    const onDelete = jest.fn()
+    const { getByTestId, queryByTestId } = render(
+      <Entry {...defaultProps} onDelete={onDelete} />
+    )
+
+    fireEvent(getByTestId("entry-component-1"), "longPress")
+    fireEvent.press(getByTestId("entry-context-delete-1"))
+    fireEvent.press(getByTestId("entry-delete-confirm-1-cancel"))
+
+    expect(onDelete).not.toHaveBeenCalled()
+    expect(queryByTestId("entry-delete-confirm-1-confirm")).toBeFalsy()
   })
 
   it("opens the priority picker when Change priority is pressed in the context menu", () => {

@@ -19,7 +19,6 @@ const logger = createLogger("Index")
 export default function Index() {
   const { lists, isLoading, error, refetch, updateList } = useShoppingLists()
   const dividerColor = useThemeColor({}, "divider")
-  const [listToEdit, setListToEdit] = React.useState<string>("")
   const [isCheckingPreference, setIsCheckingPreference] = React.useState(true)
   const hasNavigatedRef = React.useRef(false)
 
@@ -50,7 +49,6 @@ export default function Index() {
 
     // Optimistically update UI immediately
     updateList(id, { name: newName })
-    setListToEdit("")
 
     try {
       const result = await shoppingListService.updateName(id, newName)
@@ -68,8 +66,6 @@ export default function Index() {
   const handleDeleteList = async (id: string) => {
     const list = lists.find((l) => l.id === id)
     if (!list) return
-
-    setListToEdit("")
 
     try {
       const result = await shoppingListService.deleteList(id)
@@ -93,12 +89,7 @@ export default function Index() {
         totalCount={item.totalCount}
         completedCount={item.completedCount}
         onPress={() => handleSelectList(item.id)}
-        onRename={() => setListToEdit(item.id)}
-        isEdited={listToEdit === item.id}
-        onCancelEditing={() => setListToEdit("")}
-        onSaveEditing={async (text) => {
-          await handleChangeName(item.id, text)
-        }}
+        onRename={(newName) => handleChangeName(item.id, newName)}
         onDelete={() => handleDeleteList(item.id)}
       />
     )
@@ -139,7 +130,7 @@ export default function Index() {
         data={lists}
         renderItem={renderListItem}
         keyExtractor={(item) => item.id}
-        extraData={`${listToEdit}-${error}`}
+        extraData={error}
         removeClippedSubviews={false}
         keyboardShouldPersistTaps="handled"
       />

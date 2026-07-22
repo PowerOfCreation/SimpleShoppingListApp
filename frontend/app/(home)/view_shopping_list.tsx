@@ -38,7 +38,6 @@ export default function ViewShoppingList() {
     deleteIngredient,
     sortIngredients,
   } = useIngredients()
-  const [ingredientToEdit, setIngredientToEdit] = React.useState<string>("")
   const [sortModeMessage, setSortModeMessage] = React.useState<string | null>(
     null
   )
@@ -107,16 +106,6 @@ export default function ViewShoppingList() {
     }, [refetch])
   )
 
-  const handleChangeName = async (id: string, newName: string) => {
-    setIngredientToEdit("")
-    await updateName(id, newName)
-  }
-
-  const handleDeleteIngredient = async (id: string) => {
-    setIngredientToEdit("")
-    await deleteIngredient(id)
-  }
-
   const renderEntry = ({ item }: { item: Ingredient }) => {
     return (
       <Entry
@@ -125,13 +114,8 @@ export default function ViewShoppingList() {
         isCompleted={item.completed}
         priority={item.priority}
         onToggleComplete={() => toggleCompletion(item.id)}
-        onRename={() => setIngredientToEdit(item.id)}
-        isEdited={ingredientToEdit === item.id}
-        onCancelEditing={() => setIngredientToEdit("")}
-        onSaveEditing={async (text) => {
-          await handleChangeName(item.id, text)
-        }}
-        onDelete={() => handleDeleteIngredient(item.id)}
+        onRename={(newName) => updateName(item.id, newName)}
+        onDelete={() => deleteIngredient(item.id)}
         onSetPriority={(priority) => setPriority(item.id, priority)}
         onClearPriority={() => clearPriority(item.id)}
       />
@@ -169,7 +153,7 @@ export default function ViewShoppingList() {
         data={ingredients}
         renderItem={renderEntry}
         keyExtractor={(item) => item.id}
-        extraData={`${ingredientToEdit}-${error}`}
+        extraData={error}
         removeClippedSubviews={false}
         keyboardShouldPersistTaps="handled"
       />
