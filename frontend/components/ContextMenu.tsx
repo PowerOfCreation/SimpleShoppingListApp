@@ -1,6 +1,7 @@
 import { Modal, Pressable, View, StyleSheet } from "react-native"
 import { ThemedText } from "./ThemedText"
 import { useThemeColor } from "@/hooks/useThemeColor"
+import { Palette } from "@/constants/Colors"
 
 export type ContextMenuOption = {
   label: string
@@ -54,10 +55,10 @@ export function ContextMenu(props: ContextMenuProps) {
               testID={option.testID}
               style={[
                 styles.option,
-                index < props.options.length - 1 && {
-                  borderBottomWidth: 1,
-                  borderBottomColor: dividerColor,
-                },
+                index < props.options.length - 1 && [
+                  styles.optionBorder,
+                  { borderBottomColor: dividerColor },
+                ],
               ]}
               onPress={() => {
                 props.onClose()
@@ -82,7 +83,7 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: Palette.overlay,
   },
   sheet: {
     borderTopLeftRadius: 20,
@@ -112,5 +113,8 @@ const styles = StyleSheet.create({
   option: {
     paddingHorizontal: 20,
     paddingVertical: 20,
+  },
+  optionBorder: {
+    borderBottomWidth: 1,
   },
 })

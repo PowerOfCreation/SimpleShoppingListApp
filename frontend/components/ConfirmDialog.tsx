@@ -1,6 +1,7 @@
 import { Modal, Pressable, View, StyleSheet } from "react-native"
 import { ThemedText } from "./ThemedText"
 import { useThemeColor } from "@/hooks/useThemeColor"
+import { Palette } from "@/constants/Colors"
 
 export type ConfirmDialogProps = {
   visible: boolean
@@ -91,7 +92,7 @@ const styles = StyleSheet.create({
   overlay: {
     flex: 1,
     justifyContent: "flex-end",
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: Palette.overlay,
   },
   sheet: {
     borderTopLeftRadius: 20,

@@ -112,7 +112,7 @@ export default function NewIngredient() {
           styles.priorityPill,
           selected
             ? { backgroundColor: priorityColors[option] }
-            : { borderWidth: 1.4, borderColor: dividerColor },
+            : [styles.priorityPillOutline, { borderColor: dividerColor }],
         ]}
       >
         <ThemedText
@@ -143,7 +143,7 @@ export default function NewIngredient() {
           style={styles.buttonStyle}
           onPress={() => addIngredient(text)}
         >
-          <ThemedText style={{ color: accentColor, fontWeight: "600" }}>
+          <ThemedText style={[styles.addButtonText, { color: accentColor }]}>
             Add
           </ThemedText>
         </Pressable>
@@ -170,7 +170,7 @@ export default function NewIngredient() {
           style={styles.priorityContainer}
           onPress={() => setShowPriorityPicker(true)}
         >
-          <ThemedText style={{ color: accentColor, fontSize: 13 }}>
+          <ThemedText style={[styles.addPriorityText, { color: accentColor }]}>
             + Add priority (optional)
           </ThemedText>
         </Pressable>
@@ -213,6 +213,9 @@ const styles = StyleSheet.create({
   buttonStyle: {
     paddingHorizontal: 4,
   },
+  addButtonText: {
+    fontWeight: "600",
+  },
   invalidInputExplanationStyle: {
     color: Palette.error,
     paddingHorizontal: 18,
@@ -221,6 +224,9 @@ const styles = StyleSheet.create({
   priorityContainer: {
     paddingHorizontal: 18,
     marginTop: 18,
+  },
+  addPriorityText: {
+    fontSize: 13,
   },
   sectionLabel: {
     fontSize: 11,
@@ -238,6 +244,9 @@ const styles = StyleSheet.create({
     borderRadius: 100,
     paddingHorizontal: 12,
     paddingVertical: 6,
+  },
+  priorityPillOutline: {
+    borderWidth: 1.4,
   },
   priorityPillText: {
     fontSize: 12,

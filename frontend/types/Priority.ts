@@ -4,4 +4,5 @@ export const Priority = {
   DAYS_4_PLUS: 200,
 } as const
 
+// eslint-disable-next-line @typescript-eslint/no-redeclare -- type/value namespace merge, not an actual redeclaration
 export type Priority = (typeof Priority)[keyof typeof Priority]

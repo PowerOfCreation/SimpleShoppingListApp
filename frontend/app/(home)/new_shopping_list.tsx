@@ -58,7 +58,7 @@ export default function NewShoppingList() {
           style={styles.buttonStyle}
           onPress={() => createShoppingList(text)}
         >
-          <ThemedText style={{ color: accentColor, fontWeight: "600" }}>
+          <ThemedText style={[styles.createButtonText, { color: accentColor }]}>
             Create
           </ThemedText>
         </Pressable>
@@ -86,6 +86,9 @@ const styles = StyleSheet.create({
   },
   buttonStyle: {
     paddingHorizontal: 4,
+  },
+  createButtonText: {
+    fontWeight: "600",
   },
   invalidInputExplanationStyle: {
     color: Palette.error,

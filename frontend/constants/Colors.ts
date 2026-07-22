@@ -9,6 +9,7 @@ export const Palette = {
   progressIncomplete: "#FF9800",
   shadow: "#000000",
   white: "#ffffff",
+  overlay: "rgba(0,0,0,0.45)",
 } as const
 
 const tintColorLight = "#0a7ea4"

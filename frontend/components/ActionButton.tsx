@@ -7,6 +7,7 @@ import {
 import React from "react"
 import { useSafeAreaInsets } from "react-native-safe-area-context"
 import { useThemeColor } from "@/hooks/useThemeColor"
+import { Palette } from "@/constants/Colors"
 
 type ActionProps = {
   testID?: string
@@ -44,7 +45,7 @@ const styles = StyleSheet.create({
     position: "absolute",
     right: 24,
     borderRadius: 100,
-    shadowColor: "#000",
+    shadowColor: Palette.shadow,
     shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.28,
     shadowRadius: 16,
