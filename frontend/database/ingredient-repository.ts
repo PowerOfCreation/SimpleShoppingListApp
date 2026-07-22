@@ -1,5 +1,6 @@
 import * as SQLite from "expo-sqlite"
 import { Ingredient } from "../types/Ingredient"
+import { Priority } from "../types/Priority"
 import { DbQueryError, NotImplementedError } from "@/api/common/error-types"
 import { Result } from "@/api/common/result"
 import { BaseRepository } from "./base-repository"
@@ -32,8 +33,9 @@ export class IngredientRepository extends BaseRepository {
         created_at: number
         updated_at: number
         completed_at: number | null
+        priority: number | null
       }>(
-        `SELECT id, name, completed, list_id, created_at, updated_at, completed_at
+        `SELECT id, name, completed, list_id, created_at, updated_at, completed_at, priority
         FROM ingredients
         WHERE list_id = ?
         ORDER BY completed ASC, created_at DESC`,
@@ -48,6 +50,7 @@ export class IngredientRepository extends BaseRepository {
         created_at: row.created_at,
         updated_at: row.updated_at,
         completed_at: row.completed_at || undefined,
+        priority: (row.priority as Priority) ?? undefined,
       }))
     }, "getAll")
   }
@@ -67,8 +70,9 @@ export class IngredientRepository extends BaseRepository {
         created_at: number
         updated_at: number
         completed_at: number | null
+        priority: number | null
       }>(
-        `SELECT id, name, completed, list_id, created_at, updated_at, completed_at
+        `SELECT id, name, completed, list_id, created_at, updated_at, completed_at, priority
          FROM ingredients
          WHERE id = ?`,
         id
@@ -86,6 +90,7 @@ export class IngredientRepository extends BaseRepository {
         created_at: result.created_at,
         updated_at: result.updated_at,
         completed_at: result.completed_at || undefined,
+        priority: (result.priority as Priority) ?? undefined,
       }
     }, "getById")
   }
@@ -200,8 +205,9 @@ export class IngredientRepository extends BaseRepository {
         created_at: number
         updated_at: number
         completed_at: number | null
+        priority: number | null
       }>(
-        `SELECT id, name, completed, list_id, created_at, updated_at, completed_at
+        `SELECT id, name, completed, list_id, created_at, updated_at, completed_at, priority
         FROM ingredients
         WHERE list_id = ? AND completed = 1
         ORDER BY completed_at DESC`,
@@ -216,6 +222,7 @@ export class IngredientRepository extends BaseRepository {
         created_at: row.created_at,
         updated_at: row.updated_at,
         completed_at: row.completed_at || undefined,
+        priority: (row.priority as Priority) ?? undefined,
       }))
     }, "getCompletedIngredients")
   }

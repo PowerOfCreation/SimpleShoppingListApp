@@ -4,10 +4,12 @@ import React from "react"
 import { FlatList, StyleSheet, ActivityIndicator, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { router, useFocusEffect } from "expo-router"
+import { getPreference } from "@/database/preferences-repository"
 
 import { ShoppingListOverview } from "@/types/ShoppingListOverview"
 import { ThemedText } from "@/components/ThemedText"
 import { useShoppingLists } from "@/hooks/useShoppingLists"
+import { useThemeColor } from "@/hooks/useThemeColor"
 import { ShoppingListEntry } from "@/components/ShoppingListEntry"
 import { shoppingListService } from "@/api/shopping-list-service"
 import { createLogger } from "@/api/common/logger"
@@ -16,7 +18,20 @@ const logger = createLogger("Index")
 
 export default function Index() {
   const { lists, isLoading, error, refetch, updateList } = useShoppingLists()
-  const [listToEdit, setListToEdit] = React.useState<string>("")
+  const dividerColor = useThemeColor({}, "divider")
+  const [isCheckingPreference, setIsCheckingPreference] = React.useState(true)
+  const hasNavigatedRef = React.useRef(false)
+
+  React.useEffect(() => {
+    if (hasNavigatedRef.current || isLoading) return
+    getPreference("last_viewed_list_id").then((lastId) => {
+      hasNavigatedRef.current = true
+      if (lastId && lists.some((l) => l.id === lastId)) {
+        router.push(`/view_shopping_list?listId=${lastId}`)
+      }
+      setIsCheckingPreference(false)
+    })
+  }, [isLoading, lists])
 
   // Refetch shopping lists when screen comes into focus
   useFocusEffect(
@@ -34,7 +49,6 @@ export default function Index() {
 
     // Optimistically update UI immediately
     updateList(id, { name: newName })
-    setListToEdit("")
 
     try {
       const result = await shoppingListService.updateName(id, newName)
@@ -49,15 +63,9 @@ export default function Index() {
     }
   }
 
-  const handleLongPress = (id: string) => {
-    setListToEdit(id)
-  }
-
   const handleDeleteList = async (id: string) => {
     const list = lists.find((l) => l.id === id)
     if (!list) return
-
-    setListToEdit("")
 
     try {
       const result = await shoppingListService.deleteList(id)
@@ -81,12 +89,7 @@ export default function Index() {
         totalCount={item.totalCount}
         completedCount={item.completedCount}
         onPress={() => handleSelectList(item.id)}
-        onLongPress={() => handleLongPress(item.id)}
-        isEdited={listToEdit === item.id}
-        onCancelEditing={() => setListToEdit("")}
-        onSaveEditing={async (text) => {
-          await handleChangeName(item.id, text)
-        }}
+        onRename={(newName) => handleChangeName(item.id, newName)}
         onDelete={() => handleDeleteList(item.id)}
       />
     )
@@ -97,7 +100,7 @@ export default function Index() {
   }
 
   const renderContent = () => {
-    if (isLoading) {
+    if (isLoading || isCheckingPreference) {
       return (
         <View style={styles.centered}>
           <ActivityIndicator size="large" accessibilityHint="loading data" />
@@ -127,7 +130,7 @@ export default function Index() {
         data={lists}
         renderItem={renderListItem}
         keyExtractor={(item) => item.id}
-        extraData={`${listToEdit}-${error}`}
+        extraData={error}
         removeClippedSubviews={false}
         keyboardShouldPersistTaps="handled"
       />
@@ -135,7 +138,8 @@ export default function Index() {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={styles.container} edges={["bottom"]}>
+      <View style={[styles.headerDivider, { backgroundColor: dividerColor }]} />
       {renderContent()}
       <ActionButton testID="add-button" symbol="+" onPress={handleAddList} />
     </SafeAreaView>
@@ -145,6 +149,10 @@ export default function Index() {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+  },
+  headerDivider: {
+    height: 1,
+    width: "100%",
   },
   centered: {
     flex: 1,
