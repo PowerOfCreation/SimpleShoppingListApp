@@ -1,10 +1,6 @@
 import * as React from "react"
 import { render, fireEvent } from "@testing-library/react-native"
 import { ShoppingListEntry, ShoppingListEntryProps } from "../ShoppingListEntry"
-import { Alert } from "react-native"
-
-// Mock Alert
-jest.spyOn(Alert, "alert")
 
 // Define default props
 const defaultProps: ShoppingListEntryProps = {
@@ -14,10 +10,7 @@ const defaultProps: ShoppingListEntryProps = {
   totalCount: 5,
   completedCount: 2,
   onPress: jest.fn(),
-  onLongPress: jest.fn(),
-  isEdited: false,
-  onCancelEditing: jest.fn(),
-  onSaveEditing: jest.fn(),
+  onRename: jest.fn(),
   onDelete: jest.fn(),
 }
 
@@ -26,16 +19,8 @@ describe("ShoppingListEntry", () => {
     jest.clearAllMocks()
   })
 
-  it("renders correctly in non-edit mode", () => {
+  it("renders correctly", () => {
     const { toJSON } = render(<ShoppingListEntry {...defaultProps} />)
-
-    expect(toJSON()).toMatchSnapshot()
-  })
-
-  it("renders correctly in edit mode", () => {
-    const { toJSON } = render(
-      <ShoppingListEntry {...defaultProps} isEdited={true} />
-    )
 
     expect(toJSON()).toMatchSnapshot()
   })
@@ -104,177 +89,146 @@ describe("ShoppingListEntry", () => {
     expect(onPress).toHaveBeenCalledTimes(1)
   })
 
-  it("calls onLongPress when long pressed", () => {
-    const onLongPress = jest.fn()
-    const { getByTestId } = render(
-      <ShoppingListEntry {...defaultProps} onLongPress={onLongPress} />
-    )
+  it("opens the context menu on long press", () => {
+    const { getByTestId } = render(<ShoppingListEntry {...defaultProps} />)
 
     fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
 
-    expect(onLongPress).toHaveBeenCalledTimes(1)
+    expect(getByTestId("shopping-list-context-rename-1")).toBeTruthy()
+    expect(getByTestId("shopping-list-context-delete-1")).toBeTruthy()
   })
 
-  it("shows input field when in edit mode", () => {
+  it("opens the rename sheet when Rename is pressed in the context menu", () => {
+    const { getByTestId, queryByTestId } = render(
+      <ShoppingListEntry {...defaultProps} />
+    )
+
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+    fireEvent.press(getByTestId("shopping-list-context-rename-1"))
+
+    expect(getByTestId("shopping-list-rename-sheet-1-input")).toBeTruthy()
+    expect(queryByTestId("shopping-list-context-rename-1")).toBeFalsy()
+  })
+
+  it("pre-fills the rename input with the current name", () => {
+    const { getByTestId } = render(<ShoppingListEntry {...defaultProps} />)
+
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+    fireEvent.press(getByTestId("shopping-list-context-rename-1"))
+
+    expect(getByTestId("shopping-list-rename-sheet-1-input").props.value).toBe(
+      "Default Shopping List"
+    )
+  })
+
+  it("calls onRename with the new name when Save is pressed", () => {
+    const onRename = jest.fn()
+    const { getByTestId, queryByTestId } = render(
+      <ShoppingListEntry {...defaultProps} onRename={onRename} />
+    )
+
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+    fireEvent.press(getByTestId("shopping-list-context-rename-1"))
+    fireEvent.changeText(
+      getByTestId("shopping-list-rename-sheet-1-input"),
+      "New List Name"
+    )
+    fireEvent.press(getByTestId("shopping-list-rename-sheet-1-save"))
+
+    expect(onRename).toHaveBeenCalledWith("New List Name")
+    expect(queryByTestId("shopping-list-rename-sheet-1-input")).toBeFalsy()
+  })
+
+  it("does not call onRename when the rename input is submitted empty", () => {
+    const onRename = jest.fn()
     const { getByTestId } = render(
-      <ShoppingListEntry {...defaultProps} isEdited={true} />
+      <ShoppingListEntry {...defaultProps} onRename={onRename} />
     )
 
-    expect(getByTestId("shopping-list-input-1")).toBeTruthy()
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+    fireEvent.press(getByTestId("shopping-list-context-rename-1"))
+    fireEvent.changeText(
+      getByTestId("shopping-list-rename-sheet-1-input"),
+      "   "
+    )
+    fireEvent.press(getByTestId("shopping-list-rename-sheet-1-save"))
+
+    expect(onRename).not.toHaveBeenCalled()
   })
 
-  it("shows save, cancel, and delete buttons when in edit mode", () => {
-    const { getByTestId } = render(
-      <ShoppingListEntry {...defaultProps} isEdited={true} />
+  it("discards the rename when Cancel is pressed", () => {
+    const onRename = jest.fn()
+    const { getByTestId, queryByTestId } = render(
+      <ShoppingListEntry {...defaultProps} onRename={onRename} />
     )
 
-    expect(getByTestId("save-button-1")).toBeTruthy()
-    expect(getByTestId("cancel-button-1")).toBeTruthy()
-    expect(getByTestId("delete-button-1")).toBeTruthy()
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+    fireEvent.press(getByTestId("shopping-list-context-rename-1"))
+    fireEvent.changeText(
+      getByTestId("shopping-list-rename-sheet-1-input"),
+      "Something else"
+    )
+    fireEvent.press(getByTestId("shopping-list-rename-sheet-1-cancel"))
+
+    expect(onRename).not.toHaveBeenCalled()
+    expect(queryByTestId("shopping-list-rename-sheet-1-input")).toBeFalsy()
   })
 
-  it("calls onSaveEditing when save button is pressed", () => {
-    const onSaveEditing = jest.fn()
-    const { getByTestId } = render(
-      <ShoppingListEntry
-        {...defaultProps}
-        isEdited={true}
-        onSaveEditing={onSaveEditing}
-      />
+  it("opens the delete confirmation when Delete is pressed in the context menu", () => {
+    const { getByTestId, getByText } = render(
+      <ShoppingListEntry {...defaultProps} />
     )
 
-    fireEvent.press(getByTestId("save-button-1"))
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+    fireEvent.press(getByTestId("shopping-list-context-delete-1"))
 
-    expect(onSaveEditing).toHaveBeenCalledTimes(1)
-    expect(onSaveEditing).toHaveBeenCalledWith("Default Shopping List")
+    expect(getByTestId("shopping-list-delete-confirm-1-confirm")).toBeTruthy()
+    expect(
+      getByText(
+        '"Default Shopping List" and its 5 ingredients will be permanently removed.'
+      )
+    ).toBeTruthy()
   })
 
-  it("calls onCancelEditing when cancel button is pressed", () => {
-    const onCancelEditing = jest.fn()
-    const { getByTestId } = render(
-      <ShoppingListEntry
-        {...defaultProps}
-        isEdited={true}
-        onCancelEditing={onCancelEditing}
-      />
+  it("uses singular 'ingredient' in the delete message when count is 1", () => {
+    const { getByTestId, getByText } = render(
+      <ShoppingListEntry {...defaultProps} totalCount={1} completedCount={0} />
     )
 
-    fireEvent.press(getByTestId("cancel-button-1"))
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+    fireEvent.press(getByTestId("shopping-list-context-delete-1"))
 
-    expect(onCancelEditing).toHaveBeenCalledTimes(1)
+    expect(
+      getByText(
+        '"Default Shopping List" and its 1 ingredient will be permanently removed.'
+      )
+    ).toBeTruthy()
   })
 
-  it("updates input value when text changes", () => {
-    const { getByTestId } = render(
-      <ShoppingListEntry {...defaultProps} isEdited={true} />
-    )
-
-    const input = getByTestId("shopping-list-input-1")
-    fireEvent.changeText(input, "New List Name")
-
-    expect(input.props.value).toBe("New List Name")
-  })
-
-  it("shows delete confirmation alert when delete button is pressed", () => {
-    const { getByTestId } = render(
-      <ShoppingListEntry {...defaultProps} isEdited={true} />
-    )
-
-    fireEvent.press(getByTestId("delete-button-1"))
-
-    expect(Alert.alert).toHaveBeenCalledWith(
-      "Delete Shopping List",
-      'Do you really want to delete list "Default Shopping List" with 5 ingredients?',
-      expect.arrayContaining([
-        expect.objectContaining({ text: "Cancel", style: "cancel" }),
-        expect.objectContaining({ text: "Delete", style: "destructive" }),
-      ])
-    )
-  })
-
-  it("uses singular 'ingredient' in delete alert when count is 1", () => {
-    const { getByTestId } = render(
-      <ShoppingListEntry
-        {...defaultProps}
-        isEdited={true}
-        totalCount={1}
-        completedCount={0}
-      />
-    )
-
-    fireEvent.press(getByTestId("delete-button-1"))
-
-    expect(Alert.alert).toHaveBeenCalledWith(
-      "Delete Shopping List",
-      'Do you really want to delete list "Default Shopping List" with 1 ingredient?',
-      expect.any(Array)
-    )
-  })
-
-  it("calls onDelete when delete is confirmed in alert", () => {
+  it("calls onDelete when delete is confirmed", () => {
     const onDelete = jest.fn()
     const { getByTestId } = render(
-      <ShoppingListEntry
-        {...defaultProps}
-        isEdited={true}
-        onDelete={onDelete}
-      />
+      <ShoppingListEntry {...defaultProps} onDelete={onDelete} />
     )
 
-    fireEvent.press(getByTestId("delete-button-1"))
-
-    // Get the alert buttons and simulate pressing "Delete"
-    const alertCalls = (Alert.alert as jest.Mock).mock.calls
-    const lastCall = alertCalls[alertCalls.length - 1]
-    const buttons = lastCall[2]
-    const deleteButton = buttons.find(
-      (btn: { text: string; onPress?: () => void }) => btn.text === "Delete"
-    )
-
-    deleteButton.onPress()
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+    fireEvent.press(getByTestId("shopping-list-context-delete-1"))
+    fireEvent.press(getByTestId("shopping-list-delete-confirm-1-confirm"))
 
     expect(onDelete).toHaveBeenCalledTimes(1)
   })
 
-  it("does not call onDelete when delete is cancelled in alert", () => {
+  it("does not call onDelete when delete is cancelled", () => {
     const onDelete = jest.fn()
-    const { getByTestId } = render(
-      <ShoppingListEntry
-        {...defaultProps}
-        isEdited={true}
-        onDelete={onDelete}
-      />
+    const { getByTestId, queryByTestId } = render(
+      <ShoppingListEntry {...defaultProps} onDelete={onDelete} />
     )
 
-    fireEvent.press(getByTestId("delete-button-1"))
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+    fireEvent.press(getByTestId("shopping-list-context-delete-1"))
+    fireEvent.press(getByTestId("shopping-list-delete-confirm-1-cancel"))
 
-    // Get the alert buttons and simulate pressing "Cancel" (which doesn't have an onPress)
-    const alertCalls = (Alert.alert as jest.Mock).mock.calls
-    const lastCall = alertCalls[alertCalls.length - 1]
-    const buttons = lastCall[2]
-    const cancelButton = buttons.find(
-      (btn: { text: string; onPress?: () => void }) => btn.text === "Cancel"
-    )
-
-    // Cancel button doesn't have an onPress handler (it just dismisses)
-    expect(cancelButton.onPress).toBeUndefined()
     expect(onDelete).not.toHaveBeenCalled()
-  })
-
-  it("calls onSaveEditing when input is submitted", () => {
-    const onSaveEditing = jest.fn()
-    const { getByTestId } = render(
-      <ShoppingListEntry
-        {...defaultProps}
-        isEdited={true}
-        onSaveEditing={onSaveEditing}
-      />
-    )
-
-    const input = getByTestId("shopping-list-input-1")
-    fireEvent.changeText(input, "Updated List Name")
-    fireEvent(input, "submitEditing")
-
-    expect(onSaveEditing).toHaveBeenCalledWith("Updated List Name")
+    expect(queryByTestId("shopping-list-delete-confirm-1-confirm")).toBeFalsy()
   })
 })

@@ -2,15 +2,14 @@ import {
   GestureResponderEvent,
   TouchableOpacity,
   StyleSheet,
-  TextInput,
   View,
-  Alert,
 } from "react-native"
 import { ThemedText } from "./ThemedText"
-import React, { forwardRef } from "react"
-import { ThemedTextInput } from "./ThemedTextInput"
-import { MaterialIcons } from "@expo/vector-icons"
-import { Colors, Palette } from "@/constants/Colors"
+import React from "react"
+import { ContextMenu } from "./ContextMenu"
+import { RenameSheet } from "./RenameSheet"
+import { ConfirmDialog } from "./ConfirmDialog"
+import { useThemeColor } from "@/hooks/useThemeColor"
 
 export type ShoppingListEntryProps = {
   id: string
@@ -19,185 +18,141 @@ export type ShoppingListEntryProps = {
   totalCount?: number
   completedCount?: number
   onPress: (event: GestureResponderEvent) => void
-  onLongPress: (event: GestureResponderEvent) => void
+  onRename: (newName: string) => void
   onPressOut?: (event: GestureResponderEvent) => void
-  isEdited: boolean
-  onCancelEditing: () => void
-  onSaveEditing: (text: string) => void
   onDelete?: () => void
 }
 
-export const ShoppingListEntry = forwardRef<TextInput, ShoppingListEntryProps>(
-  function ShoppingListEntry(props: ShoppingListEntryProps, ref) {
-    const [text, onChangeText] = React.useState(props.listName)
+export function ShoppingListEntry(props: ShoppingListEntryProps) {
+  const [showContextMenu, setShowContextMenu] = React.useState(false)
+  const [showRenameSheet, setShowRenameSheet] = React.useState(false)
+  const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
 
-    React.useEffect(() => {
-      onChangeText(props.listName)
-    }, [props.isEdited, props.listName])
+  const dividerColor = useThemeColor({}, "divider")
+  const textSecondaryColor = useThemeColor({}, "textSecondary")
+  const accentColor = useThemeColor({}, "accent")
+  const amberColor = useThemeColor({}, "amber")
 
-    const handleDeletePress = () => {
-      const ingredientCount = props.totalCount ?? 0
-      const ingredientText =
-        ingredientCount === 1 ? "ingredient" : "ingredients"
+  const ingredientCount = props.totalCount ?? 0
+  const ingredientText = ingredientCount === 1 ? "ingredient" : "ingredients"
 
-      Alert.alert(
-        "Delete Shopping List",
-        `Do you really want to delete list "${props.listName}" with ${ingredientCount} ${ingredientText}?`,
-        [
-          {
-            text: "Cancel",
-            style: "cancel",
-          },
-          {
-            text: "Delete",
-            style: "destructive",
-            onPress: () => {
-              if (props.onDelete) {
-                props.onDelete()
-              }
-            },
-          },
-        ]
-      )
-    }
-
-    return (
+  return (
+    <>
       <TouchableOpacity
         testID={`shopping-list-entry-${props.id}`}
-        style={styles.listItem}
+        style={[styles.listItem, { borderBottomColor: dividerColor }]}
         onPress={props.onPress}
-        onLongPress={props.onLongPress}
+        onLongPress={() => setShowContextMenu(true)}
         onPressOut={props.onPressOut}
       >
-        {props.isEdited ? (
-          <View style={styles.editContainer}>
-            <ThemedTextInput
-              testID={`shopping-list-input-${props.id}`}
-              onChangeText={onChangeText}
-              onSubmit={() => props.onSaveEditing(text)}
-              value={text}
-              placeholder={""}
-              autoFocus={true}
-              ref={ref}
-            />
-            <TouchableOpacity
-              testID={`save-button-${props.id}`}
-              style={styles.actionButton}
-              onPress={() => props.onSaveEditing(text)}
+        <View style={styles.listContent}>
+          <View style={styles.listInfo}>
+            <ThemedText type="defaultSemiBold">{props.listName}</ThemedText>
+            <ThemedText
+              style={[styles.listDate, { color: textSecondaryColor }]}
+              type="default"
             >
-              <MaterialIcons name="check" size={20} color={Palette.success} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              testID={`cancel-button-${props.id}`}
-              style={styles.actionButton}
-              onPress={props.onCancelEditing}
-            >
-              <MaterialIcons name="close" size={20} color={Palette.neutral} />
-            </TouchableOpacity>
-            <TouchableOpacity
-              testID={`delete-button-${props.id}`}
-              style={styles.actionButton}
-              onPress={handleDeletePress}
-            >
-              <MaterialIcons
-                name="delete"
-                size={20}
-                color={Palette.destructive}
-              />
-            </TouchableOpacity>
+              {new Date(props.createdAt).toLocaleDateString()}
+            </ThemedText>
           </View>
-        ) : (
-          <>
-            <View style={styles.listContent}>
-              <View style={styles.listInfo}>
-                <ThemedText type="default">{props.listName}</ThemedText>
-                <ThemedText style={styles.listDate} type="default">
-                  {new Date(props.createdAt).toLocaleDateString()}
-                </ThemedText>
-              </View>
-              {props.totalCount !== undefined &&
-                props.completedCount !== undefined && (
-                  <ThemedText style={styles.listCount} type="default">
-                    {props.completedCount}/{props.totalCount}
-                  </ThemedText>
-                )}
+          {props.totalCount !== undefined &&
+            props.completedCount !== undefined && (
+              <ThemedText
+                style={[styles.listCount, { color: textSecondaryColor }]}
+                type="default"
+              >
+                {props.completedCount}/{props.totalCount}
+              </ThemedText>
+            )}
+        </View>
+        {props.totalCount !== undefined &&
+          props.completedCount !== undefined &&
+          props.totalCount > 0 && (
+            <View
+              style={[styles.progressBar, { backgroundColor: dividerColor }]}
+            >
+              <View
+                style={{
+                  flex: props.completedCount,
+                  backgroundColor: accentColor,
+                }}
+              />
+              <View
+                style={{
+                  flex: props.totalCount - props.completedCount,
+                  backgroundColor: amberColor,
+                }}
+              />
             </View>
-            {props.totalCount !== undefined &&
-              props.completedCount !== undefined &&
-              props.totalCount > 0 && (
-                <View style={styles.progressBar}>
-                  <View
-                    style={[
-                      styles.progressCompleted,
-                      {
-                        flex: props.completedCount,
-                      },
-                    ]}
-                  />
-                  <View
-                    style={[
-                      styles.progressIncomplete,
-                      {
-                        flex: props.totalCount - props.completedCount,
-                      },
-                    ]}
-                  />
-                </View>
-              )}
-          </>
-        )}
+          )}
       </TouchableOpacity>
-    )
-  }
-)
+      <ContextMenu
+        testID={`shopping-list-context-menu-${props.id}`}
+        visible={showContextMenu}
+        title={props.listName}
+        onClose={() => setShowContextMenu(false)}
+        options={[
+          {
+            label: "Rename",
+            testID: `shopping-list-context-rename-${props.id}`,
+            onPress: () => setShowRenameSheet(true),
+          },
+          {
+            label: "Delete",
+            testID: `shopping-list-context-delete-${props.id}`,
+            destructive: true,
+            onPress: () => setShowDeleteConfirm(true),
+          },
+        ]}
+      />
+      <RenameSheet
+        testID={`shopping-list-rename-sheet-${props.id}`}
+        visible={showRenameSheet}
+        initialValue={props.listName}
+        onClose={() => setShowRenameSheet(false)}
+        onSave={props.onRename}
+      />
+      <ConfirmDialog
+        testID={`shopping-list-delete-confirm-${props.id}`}
+        visible={showDeleteConfirm}
+        title="Delete list?"
+        message={`"${props.listName}" and its ${ingredientCount} ${ingredientText} will be permanently removed.`}
+        confirmLabel="Delete"
+        destructive
+        onClose={() => setShowDeleteConfirm(false)}
+        onConfirm={() => props.onDelete?.()}
+      />
+    </>
+  )
+}
 
 const styles = StyleSheet.create({
   listItem: {
-    padding: 16,
+    paddingHorizontal: 18,
+    paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: Colors.light.divider,
   },
   listContent: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "center",
+    alignItems: "baseline",
   },
   listInfo: {
     flex: 1,
   },
   listDate: {
     fontSize: 12,
-    marginTop: 4,
-    opacity: 0.6,
+    marginTop: 2,
   },
   listCount: {
-    fontSize: 16,
-    fontWeight: "600",
+    fontSize: 13,
     marginLeft: 12,
-    opacity: 0.7,
   },
   progressBar: {
     flexDirection: "row",
-    height: 4,
+    height: 8,
     marginTop: 8,
-    borderRadius: 2,
+    borderRadius: 4,
     overflow: "hidden",
-  },
-  progressCompleted: {
-    backgroundColor: Palette.progressCompleted,
-  },
-  progressIncomplete: {
-    backgroundColor: Palette.progressIncomplete,
-  },
-  editContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-    marginLeft: -12,
-  },
-  actionButton: {
-    padding: 4,
-    justifyContent: "center",
-    alignItems: "center",
   },
 })

@@ -45,6 +45,30 @@ export class IngredientProjection {
     }
   }
 
+  async handlePrioritySet(
+    db: SQLiteDatabase,
+    event: DomainEventRow
+  ): Promise<void> {
+    const { priority } = JSON.parse(event.payload)
+    await db.runAsync(
+      `UPDATE ingredients SET priority = ?, updated_at = ? WHERE id = ?`,
+      priority,
+      event.occurred_at,
+      event.aggregate_id
+    )
+  }
+
+  async handlePriorityCleared(
+    db: SQLiteDatabase,
+    event: DomainEventRow
+  ): Promise<void> {
+    await db.runAsync(
+      `UPDATE ingredients SET priority = NULL, updated_at = ? WHERE id = ?`,
+      event.occurred_at,
+      event.aggregate_id
+    )
+  }
+
   async handleDeleted(
     db: SQLiteDatabase,
     event: DomainEventRow
@@ -65,6 +89,12 @@ export class IngredientProjection {
             break
           case EventTypes.INGREDIENT_UPDATED:
             await this.handleUpdated(this.db, event)
+            break
+          case EventTypes.INGREDIENT_PRIORITY_SET:
+            await this.handlePrioritySet(this.db, event)
+            break
+          case EventTypes.INGREDIENT_PRIORITY_CLEARED:
+            await this.handlePriorityCleared(this.db, event)
             break
           case EventTypes.INGREDIENT_DELETED:
             await this.handleDeleted(this.db, event)
