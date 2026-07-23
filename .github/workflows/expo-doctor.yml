@@ -31,5 +31,7 @@ jobs:
         uses: ./.github/actions/setup-node-install
 
       - name: 🚑 Run Doctor Checks
-        run: pnpm dlx expo-doctor
+        run: pnpm exec expo-doctor
         working-directory: ./frontend
+        env:
+          EXPO_OFFLINE: "1"
