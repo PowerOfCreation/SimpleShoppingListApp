@@ -1,0 +1,21 @@
+minimumReleaseAge: 2880
+
+onlyBuiltDependencies:
+  - better-sqlite3
+  - unrs-resolver
+allowBuilds:
+  better-sqlite3: true
+  unrs-resolver: true
+
+saveExact: true
+strictPeerDependencies: false
+
+# Use hoisted node_modules structure for React Native/Expo compatibility
+nodeLinker: hoisted
+
+# Hoist Expo and React Native packages to avoid Metro bundler issues
+publicHoistPattern:
+  - "*expo*"
+  - "*react-native*"
+  - "@react-native*"
+  - "@react-navigation*"
