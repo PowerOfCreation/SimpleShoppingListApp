@@ -2,19 +2,22 @@ name: Renovate
 
 on:
   schedule:
-    - cron: "0 4 * * *" # Daily at 04:00 UTC
-  workflow_dispatch: # Allow manual runs
+    - cron: '0 4 * * *'  # Daily at 04:00 UTC
+  workflow_dispatch:      # Allow manual runs
 
 jobs:
   renovate:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
-
-      - uses: renovatebot/github-action@693b9ef15eec82123529a37c782242f091365961 # v46.1.14
+      # Renovate clones the repository itself and reads renovate.json5 from that
+      # clone, so no checkout is needed. Don't pass that file as
+      # configurationFile either: it would then double as global config, which is
+      # what forced global-only options like repositories into it.
+      - uses: renovatebot/github-action@1a96852b0384df1837619d04c60b2d10d1f9ff08 # v46.1.21
         with:
-          renovate-version: 43.104.0@sha256:20543dec1eaca2d5e10f9225f3112a1a4d8bcbd3af73acb6a552cf6569692cbb
-          configurationFile: renovate.json5
+          renovate-version: 43.220.0@sha256:459b7e28aa54fa2fa7db83df6a2d6ad26de416a054ee554e7833203adf3d9a47
           token: ${{ secrets.RENOVATE_TOKEN }}
         env:
           LOG_LEVEL: debug
+          # Global-only option, so it lives here rather than in renovate.json5.
+          RENOVATE_REPOSITORIES: ${{ github.repository }}
