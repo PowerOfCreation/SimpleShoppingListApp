@@ -74,6 +74,18 @@ export class ValidationError extends AppError {
 }
 
 /**
+ * Authentication error
+ */
+export class AuthError extends AppError {
+  constructor(
+    message: string = "Authentication failed",
+    public originalError?: unknown
+  ) {
+    super(message)
+  }
+}
+
+/**
  * Feature not implemented error
  */
 export class NotImplementedError extends AppError {

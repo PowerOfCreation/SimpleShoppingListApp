@@ -12,6 +12,7 @@ import { initializeAndMigrateDatabase } from "@/database/data-migration"
 import { createLogger } from "@/api/common/logger"
 import { getDatabase } from "@/database/database"
 import { SafeAreaProvider } from "react-native-safe-area-context"
+import { AuthProvider } from "@/api/auth/AuthProvider"
 
 const logger = createLogger("RootLayout")
 
@@ -65,34 +66,43 @@ export default function RootLayout() {
 
   return (
     <SafeAreaProvider>
-      <Drawer
-        screenOptions={{
-          drawerStyle: { backgroundColor },
-          drawerLabelStyle: { color },
-          headerStyle: { backgroundColor },
-          headerTintColor: color,
-          sceneStyle: { backgroundColor },
-        }}
-      >
-        <Drawer.Screen
-          name="index"
-          options={{ drawerItemStyle: { display: "none" }, title: "" }}
-        />
-        <Drawer.Screen
-          name="(home)"
-          options={{
-            drawerLabel: "Shopping Lists",
-            headerShown: false,
+      <AuthProvider>
+        <Drawer
+          screenOptions={{
+            drawerStyle: { backgroundColor },
+            drawerLabelStyle: { color },
+            headerStyle: { backgroundColor },
+            headerTintColor: color,
+            sceneStyle: { backgroundColor },
           }}
-        />
-        <Drawer.Screen
-          name="(events)"
-          options={{
-            drawerLabel: "Event Log",
-            headerShown: false,
-          }}
-        />
-      </Drawer>
+        >
+          <Drawer.Screen
+            name="index"
+            options={{ drawerItemStyle: { display: "none" }, title: "" }}
+          />
+          <Drawer.Screen
+            name="(home)"
+            options={{
+              drawerLabel: "Shopping Lists",
+              headerShown: false,
+            }}
+          />
+          <Drawer.Screen
+            name="(events)"
+            options={{
+              drawerLabel: "Event Log",
+              headerShown: false,
+            }}
+          />
+          <Drawer.Screen
+            name="(account)"
+            options={{
+              drawerLabel: "Account",
+              headerShown: false,
+            }}
+          />
+        </Drawer>
+      </AuthProvider>
     </SafeAreaProvider>
   )
 }

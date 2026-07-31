@@ -16,7 +16,7 @@ Two separate apps can be installed in parallel on the same device. The app ident
 |---|---|---|---|
 | **Package** | `de.lightdevsolutions.sholist.dev` | `de.lightdevsolutions.sholist` | `de.lightdevsolutions.sholist` |
 | **App name** | sholist (Dev) | sholist | sholist |
-| **Scheme** | `sholist-dev://` | `sholist://` | `sholist://` |
+| **Scheme** | `de.lightdevsolutions.sholist.dev://` | `de.lightdevsolutions.sholist://` | `de.lightdevsolutions.sholist://` |
 | **Metro / Fast Refresh** | yes | yes (lädt JS von Metro) | no – JS in APK eingebettet |
 | **Dev menu** | yes (shake or `adb shell input keyevent 82`) | no | no |
 | **Läuft ohne USB** | no | **no** | **yes** |
