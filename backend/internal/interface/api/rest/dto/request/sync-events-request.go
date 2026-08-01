@@ -9,10 +9,10 @@ import (
 )
 
 type SyncEventRequest struct {
-	EventID       uuid.UUID       `json:"event_id"`
-	EventType     string          `json:"event_type"`
-	AggregateID   uuid.UUID       `json:"aggregate_id"`
-	AggregateType string          `json:"aggregate_type"`
+	EventID       uuid.UUID `json:"event_id"`
+	EventType     string    `json:"event_type"`
+	AggregateID   uuid.UUID `json:"aggregate_id"`
+	AggregateType string    `json:"aggregate_type"`
 	// Epoch milliseconds, matching how the frontend stores and sends
 	// occurred_at (a plain JS Date.now() number) - not time.Time, which
 	// would fail to bind against a JSON number.
