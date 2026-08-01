@@ -2,6 +2,7 @@ import * as SQLite from "expo-sqlite"
 import { createLogger, Logger } from "@/api/common/logger"
 import { DbQueryError } from "@/api/common/error-types"
 import { Result } from "@/api/common/result"
+import { runExclusive } from "@/database/write-lock"
 
 /**
  * Base class for database repositories.
@@ -62,8 +63,11 @@ export abstract class BaseRepository {
     operationName: string
   ): Promise<Result<void, DbQueryError>> {
     try {
-      // Wrap the core logic in a transaction
-      await this.db.withTransactionAsync(queryFn)
+      // Wrap the core logic in a transaction. Serialized via runExclusive
+      // because expo-sqlite's transactions are not exclusive on their own -
+      // see write-lock.ts for why that matters once background writes exist
+      // alongside user-initiated ones.
+      await runExclusive(() => this.db.withTransactionAsync(queryFn))
       return Result.ok(undefined) // Indicate success with void
     } catch (error) {
       const dbError = new DbQueryError(

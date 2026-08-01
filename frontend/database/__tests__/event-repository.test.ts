@@ -1,5 +1,6 @@
 import * as SQLite from "expo-sqlite"
 import { EventRepository } from "../event-repository"
+import { OutboxRepository } from "../outbox-repository"
 import { getDatabase } from "../database"
 import { AggregateTypes, DomainEventRow, EventTypes } from "@/types/DomainEvent"
 
@@ -45,6 +46,17 @@ describe("EventRepository", () => {
         payload TEXT NOT NULL
       )
     `)
+    await db.execAsync(`DROP TABLE IF EXISTS event_outbox`)
+    await db.execAsync(`
+      CREATE TABLE event_outbox (
+        event_id TEXT PRIMARY KEY,
+        aggregate_id TEXT NOT NULL,
+        status TEXT NOT NULL,
+        attempts INTEGER NOT NULL DEFAULT 0,
+        last_attempt_at INTEGER,
+        created_at INTEGER NOT NULL
+      )
+    `)
   })
 
   describe("append", () => {
@@ -87,6 +99,98 @@ describe("EventRepository", () => {
     })
   })
 
+  describe("appendAll", () => {
+    it("commits every event, projection, and outbox row in one transaction", async () => {
+      const projected: string[] = []
+      const outboxRepo = new OutboxRepository(db)
+
+      const result = await repo.appendAll([
+        {
+          event: makeEvent({ event_id: "e1" }),
+          project: async () => {
+            projected.push("e1")
+          },
+          enqueueForSync: true,
+        },
+        {
+          event: makeEvent({ event_id: "e2" }),
+          project: async () => {
+            projected.push("e2")
+          },
+        },
+      ])
+
+      expect(result.success).toBe(true)
+      expect(projected).toEqual(["e1", "e2"])
+
+      const eventCount = await db.getFirstAsync<{ c: number }>(
+        `SELECT COUNT(*) as c FROM domain_events`
+      )
+      expect(eventCount?.c).toBe(2)
+
+      const pending = await outboxRepo.getPending()
+      // Only the entry with enqueueForSync: true should have an outbox row.
+      expect(pending.getValue()!.map((r) => r.event_id)).toEqual(["e1"])
+    })
+
+    it("rolls back everything - events, projections, and outbox rows - if any entry throws", async () => {
+      const outboxRepo = new OutboxRepository(db)
+
+      const result = await repo.appendAll([
+        { event: makeEvent({ event_id: "e1" }), enqueueForSync: true },
+        {
+          event: makeEvent({ event_id: "e2" }),
+          project: async () => {
+            throw new Error("projection failed")
+          },
+          enqueueForSync: true,
+        },
+      ])
+
+      expect(result.success).toBe(false)
+
+      const eventCount = await db.getFirstAsync<{ c: number }>(
+        `SELECT COUNT(*) as c FROM domain_events`
+      )
+      expect(eventCount?.c).toBe(0)
+
+      const pending = await outboxRepo.getPending()
+      expect(pending.getValue()).toEqual([])
+    })
+  })
+
+  describe("getByEventIds", () => {
+    it("returns full event rows preserving the caller's requested order", async () => {
+      await repo.append(makeEvent({ event_id: "e1", occurred_at: 1000 }))
+      await repo.append(makeEvent({ event_id: "e2", occurred_at: 2000 }))
+      await repo.append(makeEvent({ event_id: "e3", occurred_at: 3000 }))
+
+      // Deliberately out of SQL/insertion order - the result must follow
+      // the ids as given, since callers (the sync engine) pass ids already
+      // in the order they must be sent.
+      const result = await repo.getByEventIds(["e3", "e1"])
+
+      expect(result.getValue()!.map((e) => e.event_id)).toEqual(["e3", "e1"])
+    })
+
+    it("silently drops ids that don't exist", async () => {
+      await repo.append(makeEvent({ event_id: "e1" }))
+
+      const result = await repo.getByEventIds(["e1", "missing"])
+
+      expect(result.getValue()!.map((e) => e.event_id)).toEqual(["e1"])
+    })
+
+    it("returns an empty array for an empty id list without querying", async () => {
+      const spy = jest.spyOn(db, "getAllAsync")
+
+      const result = await repo.getByEventIds([])
+
+      expect(result.getValue()).toEqual([])
+      expect(spy).not.toHaveBeenCalled()
+    })
+  })
+
   describe("getByAggregateId", () => {
     it("returns events for the given aggregate ordered by occurred_at ASC", async () => {
       await repo.append(
@@ -104,6 +208,34 @@ describe("EventRepository", () => {
       expect(result.success).toBe(true)
       const events = result.getValue()!
       expect(events.map((e) => e.event_id)).toEqual(["e1", "e2"])
+    })
+
+    it("breaks ties on occurred_at by insertion order", async () => {
+      // Same millisecond is easy to hit in practice (e.g. create + a
+      // follow-up event emitted in the same service call). occurred_at
+      // alone is not a stable sort key, so insertion order (rowid) must
+      // decide - otherwise a create could be replayed after its own update.
+      await repo.append(
+        makeEvent({
+          event_id: "created",
+          aggregate_id: "agg-1",
+          occurred_at: 1000,
+        })
+      )
+      await repo.append(
+        makeEvent({
+          event_id: "updated",
+          aggregate_id: "agg-1",
+          occurred_at: 1000,
+        })
+      )
+
+      const result = await repo.getByAggregateId("agg-1")
+
+      expect(result.getValue()!.map((e) => e.event_id)).toEqual([
+        "created",
+        "updated",
+      ])
     })
   })
 
@@ -135,6 +267,27 @@ describe("EventRepository", () => {
 
       expect(result.success).toBe(true)
       expect(result.getValue()!.map((e) => e.event_id)).toEqual(["e1", "e3"])
+    })
+
+    it("breaks ties on occurred_at by insertion order", async () => {
+      await repo.append(
+        makeEvent({
+          event_id: "e1",
+          aggregate_type: AggregateTypes.TODO_LIST,
+          occurred_at: 1000,
+        })
+      )
+      await repo.append(
+        makeEvent({
+          event_id: "e2",
+          aggregate_type: AggregateTypes.TODO_LIST,
+          occurred_at: 1000,
+        })
+      )
+
+      const result = await repo.getByAggregateType(AggregateTypes.TODO_LIST)
+
+      expect(result.getValue()!.map((e) => e.event_id)).toEqual(["e1", "e2"])
     })
   })
 
