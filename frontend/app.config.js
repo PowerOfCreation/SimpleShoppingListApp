@@ -79,6 +79,12 @@ const config = {
             reactNativeArchitectures: ANDROID_ARCHS,
             "org.gradle.workers.max": "4",
           },
+          // Android release builds block cleartext (http://, ws://) traffic
+          // by default - only debug builds get a permissive network
+          // security config automatically. Without this, a release APK
+          // pointed at a plain-http backend (e.g. a local dev server over
+          // adb reverse) fails every sync request silently.
+          usesCleartextTraffic: true,
         },
       },
     ],

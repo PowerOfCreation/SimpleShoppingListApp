@@ -76,6 +76,25 @@ npx expo prebuild --clean
 
 `expo run:android` / `pnpm android:dev` runs prebuild automatically, so this is only needed when opening the project in Android Studio directly.
 
+## Backend / sync
+
+The app talks to the Go backend (`../backend`) for list sync, using
+`EXPO_PUBLIC_API_URL`. This is deliberately **not** something you set in a
+local `.env`: dev and production values are checked in as
+`.env.development` / `.env.production`, and Expo picks between them based on
+the build (dev builds and `pnpm start` get `.env.development`; `android:prod`
+and `android:prod:apk` get `.env.production`). Sync is optional — without a
+configured URL, or without being signed in, the app works the same as before
+and just never syncs.
+
+`.env.development` points at `http://10.0.2.2:8080`, the Android emulator's
+alias for the host machine's localhost, so `pnpm android:dev` talks to a
+backend running locally via `docker compose up -d postgres && go run
+./cmd/api` (see `../backend/README.md`). On a **physical device** over USB,
+`10.0.2.2` doesn't resolve — either run `adb reverse tcp:8080 tcp:8080` so the
+device forwards that port to your machine, or point `EXPO_PUBLIC_API_URL` at
+a LAN-reachable host instead.
+
 ## Tests
 
 ```bash
