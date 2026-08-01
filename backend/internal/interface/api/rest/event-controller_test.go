@@ -72,6 +72,8 @@ func (f *fakeAckPublisher) PublishAck(clientID string, eventID uuid.UUID) {
 	f.acked[eventID] = true
 }
 
+func (f *fakeAckPublisher) PublishListEvent(listID uuid.UUID, seq int64) {}
+
 func TestEventController_SyncEvents_QueuesEventsAndReturns202(t *testing.T) {
 	repo := newFakeEventRepo()
 	ack := &fakeAckPublisher{acked: map[uuid.UUID]bool{}}

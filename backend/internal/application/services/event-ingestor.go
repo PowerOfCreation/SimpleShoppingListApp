@@ -11,6 +11,16 @@ import (
 
 const eventQueueCapacity = 10_000
 
+// realtimePublisher is what the ingestor actually needs from the realtime
+// layer: ack the sender, and notify anyone subscribed to the event's list.
+// A single combined interface rather than two separate constructor
+// parameters, since in practice one hub (internal/infrastructure/realtime)
+// implements both and there's never a reason to wire them independently.
+type realtimePublisher interface {
+	interfaces.AckPublisher
+	interfaces.ListEventPublisher
+}
+
 // EventIngestor durably persists incoming events and dispatches them to the
 // domain asynchronously. This is what lets EventController.SyncEvents
 // respond 202 before anything is actually written - Enqueue only pushes
@@ -28,25 +38,25 @@ const eventQueueCapacity = 10_000
 // simply queued behind the first, which will have finished (successfully
 // or not) by the time the worker gets to it.
 type EventIngestor struct {
-	eventRepo    repositories.EventRepository
-	dispatcher   *EventDispatcher
-	ackPublisher interfaces.AckPublisher
-	queue        chan *repositories.StoredEvent
-	stop         chan struct{}
-	wg           sync.WaitGroup
+	eventRepo  repositories.EventRepository
+	dispatcher *EventDispatcher
+	publisher  realtimePublisher
+	queue      chan *repositories.StoredEvent
+	stop       chan struct{}
+	wg         sync.WaitGroup
 }
 
 func NewEventIngestor(
 	eventRepo repositories.EventRepository,
 	dispatcher *EventDispatcher,
-	ackPublisher interfaces.AckPublisher,
+	publisher realtimePublisher,
 ) *EventIngestor {
 	return &EventIngestor{
-		eventRepo:    eventRepo,
-		dispatcher:   dispatcher,
-		ackPublisher: ackPublisher,
-		queue:        make(chan *repositories.StoredEvent, eventQueueCapacity),
-		stop:         make(chan struct{}),
+		eventRepo:  eventRepo,
+		dispatcher: dispatcher,
+		publisher:  publisher,
+		queue:      make(chan *repositories.StoredEvent, eventQueueCapacity),
+		stop:       make(chan struct{}),
 	}
 }
 
@@ -115,8 +125,12 @@ func (ing *EventIngestor) process(ctx context.Context, event *repositories.Store
 		// dispatch and marked it processed - re-dispatching would
 		// duplicate the side effect. The server does durably have it, so
 		// still ack: this is exactly the case a client resends after a
-		// lost ack (self-heal), and it must not loop forever.
-		ing.ackPublisher.PublishAck(event.ClientID, event.EventID)
+		// lost ack (self-heal), and it must not loop forever. No
+		// PublishListEvent here: nothing newly became visible (the seq this
+		// event got was already published the first time it was
+		// processed), so a client that missed that original notification
+		// recovers on its next head check instead.
+		ing.publisher.PublishAck(event.ClientID, event.EventID)
 		return
 	}
 	ing.dispatchAndAck(ctx, event)
@@ -134,12 +148,13 @@ func (ing *EventIngestor) dispatchAndAck(ctx context.Context, event *repositorie
 		)
 		return
 	}
-	// seq/listID are unused for now - a later change publishes a
-	// server->client "new event" WebSocket notification from here, which
-	// is exactly what these two values are for.
-	if _, _, err := ing.eventRepo.MarkProcessed(ctx, event.EventID); err != nil {
+	seq, listID, err := ing.eventRepo.MarkProcessed(ctx, event.EventID)
+	if err != nil {
 		log.Printf("event-ingestor: failed to mark event %s processed: %v", event.EventID, err)
 		return
 	}
-	ing.ackPublisher.PublishAck(event.ClientID, event.EventID)
+	ing.publisher.PublishAck(event.ClientID, event.EventID)
+	if listID != nil {
+		ing.publisher.PublishListEvent(*listID, seq)
+	}
 }

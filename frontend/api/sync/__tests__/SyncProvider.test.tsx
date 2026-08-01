@@ -44,16 +44,20 @@ describe("SyncProvider", () => {
   let handleAckMock: jest.Mock
   let reconcileMock: jest.Mock
   let pullMock: jest.Mock
+  let pullListMock: jest.Mock
   let socketConnectMock: jest.Mock
   let socketDisconnectMock: jest.Mock
   let socketReconnectIfTokenChangedMock: jest.Mock
+  let socketSubscribeMock: jest.Mock
   let ackHandler: ((eventId: string) => void) | undefined
   let onConnectedHandler: (() => void) | undefined
+  let listEventHandler: ((listId: string, seq: number) => void) | undefined
 
   beforeEach(() => {
     jest.clearAllMocks()
     ackHandler = undefined
     onConnectedHandler = undefined
+    listEventHandler = undefined
 
     jest
       .spyOn(AppState, "addEventListener")
@@ -65,6 +69,7 @@ describe("SyncProvider", () => {
     handleAckMock = jest.fn().mockResolvedValue(undefined)
     reconcileMock = jest.fn().mockResolvedValue(undefined)
     pullMock = jest.fn().mockResolvedValue(undefined)
+    pullListMock = jest.fn().mockResolvedValue(undefined)
     MockSyncEngine.mockImplementation(
       () =>
         ({
@@ -72,19 +77,23 @@ describe("SyncProvider", () => {
           handleAck: handleAckMock,
           reconcile: reconcileMock,
           pull: pullMock,
+          pullList: pullListMock,
         }) as unknown as SyncEngine
     )
 
     socketConnectMock = jest.fn().mockResolvedValue(undefined)
     socketDisconnectMock = jest.fn()
     socketReconnectIfTokenChangedMock = jest.fn().mockResolvedValue(undefined)
-    MockSyncSocket.mockImplementation((onAck, onConnected) => {
+    socketSubscribeMock = jest.fn()
+    MockSyncSocket.mockImplementation((onAck, onConnected, onListEvent) => {
       ackHandler = onAck
       onConnectedHandler = onConnected
+      listEventHandler = onListEvent
       return {
         connect: socketConnectMock,
         disconnect: socketDisconnectMock,
         reconnectIfTokenChanged: socketReconnectIfTokenChangedMock,
+        subscribe: socketSubscribeMock,
       } as unknown as SyncSocket
     })
 
@@ -108,7 +117,7 @@ describe("SyncProvider", () => {
     )
   }
 
-  it("does not flush, pull, or connect the socket when signed out", async () => {
+  it("does not flush, pull, subscribe, or connect the socket when signed out", async () => {
     mockAuth("signedOut")
 
     renderProvider()
@@ -116,10 +125,11 @@ describe("SyncProvider", () => {
     await Promise.resolve()
     expect(flushMock).not.toHaveBeenCalled()
     expect(pullMock).not.toHaveBeenCalled()
+    expect(socketSubscribeMock).not.toHaveBeenCalled()
     expect(socketConnectMock).not.toHaveBeenCalled()
   })
 
-  it("does not flush, pull, or connect the socket when sync is not configured, even if signed in", async () => {
+  it("does not flush, pull, subscribe, or connect the socket when sync is not configured, even if signed in", async () => {
     mockAuth("signedIn")
     jest.spyOn(syncConfigModule, "isSyncConfigured").mockReturnValue(false)
 
@@ -128,7 +138,18 @@ describe("SyncProvider", () => {
     await Promise.resolve()
     expect(flushMock).not.toHaveBeenCalled()
     expect(pullMock).not.toHaveBeenCalled()
+    expect(socketSubscribeMock).not.toHaveBeenCalled()
     expect(socketConnectMock).not.toHaveBeenCalled()
+  })
+
+  it("subscribes to sync-enabled lists on mount, before connecting", async () => {
+    mockAuth("signedIn")
+
+    renderProvider()
+
+    await waitFor(() =>
+      expect(socketSubscribeMock).toHaveBeenCalledWith(["list-1", "list-2"])
+    )
   })
 
   it("flushes, pulls sync-enabled lists, and connects the socket once on mount when signed in and configured", async () => {
@@ -248,6 +269,52 @@ describe("SyncProvider", () => {
 
       expect(pullMock).toHaveBeenCalledWith(["list-1", "list-2"])
       expect(reconcileMock).toHaveBeenCalledWith(["list-1", "list-2"])
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  it("debounces a burst of list-event notifications for the same list into a single pullList call", async () => {
+    jest.useFakeTimers()
+    try {
+      mockAuth("signedIn")
+      renderProvider()
+      await waitFor(() => expect(socketConnectMock).toHaveBeenCalledTimes(1))
+
+      expect(listEventHandler).toBeDefined()
+      listEventHandler!("list-1", 5)
+      listEventHandler!("list-1", 6)
+      listEventHandler!("list-1", 7)
+
+      jest.advanceTimersByTime(400)
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(pullListMock).toHaveBeenCalledTimes(1)
+      expect(pullListMock).toHaveBeenCalledWith("list-1")
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  it("debounces list-event notifications independently per list", async () => {
+    jest.useFakeTimers()
+    try {
+      mockAuth("signedIn")
+      renderProvider()
+      await waitFor(() => expect(socketConnectMock).toHaveBeenCalledTimes(1))
+
+      expect(listEventHandler).toBeDefined()
+      listEventHandler!("list-1", 5)
+      listEventHandler!("list-2", 9)
+
+      jest.advanceTimersByTime(400)
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(pullListMock).toHaveBeenCalledTimes(2)
+      expect(pullListMock).toHaveBeenCalledWith("list-1")
+      expect(pullListMock).toHaveBeenCalledWith("list-2")
     } finally {
       jest.useRealTimers()
     }

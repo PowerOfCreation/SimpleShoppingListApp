@@ -37,28 +37,42 @@ func (c *connection) writeJSON(v any) error {
 	return c.ws.WriteJSON(v)
 }
 
-// Hub fans out acks to every connection registered for a client_id.
+// Hub fans out acks (by client_id) and list-event notifications (by
+// list_id, via subscribe) to connections.
 //
 // Deliberately not scoped by user (no auth/user-scoping exists yet - see
 // the sync design doc): every ack is only ever meaningful to a client that
 // already knows the event_id it's for, so broadcasting within a client_id
-// is safe. Once user-scoping lands, this becomes user-scoped too.
+// is safe, and subscribing to a list_id requires already knowing that
+// list's UUID - the same (missing) trust boundary as the REST endpoints,
+// not a new one. Once user-scoping lands, both become user-scoped too.
 //
-// Registration is keyed by client_id -> set of connections (not a single
-// connection per client_id) and unregistration removes a specific
+// Client registration is keyed by client_id -> set of connections (not a
+// single connection per client_id) and unregistration removes a specific
 // connection by pointer identity. That distinction matters on reconnect:
 // a client's old connection dying is detected only when its read loop's
 // blocking read finally errors out, which can happen *after* a new
 // connection for the same client_id has already registered. Deleting "the"
 // entry for that client_id at that point would delete the new connection
-// instead of the dead one.
+// instead of the dead one. List subscriptions follow the same by-pointer
+// discipline for the same reason.
 type Hub struct {
 	mu      sync.RWMutex
 	clients map[string]map[*connection]struct{}
+	// subscriptions maps list_id -> the connections subscribed to it.
+	subscriptions map[uuid.UUID]map[*connection]struct{}
+	// subscribedLists is the reverse index (per connection, which lists it
+	// subscribed to) - needed so unregister/resubscribe can remove exactly
+	// this connection's entries from `subscriptions` without scanning it.
+	subscribedLists map[*connection]map[uuid.UUID]struct{}
 }
 
 func NewHub() *Hub {
-	return &Hub{clients: make(map[string]map[*connection]struct{})}
+	return &Hub{
+		clients:         make(map[string]map[*connection]struct{}),
+		subscriptions:   make(map[uuid.UUID]map[*connection]struct{}),
+		subscribedLists: make(map[*connection]map[uuid.UUID]struct{}),
+	}
 }
 
 func (h *Hub) register(clientID string, conn *connection) {
@@ -74,19 +88,62 @@ func (h *Hub) unregister(clientID string, conn *connection) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	conns, ok := h.clients[clientID]
-	if !ok {
-		return
+	if ok {
+		delete(conns, conn)
+		if len(conns) == 0 {
+			delete(h.clients, clientID)
+		}
 	}
-	delete(conns, conn)
-	if len(conns) == 0 {
-		delete(h.clients, clientID)
+	h.unsubscribeAllLocked(conn)
+}
+
+// subscribe replaces (not accumulates) the set of lists this connection is
+// subscribed to - the frontend resends its full sync-enabled list_ids
+// whenever that set changes, and it must not accumulate hearing about a
+// list it's since turned sync off for.
+func (h *Hub) subscribe(conn *connection, listIDs []uuid.UUID) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+	h.unsubscribeAllLocked(conn)
+
+	set := make(map[uuid.UUID]struct{}, len(listIDs))
+	for _, listID := range listIDs {
+		if h.subscriptions[listID] == nil {
+			h.subscriptions[listID] = make(map[*connection]struct{})
+		}
+		h.subscriptions[listID][conn] = struct{}{}
+		set[listID] = struct{}{}
 	}
+	h.subscribedLists[conn] = set
+}
+
+// unsubscribeAllLocked removes conn from every list it's currently
+// subscribed to. Caller must hold h.mu.
+func (h *Hub) unsubscribeAllLocked(conn *connection) {
+	for listID := range h.subscribedLists[conn] {
+		delete(h.subscriptions[listID], conn)
+		if len(h.subscriptions[listID]) == 0 {
+			delete(h.subscriptions, listID)
+		}
+	}
+	delete(h.subscribedLists, conn)
 }
 
 func (h *Hub) connectionsFor(clientID string) []*connection {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
 	conns := h.clients[clientID]
+	out := make([]*connection, 0, len(conns))
+	for c := range conns {
+		out = append(out, c)
+	}
+	return out
+}
+
+func (h *Hub) subscribersFor(listID uuid.UUID) []*connection {
+	h.mu.RLock()
+	defer h.mu.RUnlock()
+	conns := h.subscriptions[listID]
 	out := make([]*connection, 0, len(conns))
 	for c := range conns {
 		out = append(out, c)
@@ -103,6 +160,19 @@ func (h *Hub) PublishAck(clientID string, eventID uuid.UUID) {
 	for _, conn := range h.connectionsFor(clientID) {
 		if err := conn.writeJSON(msg); err != nil {
 			log.Printf("realtime: failed to send ack to client %s: %v", clientID, err)
+		}
+	}
+}
+
+// PublishListEvent implements interfaces.ListEventPublisher. Best-effort,
+// same as PublishAck: no subscriber is a silent no-op - a client's own
+// periodic pull (and its next connect/foreground pull) is the fallback if
+// this notification never arrives or is missed while disconnected.
+func (h *Hub) PublishListEvent(listID uuid.UUID, seq int64) {
+	msg := map[string]any{"type": "event", "list_id": listID.String(), "seq": seq}
+	for _, conn := range h.subscribersFor(listID) {
+		if err := conn.writeJSON(msg); err != nil {
+			log.Printf("realtime: failed to send list event for %s: %v", listID, err)
 		}
 	}
 }
@@ -127,10 +197,37 @@ func (h *Hub) Serve(clientID string, ws *websocket.Conn) {
 		}
 		_ = ws.SetReadDeadline(time.Now().Add(readDeadline))
 
-		if msg["type"] == "ping" {
+		switch msg["type"] {
+		case "ping":
 			if err := conn.writeJSON(map[string]string{"type": "pong"}); err != nil {
 				return
 			}
+		case "subscribe":
+			h.subscribe(conn, parseListIDs(msg["list_ids"]))
 		}
 	}
+}
+
+// parseListIDs pulls a []uuid.UUID out of a decoded JSON message's
+// "list_ids" field. Individual malformed entries are skipped rather than
+// failing the whole subscribe - a client-side bug in one id shouldn't cost
+// the connection every other valid subscription.
+func parseListIDs(raw any) []uuid.UUID {
+	items, ok := raw.([]any)
+	if !ok {
+		return nil
+	}
+	ids := make([]uuid.UUID, 0, len(items))
+	for _, item := range items {
+		s, ok := item.(string)
+		if !ok {
+			continue
+		}
+		id, err := uuid.Parse(s)
+		if err != nil {
+			continue
+		}
+		ids = append(ids, id)
+	}
+	return ids
 }

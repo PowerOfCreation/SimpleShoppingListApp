@@ -140,3 +140,111 @@ func TestHub_UnregisterRemovesTheClientEntryOnceEmpty(t *testing.T) {
 	hub.mu.RUnlock()
 	assert.False(t, exists, "empty client entries should be cleaned up, not leaked")
 }
+
+func TestHub_PublishListEvent_DeliversToASubscriber(t *testing.T) {
+	hub := NewHub()
+	server := startTestServer(t, hub)
+	conn := dial(t, server, "client-1")
+	listID := uuid.New()
+
+	require.NoError(t, conn.WriteJSON(map[string]any{
+		"type":     "subscribe",
+		"list_ids": []string{listID.String()},
+	}))
+	require.Eventually(t, func() bool {
+		return len(hub.subscribersFor(listID)) == 1
+	}, time.Second, time.Millisecond)
+
+	hub.PublishListEvent(listID, 42)
+
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+	var msg map[string]any
+	require.NoError(t, conn.ReadJSON(&msg))
+	assert.Equal(t, "event", msg["type"])
+	assert.Equal(t, listID.String(), msg["list_id"])
+	assert.Equal(t, float64(42), msg["seq"])
+}
+
+func TestHub_PublishListEvent_NoSubscriberIsANoOp(t *testing.T) {
+	hub := NewHub()
+
+	assert.NotPanics(t, func() {
+		hub.PublishListEvent(uuid.New(), 1)
+	})
+}
+
+func TestHub_PublishListEvent_DoesNotReachAConnectionSubscribedToAnotherList(t *testing.T) {
+	hub := NewHub()
+	server := startTestServer(t, hub)
+	subscribed := dial(t, server, "client-1")
+	other := dial(t, server, "client-2")
+	listA := uuid.New()
+	listB := uuid.New()
+
+	require.NoError(t, subscribed.WriteJSON(map[string]any{
+		"type":     "subscribe",
+		"list_ids": []string{listA.String()},
+	}))
+	require.NoError(t, other.WriteJSON(map[string]any{
+		"type":     "subscribe",
+		"list_ids": []string{listB.String()},
+	}))
+	require.Eventually(t, func() bool {
+		return len(hub.subscribersFor(listA)) == 1 && len(hub.subscribersFor(listB)) == 1
+	}, time.Second, time.Millisecond)
+
+	hub.PublishListEvent(listA, 1)
+
+	_ = subscribed.SetReadDeadline(time.Now().Add(time.Second))
+	var msg map[string]any
+	require.NoError(t, subscribed.ReadJSON(&msg))
+	assert.Equal(t, listA.String(), msg["list_id"])
+
+	// The other connection subscribed to a different list - it must not
+	// see this notification at all.
+	_ = other.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
+	err := other.ReadJSON(&msg)
+	assert.Error(t, err, "expected a read timeout, not a delivered message")
+}
+
+func TestHub_Subscribe_ReplacesRatherThanAccumulatesPreviousSubscriptions(t *testing.T) {
+	hub := NewHub()
+	conn := newConnection(&websocket.Conn{})
+	listA := uuid.New()
+	listB := uuid.New()
+
+	hub.subscribe(conn, []uuid.UUID{listA})
+	hub.subscribe(conn, []uuid.UUID{listB})
+
+	assert.Empty(t, hub.subscribersFor(listA), "the earlier subscription to list A must be dropped")
+	assert.Len(t, hub.subscribersFor(listB), 1)
+}
+
+func TestHub_Unregister_RemovesTheConnectionsSubscriptions(t *testing.T) {
+	hub := NewHub()
+	conn := newConnection(&websocket.Conn{})
+	listID := uuid.New()
+	hub.register("client-1", conn)
+	hub.subscribe(conn, []uuid.UUID{listID})
+
+	hub.unregister("client-1", conn)
+
+	assert.Empty(t, hub.subscribersFor(listID))
+	hub.mu.RLock()
+	_, exists := hub.subscribedLists[conn]
+	hub.mu.RUnlock()
+	assert.False(t, exists, "the reverse index entry should be cleaned up too")
+}
+
+func TestHub_ParseListIDs_SkipsMalformedEntriesRatherThanFailingTheWholeSubscribe(t *testing.T) {
+	valid := uuid.New()
+
+	ids := parseListIDs([]any{valid.String(), "not-a-uuid", 42, valid.String()})
+
+	assert.Equal(t, []uuid.UUID{valid, valid}, ids)
+}
+
+func TestHub_ParseListIDs_ReturnsNilForTheWrongShape(t *testing.T) {
+	assert.Nil(t, parseListIDs("not-an-array"))
+	assert.Nil(t, parseListIDs(nil))
+}

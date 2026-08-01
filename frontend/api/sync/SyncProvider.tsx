@@ -15,6 +15,7 @@ import { SyncSocket } from "@/api/sync/sync-socket"
 import { EventApplier } from "@/api/sync/event-applier"
 import { isSyncConfigured } from "@/api/sync/config"
 import { onOutboxChanged } from "@/api/sync/outbox-events"
+import { onSyncListsChanged } from "@/api/sync/sync-events"
 import { createLogger } from "@/api/common/logger"
 
 const logger = createLogger("SyncProvider")
@@ -25,6 +26,12 @@ const logger = createLogger("SyncProvider")
 // pull + self-heal pass happens periodically even if the app sits open,
 // connected, and idle for a long time.
 const RECONCILE_SAFETY_INTERVAL_MS = 5 * 60 * 1000
+
+// Coalesces a burst of "new event" notifications for the same list (e.g.
+// several quick edits) into one pull, and gives an echo of our own
+// just-pushed events a moment to resolve as a harmless no-op (the applier
+// is idempotent either way, but there's no reason to pull mid-burst).
+const LIST_EVENT_DEBOUNCE_MS = 400
 
 type SyncContextValue = {
   engine: SyncEngine
@@ -98,33 +105,65 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     await engine.pull(idsResult.getValue()!)
   }
 
+  async function subscribeNow(): Promise<void> {
+    const idsResult = await listRepository.getSyncEnabledIds()
+    if (!idsResult.success) {
+      logger.error(
+        "Subscribe: failed to load sync-enabled list ids",
+        idsResult.getError()
+      )
+      return
+    }
+    socket.subscribe(idsResult.getValue()!)
+  }
+
   // engine and listRepository are stable (memoized with no deps), so this
   // closure behaves identically across renders even though it isn't
   // memoized itself.
-  const socket = useMemo(
-    () =>
-      new SyncSocket(
-        (eventId) => {
-          engine.handleAck(eventId).catch((error) => {
-            logger.error("Failed to handle ack", error)
-          })
-        },
-        () => {
-          // Freshly (re)connected is exactly the moment a gap that opened
-          // up while disconnected should be caught - both directions:
-          // pull anything the server got that we don't have yet, and
-          // reconcile (self-heal) anything we sent that never got acked.
-          pullNow().catch((error) => {
-            logger.error("Pull on connect failed", error)
-          })
-          reconcileNow().catch((error) => {
-            logger.error("Reconcile on connect failed", error)
-          })
+  const socket = useMemo(() => {
+    // Debounce state lives here, closed over by the onListEvent callback -
+    // scoped to this one SyncSocket instance's lifetime, same as the
+    // socket itself.
+    const pendingPulls = new Map<string, ReturnType<typeof setTimeout>>()
+
+    return new SyncSocket(
+      (eventId) => {
+        engine.handleAck(eventId).catch((error) => {
+          logger.error("Failed to handle ack", error)
+        })
+      },
+      () => {
+        // Freshly (re)connected is exactly the moment a gap that opened
+        // up while disconnected should be caught - both directions:
+        // pull anything the server got that we don't have yet, and
+        // reconcile (self-heal) anything we sent that never got acked.
+        // The socket itself already resent our subscriptions from its own
+        // onopen, before this fires.
+        pullNow().catch((error) => {
+          logger.error("Pull on connect failed", error)
+        })
+        reconcileNow().catch((error) => {
+          logger.error("Reconcile on connect failed", error)
+        })
+      },
+      (listId) => {
+        const existing = pendingPulls.get(listId)
+        if (existing) {
+          clearTimeout(existing)
         }
-      ),
+        pendingPulls.set(
+          listId,
+          setTimeout(() => {
+            pendingPulls.delete(listId)
+            engine.pullList(listId).catch((error) => {
+              logger.error(`Pull for list ${listId} failed`, error)
+            })
+          }, LIST_EVENT_DEBOUNCE_MS)
+        )
+      }
+    )
     // eslint-disable-next-line react-hooks/exhaustive-deps -- engine/listRepository are stable; pullNow/reconcileNow's identity intentionally isn't tracked here.
-    [engine]
-  )
+  }, [engine])
 
   useEffect(() => {
     if (status !== "signedIn" || !isSyncConfigured()) {
@@ -138,6 +177,13 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       })
     }
 
+    // subscribeNow before connect(): the socket sends whatever
+    // subscription it has as soon as it opens (see SyncSocket.connect's
+    // onopen), so the list ids need to already be set before that races
+    // ahead of us.
+    subscribeNow().catch((error) => {
+      logger.error("Subscribe on mount failed", error)
+    })
     // Try immediately rather than waiting for the first trigger - e.g. a
     // list created with sync on while offline should go out as soon as the
     // user (re)gains a signed-in, connected session. Pull before flush:
@@ -154,6 +200,18 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     })
 
     const unsubscribeOutbox = onOutboxChanged(flush)
+    // A list's sync toggle flipping changes both what we should be
+    // subscribed to and what we should pull/push for - re-subscribe (and
+    // nudge a pull) so a newly-enabled list starts getting live updates
+    // immediately rather than waiting for the next reconnect/foreground.
+    const unsubscribeSyncLists = onSyncListsChanged(() => {
+      subscribeNow().catch((error) => {
+        logger.error("Re-subscribe after sync list change failed", error)
+      })
+      pullNow().catch((error) => {
+        logger.error("Pull after sync list change failed", error)
+      })
+    })
 
     const appStateSubscription = AppState.addEventListener(
       "change",
@@ -187,11 +245,12 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
     return () => {
       unsubscribeOutbox()
+      unsubscribeSyncLists()
       appStateSubscription.remove()
       clearInterval(safetyInterval)
       socket.disconnect()
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- pullNow/reconcileNow/flush close over stable engine/listRepository/socket.
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- pullNow/reconcileNow/subscribeNow/flush close over stable engine/listRepository/socket.
   }, [status, engine, socket])
 
   const value = useMemo(() => ({ engine }), [engine])

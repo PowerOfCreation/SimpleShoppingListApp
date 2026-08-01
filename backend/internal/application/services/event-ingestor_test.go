@@ -99,15 +99,44 @@ type ackCall struct {
 	eventID  uuid.UUID
 }
 
+type listEventCall struct {
+	listID uuid.UUID
+	seq    int64
+}
+
 type fakeAckPublisher struct {
-	mu    sync.Mutex
-	acked []ackCall
+	mu         sync.Mutex
+	acked      []ackCall
+	listEvents []listEventCall
 }
 
 func (f *fakeAckPublisher) PublishAck(clientID string, eventID uuid.UUID) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.acked = append(f.acked, ackCall{clientID, eventID})
+}
+
+func (f *fakeAckPublisher) PublishListEvent(listID uuid.UUID, seq int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listEvents = append(f.listEvents, listEventCall{listID, seq})
+}
+
+func (f *fakeAckPublisher) listEventCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.listEvents)
+}
+
+func (f *fakeAckPublisher) hasListEvent(listID uuid.UUID) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, e := range f.listEvents {
+		if e.listID == listID {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *fakeAckPublisher) count() int {
@@ -182,6 +211,83 @@ func TestEventIngestor_ProcessesAndAcksAFreshEvent(t *testing.T) {
 
 	assert.Equal(t, 1, handler.callCount())
 	assert.True(t, repo.isProcessed(event.EventID))
+}
+
+func TestEventIngestor_PublishesAListEventWithTheAssignedSeqAfterProcessing(t *testing.T) {
+	repo := newFakeEventRepo()
+	handler := &fakeHandler{eventType: "todo_list.created"}
+	dispatcher := NewEventDispatcher(handler)
+	ack := &fakeAckPublisher{}
+	ingestor := NewEventIngestor(repo, dispatcher, ack)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ingestor.Start(ctx)
+	defer ingestor.Stop()
+
+	event := makeIngestorTestEvent("todo_list.created")
+	listID := event.AggregateID
+	event.ListID = &listID
+	require.NoError(t, ingestor.Enqueue(ctx, event))
+
+	require.Eventually(t, func() bool {
+		return ack.hasListEvent(listID)
+	}, time.Second, time.Millisecond)
+
+	assert.Equal(t, 1, ack.listEventCount())
+}
+
+func TestEventIngestor_DoesNotPublishAListEventWhenTheEventHasNoListID(t *testing.T) {
+	repo := newFakeEventRepo()
+	handler := &fakeHandler{eventType: "todo_list.created"}
+	dispatcher := NewEventDispatcher(handler)
+	ack := &fakeAckPublisher{}
+	ingestor := NewEventIngestor(repo, dispatcher, ack)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ingestor.Start(ctx)
+	defer ingestor.Stop()
+
+	// makeIngestorTestEvent leaves ListID nil - an older client, or an
+	// event whose list_id couldn't be resolved.
+	event := makeIngestorTestEvent("todo_list.created")
+	require.NoError(t, ingestor.Enqueue(ctx, event))
+
+	require.Eventually(t, func() bool { return ack.has(event.EventID) }, time.Second, time.Millisecond)
+	// Give a wrongly-published list event a moment to arrive before
+	// asserting its absence.
+	time.Sleep(20 * time.Millisecond)
+
+	assert.Equal(t, 0, ack.listEventCount())
+}
+
+func TestEventIngestor_DuplicateEventID_DoesNotPublishASecondListEvent(t *testing.T) {
+	repo := newFakeEventRepo()
+	handler := &fakeHandler{eventType: "todo_list.created"}
+	dispatcher := NewEventDispatcher(handler)
+	ack := &fakeAckPublisher{}
+	ingestor := NewEventIngestor(repo, dispatcher, ack)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ingestor.Start(ctx)
+	defer ingestor.Stop()
+
+	event := makeIngestorTestEvent("todo_list.created")
+	listID := event.AggregateID
+	event.ListID = &listID
+	require.NoError(t, ingestor.Enqueue(ctx, event))
+	require.Eventually(t, func() bool { return ack.hasListEvent(listID) }, time.Second, time.Millisecond)
+
+	// A resend after the ack was lost - nothing newly became visible (the
+	// seq this event got was already published), so a client that missed
+	// the original notification must recover via its next head check
+	// instead of a second notification here.
+	require.NoError(t, ingestor.Enqueue(ctx, event))
+	require.Eventually(t, func() bool { return ack.count() == 2 }, time.Second, time.Millisecond)
+
+	assert.Equal(t, 1, ack.listEventCount())
 }
 
 func TestEventIngestor_DuplicateEventID_AcksWithoutRedispatching(t *testing.T) {
