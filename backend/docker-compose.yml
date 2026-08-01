@@ -1,0 +1,37 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: todos
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      # Mounted individually (not the whole migrations/ dir) and with a
+      # numeric prefix: docker-entrypoint-initdb.d runs scripts in
+      # alphabetical order, and the directory also contains .down.sql files
+      # which would sort before their .up.sql counterpart and drop
+      # everything on first boot.
+      - ./migrations/00001-initial-schema.up.sql:/docker-entrypoint-initdb.d/01-initial-schema.sql
+      - ./migrations/00002-events-table.up.sql:/docker-entrypoint-initdb.d/02-events-table.sql
+      - ./migrations/00003-events-processed-at.up.sql:/docker-entrypoint-initdb.d/03-events-processed-at.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  api:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      DATABASE_URL: "host=postgres user=postgres password=postgres dbname=todos port=5432 sslmode=disable"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  postgres_data:

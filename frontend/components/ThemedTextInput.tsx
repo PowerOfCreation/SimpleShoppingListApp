@@ -1,5 +1,5 @@
 import { useThemeColor } from "@/hooks/useThemeColor"
-import { StyleSheet, TextInput } from "react-native"
+import { StyleProp, StyleSheet, TextInput, TextStyle } from "react-native"
 import React, { forwardRef, LegacyRef } from "react"
 
 export type ThemedTextInputParams = {
@@ -13,6 +13,7 @@ export type ThemedTextInputParams = {
   autoFocus?: boolean
   showSoftInputOnFocus?: boolean
   selectTextOnFocus?: boolean
+  style?: StyleProp<TextStyle>
   ref?: LegacyRef<TextInput>
 }
 
@@ -36,7 +37,7 @@ export const ThemedTextInput = forwardRef<TextInput, ThemedTextInputParams>(
     return (
       <TextInput
         testID={props.testID}
-        style={[styles.input, colorStyles]}
+        style={[styles.input, colorStyles, props.style]}
         onChangeText={props.onChangeText}
         onBlur={props.onBlur}
         value={props.value}
@@ -54,7 +55,6 @@ export const ThemedTextInput = forwardRef<TextInput, ThemedTextInputParams>(
 
 const styles = StyleSheet.create({
   input: {
-    flex: 1,
     height: 40,
     borderWidth: 1.4,
     borderRadius: 8,

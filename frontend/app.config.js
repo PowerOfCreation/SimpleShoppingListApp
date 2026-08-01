@@ -5,6 +5,10 @@ const {
 
 const IS_DEV = process.env.APP_VARIANT === "development"
 
+const BUNDLE_ID = IS_DEV
+  ? "de.lightdevsolutions.sholist.dev"
+  : "de.lightdevsolutions.sholist"
+
 // Android's "Force Dark" auto-repaints views it thinks are light-themed,
 // which shifts our custom dark-mode colors (e.g. adds a blue cast to the
 // background) even though the hex values in Colors.ts are correct.
@@ -43,22 +47,23 @@ const config = {
   version: "1.0.0",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
-  scheme: IS_DEV ? "sholist-dev" : "sholist",
+  // The reverse-DNS scheme is what the OIDC login redirects back to (RFC 8252).
+  // iOS derives it from the bundle id automatically, Android only lists it when
+  // it is declared here explicitly. Exactly one entry on purpose: with several,
+  // expo-linking has to guess the app's canonical scheme and warns on every
+  // start.
+  scheme: BUNDLE_ID,
   userInterfaceStyle: "automatic",
   ios: {
     supportsTablet: true,
-    bundleIdentifier: IS_DEV
-      ? "de.lightdevsolutions.sholist.dev"
-      : "de.lightdevsolutions.sholist",
+    bundleIdentifier: BUNDLE_ID,
   },
   android: {
     adaptiveIcon: {
       foregroundImage: "./assets/images/adaptive-icon.png",
       backgroundColor: "#ffffff",
     },
-    package: IS_DEV
-      ? "de.lightdevsolutions.sholist.dev"
-      : "de.lightdevsolutions.sholist",
+    package: BUNDLE_ID,
   },
   web: {
     bundler: "metro",
@@ -74,6 +79,12 @@ const config = {
             reactNativeArchitectures: ANDROID_ARCHS,
             "org.gradle.workers.max": "4",
           },
+          // Android release builds block cleartext (http://, ws://) traffic
+          // by default - only debug builds get a permissive network
+          // security config automatically. Without this, a release APK
+          // pointed at a plain-http backend (e.g. a local dev server over
+          // adb reverse) fails every sync request silently.
+          usesCleartextTraffic: true,
         },
       },
     ],
@@ -81,6 +92,7 @@ const config = {
     "expo-font",
     "expo-sqlite",
     "expo-web-browser",
+    "expo-secure-store",
     [
       "expo-splash-screen",
       {

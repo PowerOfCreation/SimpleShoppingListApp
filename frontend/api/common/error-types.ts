@@ -74,12 +74,40 @@ export class ValidationError extends AppError {
 }
 
 /**
+ * Authentication error
+ */
+export class AuthError extends AppError {
+  constructor(
+    message: string = "Authentication failed",
+    public originalError?: unknown
+  ) {
+    super(message)
+  }
+}
+
+/**
  * Feature not implemented error
  */
 export class NotImplementedError extends AppError {
   constructor(
     message: string = "This feature is not implemented yet",
     public feature?: string
+  ) {
+    super(message)
+  }
+}
+
+/**
+ * Backend sync error. `retryable` distinguishes "try again later" failures
+ * (network hiccup, 5xx, timeout) from ones a retry can't fix (401 - the
+ * outbox row must stay pending and wait for reconcile/re-auth rather than
+ * being hammered every flush).
+ */
+export class SyncError extends AppError {
+  constructor(
+    message: string = "Sync failed",
+    public retryable: boolean = true,
+    public originalError?: unknown
   ) {
     super(message)
   }
