@@ -1,12 +1,13 @@
 import { router, useFocusEffect } from "expo-router"
 import React from "react"
-import { Switch, View, StyleSheet, TextInput } from "react-native"
+import { View, StyleSheet, TextInput } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { ThemedText } from "@/components/ThemedText"
 import { PrimaryButton } from "@/components/PrimaryButton"
 import { Palette } from "@/constants/Colors"
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { ThemedTextInput } from "@/components/ThemedTextInput"
+import { ToggleRow } from "@/components/ToggleRow"
 import { shoppingListService } from "@/api/shopping-list-service"
 import { useAuth } from "@/api/auth/AuthProvider"
 
@@ -21,9 +22,7 @@ export default function NewShoppingList() {
   const { status } = useAuth()
   const isSignedIn = status === "signedIn"
 
-  const accentColor = useThemeColor({}, "accent")
   const dividerColor = useThemeColor({}, "divider")
-  const dividerSubtleColor = useThemeColor({}, "dividerSubtle")
   const textSecondaryColor = useThemeColor({}, "textSecondary")
 
   // A signed-out user can't have toggled this meaningfully - the switch is
@@ -91,32 +90,22 @@ export default function NewShoppingList() {
         </ThemedText>
       ) : null}
 
-      <View
+      <ToggleRow
         style={[
           styles.syncRow,
           { borderTopColor: dividerColor, borderBottomColor: dividerColor },
         ]}
-      >
-        <View style={styles.syncTextContainer}>
-          <ThemedText style={styles.syncTitle}>Sync with account</ThemedText>
-          <ThemedText
-            style={[styles.syncSubtitle, { color: textSecondaryColor }]}
-          >
-            {isSignedIn
-              ? "Available on all devices, shareable with others"
-              : "Sign in to sync lists across devices"}
-          </ThemedText>
-        </View>
-        <Switch
-          testID="sync-with-account-switch"
-          accessibilityLabel="Sync with account"
-          value={effectiveSyncEnabled}
-          onValueChange={setSyncEnabled}
-          disabled={!isSignedIn}
-          trackColor={{ false: dividerSubtleColor, true: accentColor }}
-          thumbColor="#ffffff"
-        />
-      </View>
+        title="Sync with account"
+        subtitle={
+          isSignedIn
+            ? "Available on all devices, shareable with others"
+            : "Sign in to sync lists across devices"
+        }
+        value={effectiveSyncEnabled}
+        onValueChange={setSyncEnabled}
+        disabled={!isSignedIn}
+        testID="sync-with-account-switch"
+      />
 
       <View style={styles.createButtonContainer}>
         <PrimaryButton
@@ -155,18 +144,6 @@ const styles = StyleSheet.create({
     borderBottomWidth: 1,
     paddingVertical: 14,
     marginTop: 22,
-  },
-  syncTextContainer: {
-    flex: 1,
-    paddingRight: 12,
-  },
-  syncTitle: {
-    fontSize: 14.5,
-    fontWeight: "600",
-  },
-  syncSubtitle: {
-    fontSize: 11.5,
-    marginTop: 2,
   },
   createButtonContainer: {
     marginTop: 24,

@@ -107,8 +107,9 @@ describe("ShoppingListService", () => {
       expect(entries[0].event.event_type).toBe(EventTypes.TODO_LIST_CREATED)
       expect(entries[0].enqueueForSync).toBe(true)
 
-      // The sync_enabled event itself must never be sent to the server -
-      // the backend has no handler for it and never should.
+      // On creation the sync_enabled event stays local - todo_list.created
+      // already signals the list to the server. Sync state changes later go
+      // through setSyncEnabled, which does enqueue them.
       expect(entries[1].event.event_type).toBe(
         EventTypes.TODO_LIST_SYNC_ENABLED
       )
@@ -185,11 +186,12 @@ describe("ShoppingListService", () => {
         mockEventRepository.enqueueExistingForSync.mock.calls[0]
       expect(replayed.map((e: DomainEventRow) => e.event_id)).toEqual([
         "e1",
+        "e2",
         "e3",
       ])
     })
 
-    it("enabling appends a todo_list.sync_enabled event", async () => {
+    it("enabling appends and enqueues a todo_list.sync_enabled event", async () => {
       mockEventRepository.getByAggregateId.mockResolvedValue(Result.ok([]))
 
       await service.setSyncEnabled("list-1", true)
@@ -198,9 +200,10 @@ describe("ShoppingListService", () => {
       expect(entries[0].event.event_type).toBe(
         EventTypes.TODO_LIST_SYNC_ENABLED
       )
+      expect(entries[0].enqueueForSync).toBe(true)
     })
 
-    it("disabling cancels pending outbox rows instead of touching history", async () => {
+    it("disabling cancels pending outbox rows but re-queues the sync_disabled event", async () => {
       const result = await service.setSyncEnabled("list-1", false)
 
       expect(result.success).toBe(true)
@@ -208,12 +211,22 @@ describe("ShoppingListService", () => {
         "list-1"
       )
       expect(mockEventRepository.getByAggregateId).not.toHaveBeenCalled()
-      expect(mockEventRepository.enqueueExistingForSync).not.toHaveBeenCalled()
 
       const [entries] = mockEventRepository.appendAll.mock.calls[0]
       expect(entries[0].event.event_type).toBe(
         EventTypes.TODO_LIST_SYNC_DISABLED
       )
+      expect(entries[0].enqueueForSync).toBe(true)
+
+      // cancelForAggregate wipes the pending sync_disabled row, so it is
+      // re-queued afterwards to keep the backend informed.
+      expect(mockEventRepository.enqueueExistingForSync).toHaveBeenCalledTimes(
+        1
+      )
+      const [requeued] =
+        mockEventRepository.enqueueExistingForSync.mock.calls[0]
+      expect(requeued).toHaveLength(1)
+      expect(requeued[0].event_type).toBe(EventTypes.TODO_LIST_SYNC_DISABLED)
     })
   })
 })

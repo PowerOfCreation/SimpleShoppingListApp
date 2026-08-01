@@ -21,6 +21,9 @@ export type ShoppingListEntryProps = {
   onRename: (newName: string) => void
   onPressOut?: (event: GestureResponderEvent) => void
   onDelete?: () => void
+  syncEnabled?: boolean
+  onToggleSync?: (enabled: boolean) => void
+  syncToggleDisabled?: boolean
 }
 
 export function ShoppingListEntry(props: ShoppingListEntryProps) {
@@ -96,6 +99,14 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
             label: "Rename",
             testID: `shopping-list-context-rename-${props.id}`,
             onPress: () => setShowRenameSheet(true),
+          },
+          {
+            type: "toggle",
+            label: "Sync with account",
+            testID: `shopping-list-context-sync-${props.id}`,
+            value: props.syncEnabled ?? false,
+            disabled: props.syncToggleDisabled,
+            onValueChange: (enabled) => props.onToggleSync?.(enabled),
           },
           {
             label: "Delete",

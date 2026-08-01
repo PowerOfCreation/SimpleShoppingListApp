@@ -120,11 +120,15 @@ export class ShoppingListService {
   /**
    * Turns sync on or off for an existing list.
    *
-   * Turning it on replays the aggregate's existing todo_list.* history into
-   * the outbox (in stable occurred_at+insertion order) so the server ends
-   * up with the list's full history, not just its current name. Turning it
-   * off only cancels still-pending outbox rows - the server's existing copy
-   * (if any) is left alone; deleting it is a separate, explicit action.
+   * The toggle itself is stored as a domain event (`todo_list.sync_enabled` /
+   * `todo_list.sync_disabled`) and enqueued so the backend learns of the
+   * change (it has no handler for these yet and ignores them for now).
+   *
+   * Turning it on additionally replays the aggregate's existing syncable
+   * history into the outbox (in stable occurred_at+insertion order) so the
+   * server ends up with the list's full history, not just its current name.
+   * Turning it off cancels still-pending outbox rows - the server's existing
+   * copy (if any) is left alone; deleting it is a separate, explicit action.
    */
   async setSyncEnabled(
     listId: string,
@@ -151,6 +155,7 @@ export class ShoppingListService {
             enabled
               ? this.projection.handleSyncEnabled(db, syncEvent)
               : this.projection.handleSyncDisabled(db, syncEvent),
+          enqueueForSync: true,
         },
       ])
       if (!appendResult.success) {
@@ -172,15 +177,26 @@ export class ShoppingListService {
         if (!enqueueResult.success) {
           return Result.fail(enqueueResult.getError())
         }
-
-        notifyOutboxChanged()
       } else {
         const cancelResult =
           await this.outboxRepository.cancelForAggregate(listId)
         if (!cancelResult.success) {
           return Result.fail(cancelResult.getError())
         }
+
+        // cancelForAggregate removes every still-pending row for this
+        // aggregate - including the sync_disabled event appended above -
+        // so re-queue that one event to make sure the backend still learns
+        // this list's sync was turned off.
+        const requeueResult = await this.eventRepository.enqueueExistingForSync(
+          [syncEvent]
+        )
+        if (!requeueResult.success) {
+          return Result.fail(requeueResult.getError())
+        }
       }
+
+      notifyOutboxChanged()
 
       return Result.ok(undefined)
     } catch (error) {

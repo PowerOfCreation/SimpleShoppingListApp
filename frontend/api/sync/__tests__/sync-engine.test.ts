@@ -208,7 +208,7 @@ describe("SyncEngine", () => {
         Result.ok([
           makeEvent({
             event_id: "local-only",
-            event_type: EventTypes.TODO_LIST_SYNC_ENABLED,
+            event_type: EventTypes.INGREDIENT_CREATED,
           }),
         ])
       )
