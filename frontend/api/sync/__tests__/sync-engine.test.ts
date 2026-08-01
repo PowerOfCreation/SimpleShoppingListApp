@@ -73,6 +73,7 @@ describe("SyncEngine", () => {
     events = {
       getByEventIds: jest.fn().mockResolvedValue(Result.ok([])),
       getByAggregateId: jest.fn().mockResolvedValue(Result.ok([])),
+      getByListId: jest.fn().mockResolvedValue(Result.ok([])),
       enqueueExistingForSync: jest.fn().mockResolvedValue(Result.ok(undefined)),
     } as unknown as jest.Mocked<EventRepository>
 
@@ -273,7 +274,7 @@ describe("SyncEngine", () => {
   })
 
   describe("reconcile", () => {
-    it("does nothing for an empty aggregate id list", async () => {
+    it("does nothing for an empty list id list", async () => {
       await engine.reconcile([])
 
       expect(client.getKnownEventIds).not.toHaveBeenCalled()
@@ -281,7 +282,7 @@ describe("SyncEngine", () => {
 
     it("re-enqueues and resets to pending anything the server doesn't know about", async () => {
       client.getKnownEventIds.mockResolvedValue(Result.ok(["known-evt"]))
-      events.getByAggregateId.mockResolvedValue(
+      events.getByListId.mockResolvedValue(
         Result.ok([
           makeEvent({
             event_id: "known-evt",
@@ -297,6 +298,7 @@ describe("SyncEngine", () => {
       await engine.reconcile(["list-1"])
 
       expect(client.getKnownEventIds).toHaveBeenCalledWith(["list-1"])
+      expect(events.getByListId).toHaveBeenCalledWith("list-1")
       expect(events.enqueueExistingForSync).toHaveBeenCalledWith([
         expect.objectContaining({ event_id: "missing-evt" }),
       ])
@@ -306,9 +308,26 @@ describe("SyncEngine", () => {
       expect(outbox.getPending).toHaveBeenCalled()
     })
 
+    it("chunks more than 200 list ids into separate getKnownEventIds calls, then flushes once", async () => {
+      const listIds = Array.from({ length: 250 }, (_, i) => `list-${i}`)
+
+      await engine.reconcile(listIds)
+
+      expect(client.getKnownEventIds).toHaveBeenCalledTimes(2)
+      expect(client.getKnownEventIds).toHaveBeenNthCalledWith(
+        1,
+        listIds.slice(0, 200)
+      )
+      expect(client.getKnownEventIds).toHaveBeenNthCalledWith(
+        2,
+        listIds.slice(200)
+      )
+      expect(outbox.getPending).toHaveBeenCalledTimes(1)
+    })
+
     it("ignores non-syncable (local-only) event types when comparing against the server", async () => {
       client.getKnownEventIds.mockResolvedValue(Result.ok([]))
-      events.getByAggregateId.mockResolvedValue(
+      events.getByListId.mockResolvedValue(
         Result.ok([
           // Every real EventTypes value is syncable today (todo_list.* and
           // ingredient.*) - this synthetic type exercises the
@@ -329,7 +348,7 @@ describe("SyncEngine", () => {
 
     it("does nothing further when the server already knows everything", async () => {
       client.getKnownEventIds.mockResolvedValue(Result.ok(["e1"]))
-      events.getByAggregateId.mockResolvedValue(
+      events.getByListId.mockResolvedValue(
         Result.ok([makeEvent({ event_id: "e1" })])
       )
 

@@ -58,12 +58,26 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
 - **Env/config:** backend URL via `.env.development` / `.env.production`
   (`EXPO_PUBLIC_API_URL`, checked in); Keycloak via local `.env`. Backend
   target via `DATABASE_URL`.
-- **Sync (WIP, client→server only):** offline mutations → `POST /api/v1/events`
-  (REST, 202); **WebSocket** (`/api/v1/sync/ws`) pushes per-event **acks** so the
-  client doesn't poll. `/api/v1/sync/state` reconciles lost acks. There is **no
-  webhook** and **no server→client pull sync yet**. See
-  `frontend/docs/sync-design-decisions.md`.
-- **Backend auth:** no JWT validation / user scoping yet — deferred (see design doc).
+- **Sync (bidirectional, list content included):** offline mutations (both
+  `todo_list.*` and `ingredient.*` events) → `POST /api/v1/events` (REST, 202);
+  **WebSocket** (`/api/v1/sync/ws`) pushes per-event **acks**, plus a
+  **`{"type":"event"}`** notification to clients subscribed (via
+  `{"type":"subscribe","list_ids":[...]}`) to a list that just got a new event —
+  so the client doesn't have to poll for either direction. Pull:
+  `POST /api/v1/sync/head` reports each list's current server cursor
+  (`seq` + latest event id); `GET /api/v1/sync/events` returns a list's event
+  history since a given `seq`, applied locally by rebuilding that list's
+  projection from its full merged (local + pulled) history. `POST
+  /api/v1/sync/state` reconciles lost acks (self-heal for push, keyed by
+  `list_id`). Pull only ever fetches lists already known and sync-enabled
+  locally — there is **no** "restore my lists after reinstall" / discovery
+  endpoint. See `frontend/docs/sync-design-decisions.md`.
+- **Backend auth:** verifies Keycloak bearer tokens (see
+  `backend/internal/interface/api/middleware`) on `/api/v1/events` and every
+  `/api/v1/sync/*` route; falls back to no auth (with a loud warning) if
+  `KEYCLOAK_ISSUER`/`KEYCLOAK_CLIENT_ID` aren't set or the issuer is
+  unreachable. Still **no user scoping** of the data itself — any valid token
+  can read/write any known list id (see design doc).
 
 ## Relevant docs
 

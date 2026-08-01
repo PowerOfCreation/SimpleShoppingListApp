@@ -125,7 +125,7 @@ describe("SyncClient", () => {
   })
 
   describe("getKnownEventIds", () => {
-    it("posts aggregate ids and returns known event ids", async () => {
+    it("posts list ids and returns known event ids", async () => {
       const fetchMock = jest.fn().mockResolvedValue({
         ok: true,
         status: 200,
@@ -141,11 +141,11 @@ describe("SyncClient", () => {
       const [url, options] = fetchMock.mock.calls[0]
       expect(url).toContain("/api/v1/sync/state")
       expect(JSON.parse(options.body)).toEqual({
-        aggregate_ids: ["list-1", "list-2"],
+        list_ids: ["list-1", "list-2"],
       })
     })
 
-    it("returns an empty list trivially for no aggregate ids", async () => {
+    it("returns an empty list trivially for no list ids", async () => {
       const fetchMock = jest.fn()
       const client = new SyncClient(fetchMock)
 

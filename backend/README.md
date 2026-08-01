@@ -26,11 +26,15 @@ auth disabled, any request at all - can read/write any known list id); see
 
 ## Sync API
 
-The frontend pushes offline mutations to the backend and pulls a list's full
-history back (including from other devices); ack + reconcile round out the
-(WIP) sync mechanism. `/api/v1/events`, `/api/v1/sync/*` (including the
-WebSocket upgrade) all require a bearer token when Keycloak is configured -
-see [Run locally](#run-locally-dev).
+Sync is bidirectional: the frontend pushes offline mutations to the backend
+*and* pulls a list's full history back (including changes from other
+devices); ack + reconcile + a live WebSocket nudge round out the mechanism so
+neither direction has to poll. `/api/v1/events`, `/api/v1/sync/*` (including
+the WebSocket upgrade) all require a bearer token when Keycloak is configured
+- see [Run locally](#run-locally-dev). Not yet built: user-scoping (any valid
+token can read/write any known list id) and a "restore my lists after
+reinstall" endpoint - pull only ever fetches lists already known and
+sync-enabled locally. See `frontend/docs/sync-design-decisions.md`.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -38,7 +42,7 @@ see [Run locally](#run-locally-dev).
 | POST | `/api/v1/sync/state` | Reconcile: reports which events the server durably has, per list |
 | POST | `/api/v1/sync/head` | Reports each requested list's current pull cursor (seq + latest event id) |
 | GET | `/api/v1/sync/events` | Pull: one page of a list's event history since a given seq |
-| GET | `/api/v1/sync/ws` | WebSocket; pushes per-event `ack`s to the client (no polling) |
+| GET | `/api/v1/sync/ws` | WebSocket; pushes per-event `ack`s and, to clients subscribed to a list (`{"type":"subscribe","list_ids":[...]}`), a `{"type":"event"}` notification when that list gets a new event |
 
 ## Updating the dev database schema
 

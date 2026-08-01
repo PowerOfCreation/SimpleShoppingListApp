@@ -164,17 +164,18 @@ export class SyncClient {
   }
 
   /**
-   * Reconcile: for a set of sync-enabled aggregate (list) ids, asks the
-   * server which event ids it actually has durably stored. Anything we
-   * believe is synced but isn't in the response goes back to pending and
-   * gets resent - the self-heal path. Aggregate ids rather than event ids
-   * because that's what the app tracks per list; the server maps each
-   * aggregate to the events it holds for it.
+   * Reconcile: for a set of sync-enabled list ids, asks the server which
+   * event ids it actually has durably stored. Anything we believe is
+   * synced but isn't in the response goes back to pending and gets resent
+   * - the self-heal path. Keyed by list_id, not aggregate_id: aggregate_id
+   * is the ingredient id for ingredient.* events, so a single list can
+   * span arbitrarily many aggregate_ids but always has exactly one
+   * list_id - see sync-design-decisions.md.
    */
   async getKnownEventIds(
-    aggregateIds: string[]
+    listIds: string[]
   ): Promise<Result<string[], SyncError>> {
-    if (aggregateIds.length === 0) {
+    if (listIds.length === 0) {
       return Result.ok([])
     }
 
@@ -194,7 +195,7 @@ export class SyncClient {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`,
         },
-        body: JSON.stringify({ aggregate_ids: aggregateIds }),
+        body: JSON.stringify({ list_ids: listIds }),
         signal: controller.signal,
       })
 

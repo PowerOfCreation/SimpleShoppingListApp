@@ -10,6 +10,19 @@ const logger = createLogger("SyncEngine")
 
 const DEFAULT_BATCH_LIMIT = 50
 const DEFAULT_PULL_PAGE_LIMIT = 200
+// Mirrors the backend's maxSyncListIDs cap on /api/v1/sync/state - nobody
+// realistically has this many synced lists, but the cap is enforced
+// server-side regardless, so chunk defensively rather than ever risk a
+// rejected reconcile call.
+const MAX_RECONCILE_LIST_IDS = 200
+
+function chunk<T>(items: T[], size: number): T[][] {
+  const chunks: T[][] = []
+  for (let i = 0; i < items.length; i += size) {
+    chunks.push(items.slice(i, i + size))
+  }
+  return chunks
+}
 
 // Caps how many pages a single flush() call will drain before yielding,
 // so an unusually large backlog (e.g. hours offline with sync on) can't
@@ -150,20 +163,34 @@ export class SyncEngine {
   }
 
   /**
-   * Self-heal: for the given (sync-enabled) aggregate ids, compares the
+   * Self-heal: for the given (sync-enabled) list ids, compares the
    * syncable events we have locally against what the server reports it
    * durably holds. Anything missing from the server is queued (or
    * re-queued, if the local outbox already thought it was synced) and
    * flushed immediately - this is what recovers from a lost ack, an app
    * kill between send and ack, or the server losing data it had
    * previously acked.
+   *
+   * Keyed by list_id, not aggregate_id: aggregate_id is the ingredient id
+   * for ingredient.* events, so a client would otherwise have to enumerate
+   * every ingredient id in a list instead of the one list_id it already
+   * has (see /api/v1/sync/state's clean break to list_ids and
+   * sync-design-decisions.md).
    */
-  async reconcile(aggregateIds: string[]): Promise<void> {
-    if (aggregateIds.length === 0) {
+  async reconcile(listIds: string[]): Promise<void> {
+    if (listIds.length === 0) {
       return
     }
 
-    const knownResult = await this.client.getKnownEventIds(aggregateIds)
+    for (const batch of chunk(listIds, MAX_RECONCILE_LIST_IDS)) {
+      await this.reconcileBatch(batch)
+    }
+
+    await this.flush()
+  }
+
+  private async reconcileBatch(listIds: string[]): Promise<void> {
+    const knownResult = await this.client.getKnownEventIds(listIds)
     if (!knownResult.success) {
       logger.warn(
         "Reconcile failed, will retry on the next trigger",
@@ -173,12 +200,11 @@ export class SyncEngine {
     }
     const known = new Set(knownResult.getValue()!)
 
-    for (const aggregateId of aggregateIds) {
-      const eventsResult =
-        await this.eventRepository.getByAggregateId(aggregateId)
+    for (const listId of listIds) {
+      const eventsResult = await this.eventRepository.getByListId(listId)
       if (!eventsResult.success) {
         logger.warn(
-          `Reconcile: failed to load history for ${aggregateId}`,
+          `Reconcile: failed to load history for list ${listId}`,
           eventsResult.getError()
         )
         continue
@@ -204,8 +230,6 @@ export class SyncEngine {
         missing.map((event) => event.event_id)
       )
     }
-
-    await this.flush()
   }
 
   /**
