@@ -3,4 +3,5 @@ export type IngredientList = {
   name: string
   created_at?: number
   updated_at?: number
+  syncEnabled?: boolean
 }

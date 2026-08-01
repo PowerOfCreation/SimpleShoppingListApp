@@ -29,7 +29,8 @@ describe("IngredientListRepository", () => {
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        sync_enabled INTEGER NOT NULL DEFAULT 0
       );
     `)
 
@@ -170,6 +171,33 @@ describe("IngredientListRepository", () => {
     })
   })
 
+  describe("getSyncEnabledIds", () => {
+    it("returns only ids of sync-enabled lists", async () => {
+      await db.execAsync(`
+        INSERT INTO ingredient_lists (id, name, created_at, updated_at, sync_enabled) VALUES
+        ('1', 'Synced', 1000, 1000, 1),
+        ('2', 'Not synced', 2000, 2000, 0),
+        ('3', 'Also synced', 3000, 3000, 1);
+      `)
+
+      const result = await repository.getSyncEnabledIds()
+
+      expect(result.success).toBe(true)
+      expect(result.getValue()!.sort()).toEqual(["1", "3"])
+    })
+
+    it("returns an empty array when nothing is sync-enabled", async () => {
+      await db.execAsync(`
+        INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES
+        ('1', 'List', 1000, 1000);
+      `)
+
+      const result = await repository.getSyncEnabledIds()
+
+      expect(result.getValue()).toEqual([])
+    })
+  })
+
   describe("getById", () => {
     it("should return an ingredient list by ID", async () => {
       // Insert test data
@@ -188,7 +216,18 @@ describe("IngredientListRepository", () => {
         name: "Shopping List",
         created_at: 1000,
         updated_at: 1000,
+        syncEnabled: false,
       })
+    })
+
+    it("should surface sync_enabled = 1 as syncEnabled: true", async () => {
+      await db.execAsync(`
+        INSERT INTO ingredient_lists (id, name, created_at, updated_at, sync_enabled) VALUES
+        ('1', 'Synced List', 1000, 1000, 1);
+      `)
+
+      const result = await repository.getById("1")
+      expect(result.getValue()?.syncEnabled).toBe(true)
     })
 
     it("should return null for non-existent ID", async () => {
