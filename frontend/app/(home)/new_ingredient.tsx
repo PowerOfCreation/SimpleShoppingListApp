@@ -137,6 +137,7 @@ export default function NewIngredient() {
           value={text}
           placeholder="Ingredient name"
           borderColor={invalidInputExplanation ? "red" : undefined}
+          style={styles.inputStyle}
         />
 
         <Pressable
@@ -212,6 +213,9 @@ const styles = StyleSheet.create({
   },
   buttonStyle: {
     paddingHorizontal: 4,
+  },
+  inputStyle: {
+    flex: 1,
   },
   addButtonText: {
     fontWeight: "600",

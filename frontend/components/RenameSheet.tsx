@@ -83,6 +83,7 @@ export function RenameSheet(props: RenameSheetProps) {
               placeholder=""
               borderColor={accentColor}
               selectTextOnFocus
+              style={styles.inputStyle}
             />
           </View>
           <View style={styles.actions}>
@@ -142,6 +143,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     marginTop: 10,
     marginBottom: 6,
+  },
+  inputStyle: {
+    flex: 1,
   },
   actions: {
     flexDirection: "row",

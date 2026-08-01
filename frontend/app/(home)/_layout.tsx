@@ -46,7 +46,7 @@ export default function HomeLayout() {
       <Stack.Screen
         name="new_shopping_list"
         options={{
-          headerTitle: "Create new shopping list",
+          headerTitle: "New list",
         }}
       />
     </Stack>
