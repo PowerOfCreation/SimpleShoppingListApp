@@ -41,12 +41,17 @@ export const AggregateTypes = {
 
 /**
  * Event types that are ever enqueued for sync to the backend. This is an
- * explicit allowlist rather than a `todo_list.*` prefix match: a prefix
- * match would silently send a newly added `todo_list.*` event type the
+ * explicit allowlist rather than a `todo_list.*`/`ingredient.*` prefix
+ * match: a prefix match would silently send a newly added event type the
  * moment it's introduced without checking whether the backend can handle
  * it. `todo_list.sync_enabled`/`sync_disabled` are deliberately included so
  * the backend learns about sync state changes; it currently ignores them
  * (forward compat), but a future prompt may give them real behaviour.
+ *
+ * The backend stores and relays every ingredient.* type without a
+ * dedicated handler - same forward-compat no-op path as sync_enabled -
+ * since list *content* sync only needs the event log to round-trip, not a
+ * server-side ingredients projection (see sync-design-decisions.md).
  */
 export const SYNCABLE_EVENT_TYPES: readonly string[] = [
   EventTypes.TODO_LIST_CREATED,
@@ -54,4 +59,9 @@ export const SYNCABLE_EVENT_TYPES: readonly string[] = [
   EventTypes.TODO_LIST_DELETED,
   EventTypes.TODO_LIST_SYNC_ENABLED,
   EventTypes.TODO_LIST_SYNC_DISABLED,
+  EventTypes.INGREDIENT_CREATED,
+  EventTypes.INGREDIENT_UPDATED,
+  EventTypes.INGREDIENT_DELETED,
+  EventTypes.INGREDIENT_PRIORITY_SET,
+  EventTypes.INGREDIENT_PRIORITY_CLEARED,
 ]

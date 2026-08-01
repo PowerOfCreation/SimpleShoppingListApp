@@ -3,6 +3,7 @@ import "react-native-get-random-values"
 import { v4 as uuidv4 } from "uuid"
 import { IngredientRepository } from "@/database/ingredient-repository"
 import { EventRepository } from "@/database/event-repository"
+import { IngredientListRepository } from "@/database/ingredient-list-repository"
 import { IngredientProjection } from "@/database/ingredient-projection"
 import { getDatabase } from "@/database/database"
 import { createLogger } from "@/api/common/logger"
@@ -11,6 +12,7 @@ import { DbQueryError, ValidationError } from "@/api/common/error-types"
 import { EventTypes, AggregateTypes, DomainEventRow } from "@/types/DomainEvent"
 import { getClientId } from "@/api/common/client-id"
 import { Priority } from "@/types/Priority"
+import { notifyOutboxChanged } from "@/api/sync/outbox-events"
 
 const logger = createLogger("IngredientService")
 
@@ -19,17 +21,20 @@ export class IngredientService {
   initialLoad = true
   private repository: IngredientRepository
   private eventRepository: EventRepository
+  private listRepository: IngredientListRepository
   private projection: IngredientProjection
 
   constructor(
     repository?: IngredientRepository,
     eventRepository?: EventRepository,
-    projection?: IngredientProjection
+    projection?: IngredientProjection,
+    listRepository?: IngredientListRepository
   ) {
     const db = getDatabase()
     this.repository = repository || new IngredientRepository(db)
     this.eventRepository = eventRepository || new EventRepository(db)
     this.projection = projection || new IngredientProjection(db)
+    this.listRepository = listRepository || new IngredientListRepository(db)
   }
 
   /**
@@ -105,6 +110,10 @@ export class IngredientService {
     try {
       const now = Date.now()
       const ingredientId = uuidv4()
+      const listResult = await this.listRepository.getById(listId)
+      const syncEnabled = listResult.success
+        ? (listResult.getValue()?.syncEnabled ?? false)
+        : false
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_CREATED,
@@ -116,14 +125,21 @@ export class IngredientService {
         payload: JSON.stringify({ name: ingredientName, listId }),
       }
 
-      const result = await this.eventRepository.appendWithProjection(
-        event,
-        (db) => this.projection.handleCreated(db, event)
-      )
+      const result = await this.eventRepository.appendAll([
+        {
+          event,
+          project: (db) => this.projection.handleCreated(db, event),
+          enqueueForSync: syncEnabled,
+        },
+      ])
 
       if (!result.success) {
         logger.error("Error adding ingredient", result.getError())
         return Result.fail(result.getError())
+      }
+
+      if (syncEnabled) {
+        notifyOutboxChanged()
       }
 
       const newIngredient: Ingredient = {
@@ -157,7 +173,7 @@ export class IngredientService {
     try {
       const now = Date.now()
       const completedAt = completed ? now : null
-      const { listId } = await this.resolveListContext(id)
+      const { listId, syncEnabled } = await this.resolveListContext(id)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_UPDATED,
@@ -169,10 +185,13 @@ export class IngredientService {
         payload: JSON.stringify({ completed, completedAt }),
       }
 
-      const result = await this.eventRepository.appendWithProjection(
-        event,
-        (db) => this.projection.handleUpdated(db, event)
-      )
+      const result = await this.eventRepository.appendAll([
+        {
+          event,
+          project: (db) => this.projection.handleUpdated(db, event),
+          enqueueForSync: syncEnabled,
+        },
+      ])
 
       if (!result.success) {
         logger.error(
@@ -180,6 +199,10 @@ export class IngredientService {
           result.getError()
         )
         return result
+      }
+
+      if (syncEnabled) {
+        notifyOutboxChanged()
       }
 
       const index = this.ingredients.findIndex((ing) => ing.id === id)
@@ -217,7 +240,7 @@ export class IngredientService {
 
     try {
       const now = Date.now()
-      const { listId } = await this.resolveListContext(id)
+      const { listId, syncEnabled } = await this.resolveListContext(id)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_UPDATED,
@@ -229,10 +252,13 @@ export class IngredientService {
         payload: JSON.stringify({ name }),
       }
 
-      const result = await this.eventRepository.appendWithProjection(
-        event,
-        (db) => this.projection.handleUpdated(db, event)
-      )
+      const result = await this.eventRepository.appendAll([
+        {
+          event,
+          project: (db) => this.projection.handleUpdated(db, event),
+          enqueueForSync: syncEnabled,
+        },
+      ])
 
       if (!result.success) {
         logger.error(
@@ -240,6 +266,10 @@ export class IngredientService {
           result.getError()
         )
         return result
+      }
+
+      if (syncEnabled) {
+        notifyOutboxChanged()
       }
 
       const index = this.ingredients.findIndex((ing) => ing.id === id)
@@ -273,7 +303,7 @@ export class IngredientService {
 
     try {
       const now = Date.now()
-      const { listId } = await this.resolveListContext(id)
+      const { listId, syncEnabled } = await this.resolveListContext(id)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_PRIORITY_SET,
@@ -285,10 +315,13 @@ export class IngredientService {
         payload: JSON.stringify({ priority }),
       }
 
-      const result = await this.eventRepository.appendWithProjection(
-        event,
-        (db) => this.projection.handlePrioritySet(db, event)
-      )
+      const result = await this.eventRepository.appendAll([
+        {
+          event,
+          project: (db) => this.projection.handlePrioritySet(db, event),
+          enqueueForSync: syncEnabled,
+        },
+      ])
 
       if (!result.success) {
         logger.error(
@@ -296,6 +329,10 @@ export class IngredientService {
           result.getError()
         )
         return result
+      }
+
+      if (syncEnabled) {
+        notifyOutboxChanged()
       }
 
       const index = this.ingredients.findIndex((ing) => ing.id === id)
@@ -321,7 +358,7 @@ export class IngredientService {
   async clearPriority(id: string): Promise<Result<void, DbQueryError>> {
     try {
       const now = Date.now()
-      const { listId } = await this.resolveListContext(id)
+      const { listId, syncEnabled } = await this.resolveListContext(id)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_PRIORITY_CLEARED,
@@ -333,10 +370,13 @@ export class IngredientService {
         payload: JSON.stringify({}),
       }
 
-      const result = await this.eventRepository.appendWithProjection(
-        event,
-        (db) => this.projection.handlePriorityCleared(db, event)
-      )
+      const result = await this.eventRepository.appendAll([
+        {
+          event,
+          project: (db) => this.projection.handlePriorityCleared(db, event),
+          enqueueForSync: syncEnabled,
+        },
+      ])
 
       if (!result.success) {
         logger.error(
@@ -344,6 +384,10 @@ export class IngredientService {
           result.getError()
         )
         return result
+      }
+
+      if (syncEnabled) {
+        notifyOutboxChanged()
       }
 
       const index = this.ingredients.findIndex((ing) => ing.id === id)
@@ -368,9 +412,9 @@ export class IngredientService {
 
   async deleteIngredient(id: string): Promise<Result<void, DbQueryError>> {
     try {
-      // Resolve before appendWithProjection runs the delete handler below -
+      // Resolve before the projection below runs the delete handler -
       // once the ingredient row is gone, getListContext can't find it.
-      const { listId } = await this.resolveListContext(id)
+      const { listId, syncEnabled } = await this.resolveListContext(id)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_DELETED,
@@ -382,14 +426,21 @@ export class IngredientService {
         payload: JSON.stringify({}),
       }
 
-      const result = await this.eventRepository.appendWithProjection(
-        event,
-        (db) => this.projection.handleDeleted(db, event)
-      )
+      const result = await this.eventRepository.appendAll([
+        {
+          event,
+          project: (db) => this.projection.handleDeleted(db, event),
+          enqueueForSync: syncEnabled,
+        },
+      ])
 
       if (!result.success) {
         logger.error(`Error deleting ingredient ${id}`, result.getError())
         return result
+      }
+
+      if (syncEnabled) {
+        notifyOutboxChanged()
       }
 
       const index = this.ingredients.findIndex((ing) => ing.id === id)

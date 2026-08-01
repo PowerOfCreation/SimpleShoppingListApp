@@ -17,6 +17,7 @@ import {
 } from "@/types/DomainEvent"
 import { getClientId } from "@/api/common/client-id"
 import { notifyOutboxChanged } from "@/api/sync/outbox-events"
+import { notifySyncListsChanged } from "@/api/sync/sync-events"
 
 const logger = createLogger("ShoppingListService")
 
@@ -103,6 +104,9 @@ export class ShoppingListService {
         // Nudge the sync engine to try sending this soon rather than
         // waiting for the next unrelated trigger (foreground, timer, ...).
         notifyOutboxChanged()
+        // A new sync-enabled list changes the set the provider subscribes
+        // to and pulls for.
+        notifySyncListsChanged()
       }
 
       return Result.ok(listId)
@@ -126,11 +130,13 @@ export class ShoppingListService {
    * `todo_list.sync_disabled`) and enqueued so the backend learns of the
    * change (it has no handler for these yet and ignores them for now).
    *
-   * Turning it on additionally replays the aggregate's existing syncable
-   * history into the outbox (in stable occurred_at+insertion order) so the
-   * server ends up with the list's full history, not just its current name.
-   * Turning it off cancels still-pending outbox rows - the server's existing
-   * copy (if any) is left alone; deleting it is a separate, explicit action.
+   * Turning it on additionally replays the *list's* existing syncable
+   * history into the outbox (in stable occurred_at+insertion order) - not
+   * just its own todo_list.* events but every ingredient.* event resolved
+   * to this list_id too, so the server ends up with the full list, not just
+   * its current name. Turning it off cancels every still-pending outbox row
+   * for the list, ingredient rows included - the server's existing copy (if
+   * any) is left alone; deleting it is a separate, explicit action.
    */
   async setSyncEnabled(
     listId: string,
@@ -166,8 +172,7 @@ export class ShoppingListService {
       }
 
       if (enabled) {
-        const historyResult =
-          await this.eventRepository.getByAggregateId(listId)
+        const historyResult = await this.eventRepository.getByListId(listId)
         if (!historyResult.success) {
           return Result.fail(historyResult.getError())
         }
@@ -181,16 +186,15 @@ export class ShoppingListService {
           return Result.fail(enqueueResult.getError())
         }
       } else {
-        const cancelResult =
-          await this.outboxRepository.cancelForAggregate(listId)
+        const cancelResult = await this.outboxRepository.cancelForList(listId)
         if (!cancelResult.success) {
           return Result.fail(cancelResult.getError())
         }
 
-        // cancelForAggregate removes every still-pending row for this
-        // aggregate - including the sync_disabled event appended above -
-        // so re-queue that one event to make sure the backend still learns
-        // this list's sync was turned off.
+        // cancelForList removes every still-pending row for this list,
+        // ingredient rows included - including the sync_disabled event
+        // appended above - so re-queue that one event to make sure the
+        // backend still learns this list's sync was turned off.
         const requeueResult = await this.eventRepository.enqueueExistingForSync(
           [syncEvent]
         )
@@ -200,6 +204,7 @@ export class ShoppingListService {
       }
 
       notifyOutboxChanged()
+      notifySyncListsChanged()
 
       return Result.ok(undefined)
     } catch (error) {

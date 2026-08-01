@@ -1,4 +1,4 @@
-import { SyncEngine } from "../sync-engine"
+import { SyncEngine, MAX_DRAIN_BATCHES } from "../sync-engine"
 import { OutboxRepository } from "@/database/outbox-repository"
 import { EventRepository } from "@/database/event-repository"
 import { SyncClient } from "@/api/sync/sync-client"
@@ -56,7 +56,7 @@ describe("SyncEngine", () => {
       markSynced: jest.fn().mockResolvedValue(Result.ok(undefined)),
       bumpAttempt: jest.fn().mockResolvedValue(Result.ok(undefined)),
       resetToPending: jest.fn().mockResolvedValue(Result.ok(undefined)),
-      cancelForAggregate: jest.fn(),
+      cancelForList: jest.fn(),
       enqueue: jest.fn(),
     } as unknown as jest.Mocked<OutboxRepository>
 
@@ -137,6 +137,65 @@ describe("SyncEngine", () => {
       expect(client.sendEvents).toHaveBeenCalledTimes(1)
     })
 
+    it("drains multiple pages in one call via the outbox's keyset cursor", async () => {
+      const engineWithSmallBatch = new SyncEngine(outbox, events, client, 1)
+      outbox.getPending
+        .mockResolvedValueOnce(Result.ok([makeOutboxRow("e1")]))
+        .mockResolvedValueOnce(Result.ok([makeOutboxRow("e2")]))
+        .mockResolvedValueOnce(Result.ok([]))
+      events.getByEventIds.mockImplementation(async (ids: string[]) =>
+        Result.ok(ids.map((id) => makeEvent({ event_id: id })))
+      )
+
+      await engineWithSmallBatch.flush()
+
+      expect(outbox.getPending).toHaveBeenCalledTimes(3)
+      expect(outbox.getPending).toHaveBeenNthCalledWith(1, 1, undefined)
+      expect(outbox.getPending).toHaveBeenNthCalledWith(2, 1, "e1")
+      expect(outbox.getPending).toHaveBeenNthCalledWith(3, 1, "e2")
+      expect(client.sendEvents).toHaveBeenCalledTimes(2)
+      expect(client.sendEvents).toHaveBeenNthCalledWith(1, [
+        makeEvent({ event_id: "e1" }),
+      ])
+      expect(client.sendEvents).toHaveBeenNthCalledWith(2, [
+        makeEvent({ event_id: "e2" }),
+      ])
+    })
+
+    it("stops after MAX_DRAIN_BATCHES pages even if more remain pending", async () => {
+      const engineWithSmallBatch = new SyncEngine(outbox, events, client, 1)
+      // Every page is exactly at the batch limit, so the "short page"
+      // termination heuristic never fires - only the hard cap should stop
+      // this from looping forever against an ever-growing backlog.
+      outbox.getPending.mockResolvedValue(Result.ok([makeOutboxRow("e1")]))
+      events.getByEventIds.mockResolvedValue(
+        Result.ok([makeEvent({ event_id: "e1" })])
+      )
+
+      await engineWithSmallBatch.flush()
+
+      expect(outbox.getPending).toHaveBeenCalledTimes(MAX_DRAIN_BATCHES)
+      expect(client.sendEvents).toHaveBeenCalledTimes(MAX_DRAIN_BATCHES)
+    })
+
+    it("stops draining (without querying further pages) once a send fails", async () => {
+      const engineWithSmallBatch = new SyncEngine(outbox, events, client, 1)
+      outbox.getPending
+        .mockResolvedValueOnce(Result.ok([makeOutboxRow("e1")]))
+        .mockResolvedValueOnce(Result.ok([makeOutboxRow("e2")]))
+      events.getByEventIds.mockImplementation(async (ids: string[]) =>
+        Result.ok(ids.map((id) => makeEvent({ event_id: id })))
+      )
+      client.sendEvents.mockResolvedValue(
+        Result.fail(new SyncError("network down", true))
+      )
+
+      await engineWithSmallBatch.flush()
+
+      expect(client.sendEvents).toHaveBeenCalledTimes(1)
+      expect(outbox.getPending).toHaveBeenCalledTimes(1)
+    })
+
     it("excludes rows already in flight from a concurrent call", async () => {
       let resolveSend!: (value: Result<void, SyncError>) => void
       client.sendEvents.mockImplementation(
@@ -207,9 +266,13 @@ describe("SyncEngine", () => {
       client.getKnownEventIds.mockResolvedValue(Result.ok([]))
       events.getByAggregateId.mockResolvedValue(
         Result.ok([
+          // Every real EventTypes value is syncable today (todo_list.* and
+          // ingredient.*) - this synthetic type exercises the
+          // SYNCABLE_EVENT_TYPES filter itself, standing in for whatever
+          // future local-only event type might exist.
           makeEvent({
             event_id: "local-only",
-            event_type: EventTypes.INGREDIENT_CREATED,
+            event_type: "something.local_only",
           }),
         ])
       )

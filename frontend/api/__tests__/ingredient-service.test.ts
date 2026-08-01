@@ -1,5 +1,6 @@
 import { IngredientRepository } from "@/database/ingredient-repository"
 import { EventRepository } from "@/database/event-repository"
+import { IngredientListRepository } from "@/database/ingredient-list-repository"
 import { IngredientProjection } from "@/database/ingredient-projection"
 import { getDatabase } from "@/database/database"
 import { IngredientService } from "@/api/ingredient-service"
@@ -9,6 +10,7 @@ import { DbQueryError, ValidationError } from "@/api/common/error-types"
 import { Result } from "@/api/common/result"
 import { DomainEventRow, EventTypes } from "@/types/DomainEvent"
 import { Priority } from "@/types/Priority"
+import { notifyOutboxChanged } from "@/api/sync/outbox-events"
 
 jest.mock("@/database/ingredient-repository")
 const MockIngredientRepository = IngredientRepository as jest.MockedClass<
@@ -19,6 +21,10 @@ jest.mock("@/database/event-repository")
 const MockEventRepository = EventRepository as jest.MockedClass<
   typeof EventRepository
 >
+
+jest.mock("@/database/ingredient-list-repository")
+const MockIngredientListRepository =
+  IngredientListRepository as jest.MockedClass<typeof IngredientListRepository>
 
 jest.mock("@/database/ingredient-projection")
 const MockIngredientProjection = IngredientProjection as jest.MockedClass<
@@ -33,10 +39,15 @@ jest.mock("@/api/common/client-id", () => ({
   getClientId: jest.fn(() => "test-device"),
 }))
 
+jest.mock("@/api/sync/outbox-events", () => ({
+  notifyOutboxChanged: jest.fn(),
+}))
+
 describe("IngredientService", () => {
   let service: IngredientService
   let mockRepository: jest.Mocked<IngredientRepository>
   let mockEventRepository: jest.Mocked<EventRepository>
+  let mockListRepository: jest.Mocked<IngredientListRepository>
   let mockProjection: jest.Mocked<IngredientProjection>
 
   beforeEach(() => {
@@ -59,13 +70,26 @@ describe("IngredientService", () => {
 
     mockEventRepository = {
       append: jest.fn(),
-      appendWithProjection: jest.fn().mockResolvedValue(Result.ok(undefined)),
+      appendWithProjection: jest.fn(),
+      appendAll: jest.fn().mockResolvedValue(Result.ok(undefined)),
       getByAggregateId: jest.fn(),
       getByListId: jest.fn(),
       getLastListIdForAggregate: jest.fn().mockResolvedValue(Result.ok(null)),
       getAll: jest.fn(),
       getByAggregateType: jest.fn(),
     } as unknown as jest.Mocked<EventRepository>
+
+    mockListRepository = {
+      getById: jest.fn().mockResolvedValue(
+        Result.ok({
+          id: "list-1",
+          name: "Rewe",
+          created_at: 1000,
+          updated_at: 1000,
+          syncEnabled: false,
+        })
+      ),
+    } as unknown as jest.Mocked<IngredientListRepository>
 
     mockProjection = {
       handleCreated: jest.fn(),
@@ -78,6 +102,7 @@ describe("IngredientService", () => {
 
     MockIngredientRepository.mockImplementation(() => mockRepository)
     MockEventRepository.mockImplementation(() => mockEventRepository)
+    MockIngredientListRepository.mockImplementation(() => mockListRepository)
     MockIngredientProjection.mockImplementation(() => mockProjection)
 
     const mockDb = {} as SQLite.SQLiteDatabase
@@ -131,7 +156,7 @@ describe("IngredientService", () => {
   })
 
   describe("AddIngredients", () => {
-    it("should append an ingredient.created event via the event repository", async () => {
+    it("should append an ingredient.created event via the event repository, with list_id set", async () => {
       const ingredientName = "Milk"
       const listId = "list-1"
       const nowMock = 1000
@@ -139,11 +164,13 @@ describe("IngredientService", () => {
 
       const result = await service.AddIngredients(ingredientName, listId)
 
-      expect(mockEventRepository.appendWithProjection).toHaveBeenCalledTimes(1)
+      expect(mockEventRepository.appendAll).toHaveBeenCalledTimes(1)
 
-      const [event] = mockEventRepository.appendWithProjection.mock.calls[0]
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      const event = entries[0].event
       expect(event.event_type).toBe(EventTypes.INGREDIENT_CREATED)
       expect(event.aggregate_type).toBe("ingredient")
+      expect(event.list_id).toBe(listId)
       expect(event.occurred_at).toBe(nowMock)
       const payload = JSON.parse(event.payload)
       expect(payload.name).toBe(ingredientName)
@@ -155,30 +182,92 @@ describe("IngredientService", () => {
     it("should return error for empty ingredient name", async () => {
       const result = await service.AddIngredients("", "list-1")
 
-      expect(mockEventRepository.appendWithProjection).not.toHaveBeenCalled()
+      expect(mockEventRepository.appendAll).not.toHaveBeenCalled()
 
       expect(result.success).toBe(false)
       expect(result.getError()).toBeInstanceOf(ValidationError)
       expect(result.getError().message).toBe("Ingredient name can't be empty")
     })
+
+    it("does not enqueue for sync when the parent list is not sync-enabled", async () => {
+      mockListRepository.getById.mockResolvedValue(
+        Result.ok({
+          id: "list-1",
+          name: "Rewe",
+          created_at: 1000,
+          updated_at: 1000,
+          syncEnabled: false,
+        })
+      )
+
+      await service.AddIngredients("Milk", "list-1")
+
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      expect(entries[0].enqueueForSync).toBe(false)
+      expect(notifyOutboxChanged).not.toHaveBeenCalled()
+    })
+
+    it("enqueues for sync and notifies the outbox when the parent list is sync-enabled", async () => {
+      mockListRepository.getById.mockResolvedValue(
+        Result.ok({
+          id: "list-1",
+          name: "Rewe",
+          created_at: 1000,
+          updated_at: 1000,
+          syncEnabled: true,
+        })
+      )
+
+      await service.AddIngredients("Milk", "list-1")
+
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      expect(entries[0].enqueueForSync).toBe(true)
+      expect(notifyOutboxChanged).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe("updateCompletion", () => {
-    it("should append an ingredient.updated event with completed payload", async () => {
+    it("should append an ingredient.updated event with completed payload and list_id", async () => {
       const ingredientId = "1"
       const completed = true
 
       const result = await service.updateCompletion(ingredientId, completed)
 
-      expect(mockEventRepository.appendWithProjection).toHaveBeenCalledTimes(1)
+      expect(mockEventRepository.appendAll).toHaveBeenCalledTimes(1)
 
-      const [event] = mockEventRepository.appendWithProjection.mock.calls[0]
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      const event = entries[0].event
       expect(event.event_type).toBe(EventTypes.INGREDIENT_UPDATED)
       expect(event.aggregate_id).toBe(ingredientId)
+      expect(event.list_id).toBe("list-1")
       const payload = JSON.parse(event.payload)
       expect(payload.completed).toBe(completed)
 
       expect(result.success).toBe(true)
+    })
+
+    it("does not enqueue for sync when the parent list is not sync-enabled", async () => {
+      mockRepository.getListContext.mockResolvedValue(
+        Result.ok({ listId: "list-1", syncEnabled: false })
+      )
+
+      await service.updateCompletion("1", true)
+
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      expect(entries[0].enqueueForSync).toBe(false)
+      expect(notifyOutboxChanged).not.toHaveBeenCalled()
+    })
+
+    it("enqueues for sync and notifies the outbox when the parent list is sync-enabled", async () => {
+      mockRepository.getListContext.mockResolvedValue(
+        Result.ok({ listId: "list-1", syncEnabled: true })
+      )
+
+      await service.updateCompletion("1", true)
+
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      expect(entries[0].enqueueForSync).toBe(true)
+      expect(notifyOutboxChanged).toHaveBeenCalledTimes(1)
     })
 
     it("should return error if event repository fails", async () => {
@@ -187,9 +276,7 @@ describe("IngredientService", () => {
         "updateCompletion",
         "Ingredient"
       )
-      mockEventRepository.appendWithProjection.mockResolvedValue(
-        Result.fail(dbError)
-      )
+      mockEventRepository.appendAll.mockResolvedValue(Result.fail(dbError))
 
       const result = await service.updateCompletion("1", true)
 
@@ -199,17 +286,19 @@ describe("IngredientService", () => {
   })
 
   describe("updateName", () => {
-    it("should append an ingredient.updated event with name payload", async () => {
+    it("should append an ingredient.updated event with name payload and list_id", async () => {
       const ingredientId = "1"
       const newName = "Almond Milk"
 
       const result = await service.updateName(ingredientId, newName)
 
-      expect(mockEventRepository.appendWithProjection).toHaveBeenCalledTimes(1)
+      expect(mockEventRepository.appendAll).toHaveBeenCalledTimes(1)
 
-      const [event] = mockEventRepository.appendWithProjection.mock.calls[0]
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      const event = entries[0].event
       expect(event.event_type).toBe(EventTypes.INGREDIENT_UPDATED)
       expect(event.aggregate_id).toBe(ingredientId)
+      expect(event.list_id).toBe("list-1")
       const payload = JSON.parse(event.payload)
       expect(payload.name).toBe(newName)
 
@@ -218,9 +307,7 @@ describe("IngredientService", () => {
 
     it("should return error if event repository fails", async () => {
       const dbError = new DbQueryError("DB error", "updateName", "Ingredient")
-      mockEventRepository.appendWithProjection.mockResolvedValue(
-        Result.fail(dbError)
-      )
+      mockEventRepository.appendAll.mockResolvedValue(Result.fail(dbError))
 
       const result = await service.updateName("1", "New Name")
 
@@ -230,7 +317,7 @@ describe("IngredientService", () => {
   })
 
   describe("setPriority", () => {
-    it("should append an ingredient.priority_set event with priority payload", async () => {
+    it("should append an ingredient.priority_set event with priority payload and list_id", async () => {
       const ingredientId = "1"
 
       const result = await service.setPriority(
@@ -238,11 +325,13 @@ describe("IngredientService", () => {
         Priority.DAYS_1_TO_3
       )
 
-      expect(mockEventRepository.appendWithProjection).toHaveBeenCalledTimes(1)
+      expect(mockEventRepository.appendAll).toHaveBeenCalledTimes(1)
 
-      const [event] = mockEventRepository.appendWithProjection.mock.calls[0]
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      const event = entries[0].event
       expect(event.event_type).toBe(EventTypes.INGREDIENT_PRIORITY_SET)
       expect(event.aggregate_id).toBe(ingredientId)
+      expect(event.list_id).toBe("list-1")
       const payload = JSON.parse(event.payload)
       expect(payload.priority).toBe(Priority.DAYS_1_TO_3)
 
@@ -252,7 +341,7 @@ describe("IngredientService", () => {
     it("should return error for an invalid priority", async () => {
       const result = await service.setPriority("1", 999 as Priority)
 
-      expect(mockEventRepository.appendWithProjection).not.toHaveBeenCalled()
+      expect(mockEventRepository.appendAll).not.toHaveBeenCalled()
 
       expect(result.success).toBe(false)
       expect(result.getError()).toBeInstanceOf(ValidationError)
@@ -261,9 +350,7 @@ describe("IngredientService", () => {
 
     it("should return error if event repository fails", async () => {
       const dbError = new DbQueryError("DB error", "setPriority", "Ingredient")
-      mockEventRepository.appendWithProjection.mockResolvedValue(
-        Result.fail(dbError)
-      )
+      mockEventRepository.appendAll.mockResolvedValue(Result.fail(dbError))
 
       const result = await service.setPriority("1", Priority.NOW)
 
@@ -273,16 +360,18 @@ describe("IngredientService", () => {
   })
 
   describe("clearPriority", () => {
-    it("should append an ingredient.priority_cleared event", async () => {
+    it("should append an ingredient.priority_cleared event with list_id", async () => {
       const ingredientId = "1"
 
       const result = await service.clearPriority(ingredientId)
 
-      expect(mockEventRepository.appendWithProjection).toHaveBeenCalledTimes(1)
+      expect(mockEventRepository.appendAll).toHaveBeenCalledTimes(1)
 
-      const [event] = mockEventRepository.appendWithProjection.mock.calls[0]
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      const event = entries[0].event
       expect(event.event_type).toBe(EventTypes.INGREDIENT_PRIORITY_CLEARED)
       expect(event.aggregate_id).toBe(ingredientId)
+      expect(event.list_id).toBe("list-1")
 
       expect(result.success).toBe(true)
     })
@@ -293,9 +382,7 @@ describe("IngredientService", () => {
         "clearPriority",
         "Ingredient"
       )
-      mockEventRepository.appendWithProjection.mockResolvedValue(
-        Result.fail(dbError)
-      )
+      mockEventRepository.appendAll.mockResolvedValue(Result.fail(dbError))
 
       const result = await service.clearPriority("1")
 
@@ -305,18 +392,32 @@ describe("IngredientService", () => {
   })
 
   describe("deleteIngredient", () => {
-    it("should append an ingredient.deleted event", async () => {
+    it("should append an ingredient.deleted event with list_id", async () => {
       const ingredientId = "1"
 
       const result = await service.deleteIngredient(ingredientId)
 
-      expect(mockEventRepository.appendWithProjection).toHaveBeenCalledTimes(1)
+      expect(mockEventRepository.appendAll).toHaveBeenCalledTimes(1)
 
-      const [event] = mockEventRepository.appendWithProjection.mock.calls[0]
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      const event = entries[0].event
       expect(event.event_type).toBe(EventTypes.INGREDIENT_DELETED)
       expect(event.aggregate_id).toBe(ingredientId)
+      expect(event.list_id).toBe("list-1")
 
       expect(result.success).toBe(true)
+    })
+
+    it("resolves list_id before the delete handler removes the ingredient row", async () => {
+      // getListContext (via resolveListContext) must be called - and its
+      // value used - before appendAll runs the projection's delete
+      // handler, since that handler is what makes the ingredient
+      // unreachable for a getListContext join.
+      await service.deleteIngredient("1")
+
+      expect(mockRepository.getListContext).toHaveBeenCalledWith("1")
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      expect(entries[0].event.list_id).toBe("list-1")
     })
 
     it("should return error if event repository fails", async () => {
@@ -325,9 +426,7 @@ describe("IngredientService", () => {
         "deleteIngredient",
         "Ingredient"
       )
-      mockEventRepository.appendWithProjection.mockResolvedValue(
-        Result.fail(dbError)
-      )
+      mockEventRepository.appendAll.mockResolvedValue(Result.fail(dbError))
 
       const result = await service.deleteIngredient("1")
 
