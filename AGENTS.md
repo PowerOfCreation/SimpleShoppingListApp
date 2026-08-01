@@ -27,6 +27,26 @@ pnpm android:prod:apk
 
 - `expo-doctor` runs in CI (`.github/workflows/expo-doctor.yml`) **in offline mode** (`EXPO_OFFLINE=1`) inside `frontend/`. Runs on changes to `frontend/package.json` / `frontend/pnpm-lock.yaml`.
 
+## Backend commands (`backend/`)
+
+```bash
+docker compose up -d postgres   # start only the DB
+go run ./cmd/api
+air                            # hot reload (requires air installed)
+go test ./...                  # uses testcontainers — Docker must be running
+sqlc generate                  # after editing sql/queries/*.sql or migrations/
+```
+
+## Backend architecture & patterns (`backend/`)
+
+Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/events) → `internal/application` (services, command/query structs) → `internal/infrastructure/db/sqlc` (generated) + `postgres` (sqlc impls) → `internal/interface/api/rest` (handlers).
+
+- **Validated types:** repos only accept validated domain types — invalid state unrepresentable at compile time.
+- **Soft deletes:** `todo_lists`/`todos` have `deleted_at`; queries filter `WHERE deleted_at IS NULL`.
+- **sqlc workflow:** edit `sql/queries/*.sql`, run `sqlc generate`, implement in `postgres/`. Never edit `internal/infrastructure/db/sqlc/` manually.
+- **Events:** `EventDispatcher` routes by `event_type` string; unknown types silently ignored (forward compat).
+- **Testing:** real Postgres via testcontainers (`testhelpers.SetupTestDB(t)`), no DB mocking; Docker must be running.
+
 ## Architecture notes
 
 - **Offline-first:** SQLite is the source of truth; the app works without backend or login.
@@ -49,4 +69,4 @@ pnpm android:prod:apk
 
 - `frontend/docs/project-overview.md`
 - `frontend/docs/sync-design-decisions.md`
-- `backend/CLAUDE.md` (Go/Clean Architecture details)
+- `backend/README.md` (run/sync details)
