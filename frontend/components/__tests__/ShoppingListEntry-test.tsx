@@ -95,7 +95,44 @@ describe("ShoppingListEntry", () => {
     fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
 
     expect(getByTestId("shopping-list-context-rename-1")).toBeTruthy()
+    expect(getByTestId("shopping-list-context-sync-1")).toBeTruthy()
     expect(getByTestId("shopping-list-context-delete-1")).toBeTruthy()
+  })
+
+  it("reflects syncEnabled as the sync toggle value", () => {
+    const { getByTestId } = render(
+      <ShoppingListEntry {...defaultProps} syncEnabled />
+    )
+
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+
+    expect(getByTestId("shopping-list-context-sync-1").props.value).toBe(true)
+  })
+
+  it("disables the sync toggle when syncToggleDisabled is set", () => {
+    const { getByTestId } = render(
+      <ShoppingListEntry {...defaultProps} syncToggleDisabled />
+    )
+
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+
+    expect(getByTestId("shopping-list-context-sync-1").props.disabled).toBe(
+      true
+    )
+  })
+
+  it("calls onToggleSync when the sync toggle is changed", () => {
+    const onToggleSync = jest.fn()
+    const { getByTestId, queryByTestId } = render(
+      <ShoppingListEntry {...defaultProps} onToggleSync={onToggleSync} />
+    )
+
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+    fireEvent(getByTestId("shopping-list-context-sync-1"), "valueChange", true)
+
+    expect(onToggleSync).toHaveBeenCalledWith(true)
+    // The context menu stays open so the state change is visible.
+    expect(queryByTestId("shopping-list-context-sync-1")).toBeTruthy()
   })
 
   it("opens the rename sheet when Rename is pressed in the context menu", () => {

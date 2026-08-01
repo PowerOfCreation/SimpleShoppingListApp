@@ -1,14 +1,29 @@
 import { Modal, Pressable, View, StyleSheet } from "react-native"
 import { ThemedText } from "./ThemedText"
+import { ToggleRow } from "./ToggleRow"
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { Palette } from "@/constants/Colors"
 
-export type ContextMenuOption = {
+export type ContextMenuActionOption = {
+  type?: "action"
   label: string
   onPress: () => void
   destructive?: boolean
   testID?: string
 }
+
+export type ContextMenuToggleOption = {
+  type: "toggle"
+  label: string
+  value: boolean
+  onValueChange: (value: boolean) => void
+  disabled?: boolean
+  testID?: string
+}
+
+export type ContextMenuOption =
+  | ContextMenuActionOption
+  | ContextMenuToggleOption
 
 export type ContextMenuProps = {
   visible: boolean
@@ -49,30 +64,51 @@ export function ContextMenu(props: ContextMenuProps) {
             {props.title}
           </ThemedText>
           <View style={[styles.divider, { backgroundColor: dividerColor }]} />
-          {props.options.map((option, index) => (
-            <Pressable
-              key={option.label}
-              testID={option.testID}
-              style={[
-                styles.option,
-                index < props.options.length - 1 && [
-                  styles.optionBorder,
-                  { borderBottomColor: dividerColor },
-                ],
-              ]}
-              onPress={() => {
-                props.onClose()
-                option.onPress()
-              }}
-            >
-              <ThemedText
-                style={option.destructive ? { color: dangerColor } : undefined}
-                type="defaultSemiBold"
+          {props.options.map((option, index) => {
+            const hasBorder = index < props.options.length - 1
+            return option.type === "toggle" ? (
+              <ToggleRow
+                key={option.label}
+                style={[
+                  styles.option,
+                  hasBorder && [
+                    styles.optionBorder,
+                    { borderBottomColor: dividerColor },
+                  ],
+                ]}
+                title={option.label}
+                value={option.value}
+                onValueChange={option.onValueChange}
+                disabled={option.disabled}
+                testID={option.testID}
+              />
+            ) : (
+              <Pressable
+                key={option.label}
+                testID={option.testID}
+                style={[
+                  styles.option,
+                  hasBorder && [
+                    styles.optionBorder,
+                    { borderBottomColor: dividerColor },
+                  ],
+                ]}
+                onPress={() => {
+                  props.onClose()
+                  option.onPress()
+                }}
               >
-                {option.label}
-              </ThemedText>
-            </Pressable>
-          ))}
+                <ThemedText
+                  style={
+                    option.destructive ? { color: dangerColor } : undefined
+                  }
+                  type="defaultSemiBold"
+                >
+                  {option.label}
+                </ThemedText>
+              </Pressable>
+            )
+          })}
         </View>
       </View>
     </Modal>

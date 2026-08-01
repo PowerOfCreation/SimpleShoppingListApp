@@ -14,8 +14,10 @@ export const EventTypes = {
   TODO_LIST_DELETED: "todo_list.deleted",
   // Sync opt-in/out gets its own event rather than folding a flag into
   // todo_list.updated, mirroring the existing
-  // ingredient.priority_set/priority_cleared pair. These stay local only -
-  // see SYNCABLE_EVENT_TYPES below - the server has no notion of them.
+  // ingredient.priority_set/priority_cleared pair. These are sent to the
+  // backend so it can associate lists with an account / be told sync was
+  // turned off, but the backend currently has no handler for them (see
+  // SYNCABLE_EVENT_TYPES below).
   TODO_LIST_SYNC_ENABLED: "todo_list.sync_enabled",
   TODO_LIST_SYNC_DISABLED: "todo_list.sync_disabled",
   INGREDIENT_CREATED: "ingredient.created",
@@ -32,14 +34,17 @@ export const AggregateTypes = {
 
 /**
  * Event types that are ever enqueued for sync to the backend. This is an
- * explicit allowlist rather than a `todo_list.*` prefix match, because
- * `todo_list.sync_enabled`/`sync_disabled` are a purely local decision - the
- * backend has no matching handler for them and never should. A prefix match
- * would silently start sending them the moment someone adds a new
- * `todo_list.*` event type without checking this list.
+ * explicit allowlist rather than a `todo_list.*` prefix match: a prefix
+ * match would silently send a newly added `todo_list.*` event type the
+ * moment it's introduced without checking whether the backend can handle
+ * it. `todo_list.sync_enabled`/`sync_disabled` are deliberately included so
+ * the backend learns about sync state changes; it currently ignores them
+ * (forward compat), but a future prompt may give them real behaviour.
  */
 export const SYNCABLE_EVENT_TYPES: readonly string[] = [
   EventTypes.TODO_LIST_CREATED,
   EventTypes.TODO_LIST_UPDATED,
   EventTypes.TODO_LIST_DELETED,
+  EventTypes.TODO_LIST_SYNC_ENABLED,
+  EventTypes.TODO_LIST_SYNC_DISABLED,
 ]

@@ -13,6 +13,7 @@ import { useThemeColor } from "@/hooks/useThemeColor"
 import { ShoppingListEntry } from "@/components/ShoppingListEntry"
 import { shoppingListService } from "@/api/shopping-list-service"
 import { createLogger } from "@/api/common/logger"
+import { useAuth } from "@/api/auth/AuthProvider"
 
 const logger = createLogger("Index")
 
@@ -21,6 +22,8 @@ export default function Index() {
   const dividerColor = useThemeColor({}, "divider")
   const [isCheckingPreference, setIsCheckingPreference] = React.useState(true)
   const hasNavigatedRef = React.useRef(false)
+  const { status } = useAuth()
+  const isSignedIn = status === "signedIn"
 
   React.useEffect(() => {
     if (hasNavigatedRef.current || isLoading) return
@@ -80,6 +83,27 @@ export default function Index() {
     }
   }
 
+  const handleToggleSync = async (id: string, enabled: boolean) => {
+    const list = lists.find((l) => l.id === id)
+    if (!list) return
+
+    // Optimistically update UI immediately
+    const previous = list.syncEnabled
+    updateList(id, { syncEnabled: enabled })
+
+    try {
+      const result = await shoppingListService.setSyncEnabled(id, enabled)
+      if (!result.success) {
+        // Revert optimistic update on error
+        updateList(id, { syncEnabled: previous })
+      }
+    } catch (err) {
+      logger.error("Error toggling sync for list", err)
+      // Revert optimistic update on error
+      updateList(id, { syncEnabled: previous })
+    }
+  }
+
   const renderListItem = ({ item }: { item: ShoppingListOverview }) => {
     return (
       <ShoppingListEntry
@@ -91,6 +115,9 @@ export default function Index() {
         onPress={() => handleSelectList(item.id)}
         onRename={(newName) => handleChangeName(item.id, newName)}
         onDelete={() => handleDeleteList(item.id)}
+        syncEnabled={item.syncEnabled}
+        onToggleSync={(enabled) => handleToggleSync(item.id, enabled)}
+        syncToggleDisabled={!isSignedIn}
       />
     )
   }
