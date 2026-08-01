@@ -3,8 +3,8 @@
 -- always yields exactly one row, whether this event_id was just inserted
 -- or already existed from a previous delivery. Callers use processed_at to
 -- tell the two cases apart without a second round-trip.
-INSERT INTO events (id, event_type, aggregate_id, aggregate_type, payload, occurred_at, client_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO events (id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (id) DO UPDATE SET id = events.id
 RETURNING processed_at;
 
@@ -12,7 +12,7 @@ RETURNING processed_at;
 UPDATE events SET processed_at = NOW() WHERE id = $1;
 
 -- name: GetUnprocessedEvents :many
-SELECT id, event_type, aggregate_id, aggregate_type, payload, occurred_at, client_id
+SELECT id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id
 FROM events
 WHERE processed_at IS NULL
 ORDER BY received_at ASC;

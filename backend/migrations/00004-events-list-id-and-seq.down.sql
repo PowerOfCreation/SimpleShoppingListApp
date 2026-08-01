@@ -1,0 +1,5 @@
+DROP INDEX IF EXISTS idx_events_list_seq;
+DROP INDEX IF EXISTS idx_events_seq;
+ALTER TABLE events DROP COLUMN IF EXISTS seq;
+ALTER TABLE events DROP COLUMN IF EXISTS list_id;
+DROP SEQUENCE IF EXISTS events_seq_seq;

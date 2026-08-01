@@ -182,3 +182,42 @@ func TestSqlcEventRepository_FindKnownEventIDs_EmptyForUnknownAggregate(t *testi
 	require.NoError(t, err)
 	assert.Empty(t, known)
 }
+
+func TestSqlcEventRepository_Insert_RoundTripsListID(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcEventRepository(NewQueries(testDB.Conn))
+	ctx := context.Background()
+
+	event := makeStoredEvent()
+	listID := uuid.New()
+	event.ListID = &listID
+
+	_, err := repo.Insert(ctx, event)
+	require.NoError(t, err)
+
+	unprocessed, err := repo.FindUnprocessed(ctx)
+	require.NoError(t, err)
+	require.Len(t, unprocessed, 1)
+	require.NotNil(t, unprocessed[0].ListID)
+	assert.Equal(t, listID, *unprocessed[0].ListID)
+}
+
+func TestSqlcEventRepository_Insert_NilListIDRoundTripsAsNil(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcEventRepository(NewQueries(testDB.Conn))
+	ctx := context.Background()
+
+	// An older client that doesn't send list_id yet.
+	event := makeStoredEvent()
+	event.ListID = nil
+
+	_, err := repo.Insert(ctx, event)
+	require.NoError(t, err)
+
+	unprocessed, err := repo.FindUnprocessed(ctx)
+	require.NoError(t, err)
+	require.Len(t, unprocessed, 1)
+	assert.Nil(t, unprocessed[0].ListID)
+}

@@ -40,7 +40,7 @@ func (q *Queries) GetKnownEventIds(ctx context.Context, aggregateIds []uuid.UUID
 }
 
 const getUnprocessedEvents = `-- name: GetUnprocessedEvents :many
-SELECT id, event_type, aggregate_id, aggregate_type, payload, occurred_at, client_id
+SELECT id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id
 FROM events
 WHERE processed_at IS NULL
 ORDER BY received_at ASC
@@ -51,6 +51,7 @@ type GetUnprocessedEventsRow struct {
 	EventType     string             `db:"event_type" json:"event_type"`
 	AggregateID   uuid.UUID          `db:"aggregate_id" json:"aggregate_id"`
 	AggregateType string             `db:"aggregate_type" json:"aggregate_type"`
+	ListID        pgtype.UUID        `db:"list_id" json:"list_id"`
 	Payload       []byte             `db:"payload" json:"payload"`
 	OccurredAt    pgtype.Timestamptz `db:"occurred_at" json:"occurred_at"`
 	ClientID      string             `db:"client_id" json:"client_id"`
@@ -70,6 +71,7 @@ func (q *Queries) GetUnprocessedEvents(ctx context.Context) ([]GetUnprocessedEve
 			&i.EventType,
 			&i.AggregateID,
 			&i.AggregateType,
+			&i.ListID,
 			&i.Payload,
 			&i.OccurredAt,
 			&i.ClientID,
@@ -85,8 +87,8 @@ func (q *Queries) GetUnprocessedEvents(ctx context.Context) ([]GetUnprocessedEve
 }
 
 const insertEvent = `-- name: InsertEvent :one
-INSERT INTO events (id, event_type, aggregate_id, aggregate_type, payload, occurred_at, client_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO events (id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (id) DO UPDATE SET id = events.id
 RETURNING processed_at
 `
@@ -96,6 +98,7 @@ type InsertEventParams struct {
 	EventType     string             `db:"event_type" json:"event_type"`
 	AggregateID   uuid.UUID          `db:"aggregate_id" json:"aggregate_id"`
 	AggregateType string             `db:"aggregate_type" json:"aggregate_type"`
+	ListID        pgtype.UUID        `db:"list_id" json:"list_id"`
 	Payload       []byte             `db:"payload" json:"payload"`
 	OccurredAt    pgtype.Timestamptz `db:"occurred_at" json:"occurred_at"`
 	ClientID      string             `db:"client_id" json:"client_id"`
@@ -111,6 +114,7 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (pgtyp
 		arg.EventType,
 		arg.AggregateID,
 		arg.AggregateType,
+		arg.ListID,
 		arg.Payload,
 		arg.OccurredAt,
 		arg.ClientID,

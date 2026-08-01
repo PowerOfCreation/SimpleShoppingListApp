@@ -152,6 +152,7 @@ describe("ShoppingListService", () => {
       event_type: EventTypes.TODO_LIST_CREATED,
       aggregate_id: "list-1",
       aggregate_type: "todo_list",
+      list_id: "list-1",
       occurred_at: 1000,
       client_id: "test-device",
       payload: "{}",

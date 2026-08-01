@@ -20,6 +20,7 @@ function baseEvent() {
     event_type: EventTypes.INGREDIENT_CREATED,
     aggregate_id: "agg-1",
     aggregate_type: AggregateTypes.INGREDIENT,
+    list_id: "list-1",
     occurred_at: 1000,
     client_id: "client-1",
     payload: "{}",
@@ -41,6 +42,7 @@ describe("EventRepository", () => {
         event_type TEXT NOT NULL,
         aggregate_id TEXT NOT NULL,
         aggregate_type TEXT NOT NULL,
+        list_id TEXT,
         occurred_at INTEGER NOT NULL,
         client_id TEXT NOT NULL,
         payload TEXT NOT NULL
@@ -288,6 +290,77 @@ describe("EventRepository", () => {
       const result = await repo.getByAggregateType(AggregateTypes.TODO_LIST)
 
       expect(result.getValue()!.map((e) => e.event_id)).toEqual(["e1", "e2"])
+    })
+  })
+
+  describe("getByListId", () => {
+    it("returns todo_list.* and ingredient.* events sharing a list_id, ordered by (occurred_at, event_id)", async () => {
+      await repo.append(
+        makeEvent({
+          event_id: "b-ingredient",
+          aggregate_type: AggregateTypes.INGREDIENT,
+          list_id: "list-1",
+          occurred_at: 1000,
+        })
+      )
+      await repo.append(
+        makeEvent({
+          event_id: "a-list",
+          aggregate_type: AggregateTypes.TODO_LIST,
+          list_id: "list-1",
+          occurred_at: 1000,
+        })
+      )
+      await repo.append(
+        makeEvent({
+          event_id: "other-list",
+          list_id: "list-2",
+          occurred_at: 500,
+        })
+      )
+
+      const result = await repo.getByListId("list-1")
+
+      expect(result.success).toBe(true)
+      // Same occurred_at - tiebreak is event_id, not insertion order, unlike
+      // getByAggregateId's rowid tiebreak (this must be device-independent).
+      expect(result.getValue()!.map((e) => e.event_id)).toEqual([
+        "a-list",
+        "b-ingredient",
+      ])
+    })
+  })
+
+  describe("getLastListIdForAggregate", () => {
+    it("returns the most recently recorded list_id for an aggregate", async () => {
+      await repo.append(
+        makeEvent({
+          event_id: "e1",
+          aggregate_id: "ing-1",
+          list_id: "list-1",
+          occurred_at: 1000,
+        })
+      )
+      await repo.append(
+        makeEvent({
+          event_id: "e2",
+          aggregate_id: "ing-1",
+          list_id: "list-1",
+          occurred_at: 2000,
+        })
+      )
+
+      const result = await repo.getLastListIdForAggregate("ing-1")
+
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toBe("list-1")
+    })
+
+    it("returns null when no event for the aggregate has a list_id", async () => {
+      const result = await repo.getLastListIdForAggregate("unknown")
+
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toBeNull()
     })
   })
 

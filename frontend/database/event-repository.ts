@@ -47,12 +47,13 @@ export class EventRepository extends BaseRepository {
     return this._executeTransaction(async () => {
       for (const { event, project, enqueueForSync } of entries) {
         await this.db.runAsync(
-          `INSERT INTO domain_events (event_id, event_type, aggregate_id, aggregate_type, occurred_at, client_id, payload)
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO domain_events (event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
           event.event_id,
           event.event_type,
           event.aggregate_id,
           event.aggregate_type,
+          event.list_id,
           event.occurred_at,
           event.client_id,
           event.payload
@@ -111,7 +112,7 @@ export class EventRepository extends BaseRepository {
     return this._executeQuery(async () => {
       const placeholders = eventIds.map(() => "?").join(", ")
       const rows = await this.db.getAllAsync<DomainEventRow>(
-        `SELECT event_id, event_type, aggregate_id, aggregate_type, occurred_at, client_id, payload
+        `SELECT event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload
          FROM domain_events
          WHERE event_id IN (${placeholders})`,
         ...eventIds
@@ -128,7 +129,7 @@ export class EventRepository extends BaseRepository {
   ): Promise<Result<DomainEventRow[], DbQueryError>> {
     return this._executeQuery(async () => {
       return this.db.getAllAsync<DomainEventRow>(
-        `SELECT event_id, event_type, aggregate_id, aggregate_type, occurred_at, client_id, payload
+        `SELECT event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload
          FROM domain_events
          WHERE aggregate_id = ?
          ORDER BY occurred_at ASC, rowid ASC`,
@@ -137,10 +138,57 @@ export class EventRepository extends BaseRepository {
     }, "getByAggregateId")
   }
 
+  /**
+   * Fetches every event for a list (its own todo_list.* history plus every
+   * ingredient.* event resolved to it via list_id), ordered by
+   * (occurred_at, event_id) - a total, device-independent order. This is
+   * deliberately *not* the (occurred_at, rowid) tiebreak getByAggregateId
+   * uses: rowid is local insertion order, which differs per device, so two
+   * devices replaying the same event set in rowid order could tiebreak
+   * differently and diverge. event_id (a uuid) breaks ties identically
+   * everywhere. Used by the pull applier to rebuild a list's projection from
+   * its full local history after merging in remote events.
+   */
+  async getByListId(
+    listId: string
+  ): Promise<Result<DomainEventRow[], DbQueryError>> {
+    return this._executeQuery(async () => {
+      return this.db.getAllAsync<DomainEventRow>(
+        `SELECT event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload
+         FROM domain_events
+         WHERE list_id = ?
+         ORDER BY occurred_at ASC, event_id ASC`,
+        listId
+      )
+    }, "getByListId")
+  }
+
+  /**
+   * Fallback for resolving list_id when the ingredient row is already gone
+   * (a delete racing the read that normally supplies list_id - see
+   * IngredientRepository.getListContext). Returns the most recently
+   * recorded list_id for this aggregate, or null if none of its events
+   * have one (e.g. the created event was itself lost).
+   */
+  async getLastListIdForAggregate(
+    aggregateId: string
+  ): Promise<Result<string | null, DbQueryError>> {
+    return this._executeQuery(async () => {
+      const row = await this.db.getFirstAsync<{ list_id: string | null }>(
+        `SELECT list_id FROM domain_events
+         WHERE aggregate_id = ? AND list_id IS NOT NULL
+         ORDER BY occurred_at DESC, rowid DESC
+         LIMIT 1`,
+        aggregateId
+      )
+      return row?.list_id ?? null
+    }, "getLastListIdForAggregate")
+  }
+
   async getAll(): Promise<Result<DomainEventRow[], DbQueryError>> {
     return this._executeQuery(async () => {
       return this.db.getAllAsync<DomainEventRow>(
-        `SELECT event_id, event_type, aggregate_id, aggregate_type, occurred_at, client_id, payload
+        `SELECT event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload
          FROM domain_events
          ORDER BY occurred_at DESC`
       )
@@ -152,7 +200,7 @@ export class EventRepository extends BaseRepository {
   ): Promise<Result<DomainEventRow[], DbQueryError>> {
     return this._executeQuery(async () => {
       return this.db.getAllAsync<DomainEventRow>(
-        `SELECT event_id, event_type, aggregate_id, aggregate_type, occurred_at, client_id, payload
+        `SELECT event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload
          FROM domain_events
          WHERE aggregate_type = ?
          ORDER BY occurred_at ASC, rowid ASC`,

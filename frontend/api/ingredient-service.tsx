@@ -32,6 +32,38 @@ export class IngredientService {
     this.projection = projection || new IngredientProjection(db)
   }
 
+  /**
+   * Resolves the list_id (and whether it's sync-enabled) for an ingredient
+   * that isn't being freshly created, i.e. every mutation but
+   * AddIngredients, which already receives listId directly. Falls back to
+   * the aggregate's own event history for the rare race where the
+   * ingredient row is already gone (e.g. a concurrent delete) by the time
+   * this read runs.
+   */
+  private async resolveListContext(
+    ingredientId: string
+  ): Promise<{ listId: string | null; syncEnabled: boolean }> {
+    const contextResult = await this.repository.getListContext(ingredientId)
+    if (contextResult.success) {
+      const context = contextResult.getValue()
+      if (context) {
+        return context
+      }
+    } else {
+      logger.warn(
+        `Failed to resolve list context for ingredient ${ingredientId}`,
+        contextResult.getError()
+      )
+    }
+
+    const fallbackResult =
+      await this.eventRepository.getLastListIdForAggregate(ingredientId)
+    const listId = fallbackResult.success ? fallbackResult.getValue()! : null
+    // We can't tell sync-enabled from this fallback path (the list row is
+    // gone from view) - default to not syncing rather than guessing.
+    return { listId, syncEnabled: false }
+  }
+
   async GetIngredients(
     listId: string
   ): Promise<Result<Ingredient[], DbQueryError>> {
@@ -78,6 +110,7 @@ export class IngredientService {
         event_type: EventTypes.INGREDIENT_CREATED,
         aggregate_id: ingredientId,
         aggregate_type: AggregateTypes.INGREDIENT,
+        list_id: listId,
         occurred_at: now,
         client_id: getClientId(),
         payload: JSON.stringify({ name: ingredientName, listId }),
@@ -124,11 +157,13 @@ export class IngredientService {
     try {
       const now = Date.now()
       const completedAt = completed ? now : null
+      const { listId } = await this.resolveListContext(id)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_UPDATED,
         aggregate_id: id,
         aggregate_type: AggregateTypes.INGREDIENT,
+        list_id: listId,
         occurred_at: now,
         client_id: getClientId(),
         payload: JSON.stringify({ completed, completedAt }),
@@ -182,11 +217,13 @@ export class IngredientService {
 
     try {
       const now = Date.now()
+      const { listId } = await this.resolveListContext(id)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_UPDATED,
         aggregate_id: id,
         aggregate_type: AggregateTypes.INGREDIENT,
+        list_id: listId,
         occurred_at: now,
         client_id: getClientId(),
         payload: JSON.stringify({ name }),
@@ -236,11 +273,13 @@ export class IngredientService {
 
     try {
       const now = Date.now()
+      const { listId } = await this.resolveListContext(id)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_PRIORITY_SET,
         aggregate_id: id,
         aggregate_type: AggregateTypes.INGREDIENT,
+        list_id: listId,
         occurred_at: now,
         client_id: getClientId(),
         payload: JSON.stringify({ priority }),
@@ -282,11 +321,13 @@ export class IngredientService {
   async clearPriority(id: string): Promise<Result<void, DbQueryError>> {
     try {
       const now = Date.now()
+      const { listId } = await this.resolveListContext(id)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_PRIORITY_CLEARED,
         aggregate_id: id,
         aggregate_type: AggregateTypes.INGREDIENT,
+        list_id: listId,
         occurred_at: now,
         client_id: getClientId(),
         payload: JSON.stringify({}),
@@ -327,11 +368,15 @@ export class IngredientService {
 
   async deleteIngredient(id: string): Promise<Result<void, DbQueryError>> {
     try {
+      // Resolve before appendWithProjection runs the delete handler below -
+      // once the ingredient row is gone, getListContext can't find it.
+      const { listId } = await this.resolveListContext(id)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_DELETED,
         aggregate_id: id,
         aggregate_type: AggregateTypes.INGREDIENT,
+        list_id: listId,
         occurred_at: Date.now(),
         client_id: getClientId(),
         payload: JSON.stringify({}),

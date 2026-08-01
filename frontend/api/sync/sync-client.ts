@@ -25,6 +25,7 @@ type WireEvent = {
   event_type: string
   aggregate_id: string
   aggregate_type: string
+  list_id: string | null
   occurred_at: number
   client_id: string
   payload: unknown
@@ -36,6 +37,7 @@ function toWireEvent(event: DomainEventRow): WireEvent {
     event_type: event.event_type,
     aggregate_id: event.aggregate_id,
     aggregate_type: event.aggregate_type,
+    list_id: event.list_id,
     occurred_at: event.occurred_at,
     client_id: event.client_id,
     payload: JSON.parse(event.payload),

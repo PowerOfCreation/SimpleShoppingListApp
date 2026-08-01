@@ -14,6 +14,7 @@ const makeEvent = (
     event_type: string
     aggregate_id: string
     aggregate_type: string
+    list_id: string | null
     occurred_at: number
     client_id: string
     payload: string
@@ -23,6 +24,7 @@ const makeEvent = (
   event_type: EventTypes.INGREDIENT_CREATED,
   aggregate_id: "ing-1",
   aggregate_type: "ingredient",
+  list_id: "list-1",
   occurred_at: 1000,
   client_id: "client-1",
   payload: JSON.stringify({

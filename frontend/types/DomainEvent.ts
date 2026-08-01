@@ -3,6 +3,13 @@ export type DomainEventRow = {
   event_type: string
   aggregate_id: string
   aggregate_type: string
+  // The list this event belongs to, for list-scoped sync (pull/reconcile).
+  // Equal to aggregate_id for todo_list.* events; resolved from local state
+  // at creation time for ingredient.* events, whose aggregate_id is the
+  // ingredient, not the list. Nullable: older rows predate this column and
+  // some ingredient events may have no resolvable list (see migration-5's
+  // backfill) - such events are simply never synced.
+  list_id: string | null
   occurred_at: number
   client_id: string
   payload: string

@@ -15,6 +15,7 @@ const makeEvent = (
   event_type: EventTypes.TODO_LIST_CREATED,
   aggregate_id: "list-1",
   aggregate_type: AggregateTypes.TODO_LIST,
+  list_id: "list-1",
   occurred_at: 1000,
   client_id: "client-1",
   payload: JSON.stringify({ name: "Rewe" }),

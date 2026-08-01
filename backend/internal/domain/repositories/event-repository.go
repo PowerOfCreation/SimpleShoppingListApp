@@ -17,9 +17,15 @@ type StoredEvent struct {
 	EventType     string
 	AggregateID   uuid.UUID
 	AggregateType string
-	Payload       json.RawMessage
-	OccurredAt    time.Time
-	ClientID      string
+	// ListID groups the event by the list it belongs to, for list-scoped
+	// pull/reconcile. Equal to AggregateID for todo_list.* events; for
+	// ingredient.* events it's the parent list, resolved client-side (the
+	// ingredient's own aggregate_id isn't the list). Nil when the sending
+	// client didn't populate it (older builds) or it couldn't be resolved.
+	ListID     *uuid.UUID
+	Payload    json.RawMessage
+	OccurredAt time.Time
+	ClientID   string
 }
 
 type EventRepository interface {

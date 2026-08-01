@@ -16,6 +16,7 @@ const makeEvent = (
   event_type: EventTypes.TODO_LIST_CREATED,
   aggregate_id: "list-1",
   aggregate_type: "todo_list",
+  list_id: "list-1",
   occurred_at: 1234,
   client_id: "client-1",
   payload: JSON.stringify({ name: "Rewe" }),
@@ -48,6 +49,7 @@ describe("SyncClient", () => {
           event_type: EventTypes.TODO_LIST_CREATED,
           aggregate_id: "list-1",
           aggregate_type: "todo_list",
+          list_id: "list-1",
           occurred_at: 1234,
           client_id: "client-1",
           payload: { name: "Rewe" }, // parsed, not the raw string

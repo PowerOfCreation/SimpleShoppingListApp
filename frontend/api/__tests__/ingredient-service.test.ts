@@ -52,12 +52,17 @@ describe("IngredientService", () => {
       remove: jest.fn(),
       reorderIngredients: jest.fn(),
       getCompletedIngredients: jest.fn(),
+      getListContext: jest
+        .fn()
+        .mockResolvedValue(Result.ok({ listId: "list-1", syncEnabled: false })),
     } as unknown as jest.Mocked<IngredientRepository>
 
     mockEventRepository = {
       append: jest.fn(),
       appendWithProjection: jest.fn().mockResolvedValue(Result.ok(undefined)),
       getByAggregateId: jest.fn(),
+      getByListId: jest.fn(),
+      getLastListIdForAggregate: jest.fn().mockResolvedValue(Result.ok(null)),
       getAll: jest.fn(),
       getByAggregateType: jest.fn(),
     } as unknown as jest.Mocked<EventRepository>
