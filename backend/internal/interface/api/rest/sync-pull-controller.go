@@ -21,10 +21,14 @@ type SyncPullController struct {
 	eventRepo repositories.EventRepository
 }
 
-func NewSyncPullController(e *echo.Echo, eventRepo repositories.EventRepository) *SyncPullController {
+func NewSyncPullController(
+	e *echo.Echo,
+	eventRepo repositories.EventRepository,
+	authMW echo.MiddlewareFunc,
+) *SyncPullController {
 	controller := &SyncPullController{eventRepo: eventRepo}
-	e.POST("/api/v1/sync/head", controller.GetHead)
-	e.GET("/api/v1/sync/events", controller.GetEvents)
+	e.POST("/api/v1/sync/head", controller.GetHead, authMW)
+	e.GET("/api/v1/sync/events", controller.GetEvents, authMW)
 	return controller
 }
 

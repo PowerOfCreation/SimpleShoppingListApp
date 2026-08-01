@@ -15,6 +15,7 @@ import (
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/services"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
 )
 
 // fakeEventRepo/fakeAckPublisher mirror the ones in
@@ -83,7 +84,7 @@ func TestEventController_SyncEvents_QueuesEventsAndReturns202(t *testing.T) {
 	defer ingestor.Stop()
 
 	e := echo.New()
-	NewEventController(e, ingestor)
+	NewEventController(e, ingestor, middleware.Passthrough)
 
 	eventID := uuid.New()
 	aggregateID := uuid.New()
@@ -123,7 +124,7 @@ func TestEventController_SyncEvents_MalformedBodyReturns400(t *testing.T) {
 	defer ingestor.Stop()
 
 	e := echo.New()
-	NewEventController(e, ingestor)
+	NewEventController(e, ingestor, middleware.Passthrough)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{not valid json`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -146,7 +147,7 @@ func TestEventController_SyncEvents_EmptyBatchReturns202WithZeroQueued(t *testin
 	defer ingestor.Stop()
 
 	e := echo.New()
-	NewEventController(e, ingestor)
+	NewEventController(e, ingestor, middleware.Passthrough)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`[]`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)

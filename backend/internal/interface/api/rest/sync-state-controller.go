@@ -21,9 +21,13 @@ type SyncStateController struct {
 	eventRepo repositories.EventRepository
 }
 
-func NewSyncStateController(e *echo.Echo, eventRepo repositories.EventRepository) *SyncStateController {
+func NewSyncStateController(
+	e *echo.Echo,
+	eventRepo repositories.EventRepository,
+	authMW echo.MiddlewareFunc,
+) *SyncStateController {
 	controller := &SyncStateController{eventRepo: eventRepo}
-	e.POST("/api/v1/sync/state", controller.GetSyncState)
+	e.POST("/api/v1/sync/state", controller.GetSyncState, authMW)
 	return controller
 }
 

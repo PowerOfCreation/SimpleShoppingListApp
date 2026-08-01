@@ -12,9 +12,9 @@ type EventController struct {
 	ingestor *services.EventIngestor
 }
 
-func NewEventController(e *echo.Echo, ingestor *services.EventIngestor) *EventController {
+func NewEventController(e *echo.Echo, ingestor *services.EventIngestor, authMW echo.MiddlewareFunc) *EventController {
 	controller := &EventController{ingestor: ingestor}
-	e.POST("/api/v1/events", controller.SyncEvents)
+	e.POST("/api/v1/events", controller.SyncEvents, authMW)
 	return controller
 }
 

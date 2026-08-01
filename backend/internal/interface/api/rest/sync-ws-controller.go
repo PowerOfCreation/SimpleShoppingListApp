@@ -9,9 +9,9 @@ import (
 )
 
 // CheckOrigin is permissive: this is a native-app API with no browser CORS
-// concern today, and there is no user auth yet to check against (see
-// docs/keycloak-login.md's "Open issues" on the frontend side). Revisit
-// once the backend verifies the Keycloak token.
+// concern. Authentication (see internal/interface/api/middleware) covers
+// who may connect at all; this only ever gated the browser-only Origin
+// check, which doesn't apply to a native client.
 var syncUpgrader = websocket.Upgrader{
 	CheckOrigin: func(r *http.Request) bool { return true },
 }
@@ -20,18 +20,18 @@ type SyncWebSocketController struct {
 	hub *realtime.Hub
 }
 
-func NewSyncWebSocketController(e *echo.Echo, hub *realtime.Hub) *SyncWebSocketController {
+func NewSyncWebSocketController(e *echo.Echo, hub *realtime.Hub, authMW echo.MiddlewareFunc) *SyncWebSocketController {
 	controller := &SyncWebSocketController{hub: hub}
-	e.GET("/api/v1/sync/ws", controller.Connect)
+	e.GET("/api/v1/sync/ws", controller.Connect, authMW)
 	return controller
 }
 
 // Connect upgrades to a WebSocket and blocks for the connection's entire
-// lifetime (see Hub.Serve). client_id is a query parameter rather than a
-// header because the WebSocket handshake is a plain GET - there is no
-// custom-header story here without user auth to piggyback on; once
-// requests carry a verified user/session, this becomes the identity
-// instead.
+// lifetime (see Hub.Serve). client_id stays a query parameter rather than
+// becoming the verified identity - the Authorization header (checked by
+// authMW before this handler runs) is what's actually trusted now;
+// client_id remains purely a routing key for ack fan-out (see
+// realtime.Hub), same as before auth existed.
 func (swc *SyncWebSocketController) Connect(c echo.Context) error {
 	clientID := c.QueryParam("client_id")
 	if clientID == "" {
