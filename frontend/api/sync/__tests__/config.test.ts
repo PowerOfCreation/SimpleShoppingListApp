@@ -47,10 +47,10 @@ describe("sync config", () => {
     )
   })
 
-  async function freshModule() {
+  function freshModule() {
     let mod!: typeof import("../config")
     jest.isolateModules(() => {
-      mod = require("../config")
+      mod = jest.requireActual<typeof import("../config")>("../config")
     })
     return mod
   }
