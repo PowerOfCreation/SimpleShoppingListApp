@@ -5,6 +5,7 @@ import mockSafeAreaContext from "react-native-safe-area-context/jest/mock"
 // Tests must not depend on a local .env, which jest does not load.
 process.env.EXPO_PUBLIC_KEYCLOAK_ISSUER ??= "https://keycloak.test/realms/test"
 process.env.EXPO_PUBLIC_KEYCLOAK_CLIENT_ID ??= "test-client"
+process.env.EXPO_PUBLIC_API_URL ??= "http://sync.test:8080"
 
 jest.mock("@react-native-async-storage/async-storage", () => mockAsyncStorage)
 jest.mock("expo-font") // https://github.com/callstack/react-native-paper/issues/4561#issuecomment-2500877723

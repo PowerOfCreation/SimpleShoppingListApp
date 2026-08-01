@@ -13,6 +13,7 @@ import { createLogger } from "@/api/common/logger"
 import { getDatabase } from "@/database/database"
 import { SafeAreaProvider } from "react-native-safe-area-context"
 import { AuthProvider } from "@/api/auth/AuthProvider"
+import { SyncProvider } from "@/api/sync/SyncProvider"
 
 const logger = createLogger("RootLayout")
 
@@ -67,41 +68,43 @@ export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <AuthProvider>
-        <Drawer
-          screenOptions={{
-            drawerStyle: { backgroundColor },
-            drawerLabelStyle: { color },
-            headerStyle: { backgroundColor },
-            headerTintColor: color,
-            sceneStyle: { backgroundColor },
-          }}
-        >
-          <Drawer.Screen
-            name="index"
-            options={{ drawerItemStyle: { display: "none" }, title: "" }}
-          />
-          <Drawer.Screen
-            name="(home)"
-            options={{
-              drawerLabel: "Shopping Lists",
-              headerShown: false,
+        <SyncProvider>
+          <Drawer
+            screenOptions={{
+              drawerStyle: { backgroundColor },
+              drawerLabelStyle: { color },
+              headerStyle: { backgroundColor },
+              headerTintColor: color,
+              sceneStyle: { backgroundColor },
             }}
-          />
-          <Drawer.Screen
-            name="(events)"
-            options={{
-              drawerLabel: "Event Log",
-              headerShown: false,
-            }}
-          />
-          <Drawer.Screen
-            name="(account)"
-            options={{
-              drawerLabel: "Account",
-              headerShown: false,
-            }}
-          />
-        </Drawer>
+          >
+            <Drawer.Screen
+              name="index"
+              options={{ drawerItemStyle: { display: "none" }, title: "" }}
+            />
+            <Drawer.Screen
+              name="(home)"
+              options={{
+                drawerLabel: "Shopping Lists",
+                headerShown: false,
+              }}
+            />
+            <Drawer.Screen
+              name="(events)"
+              options={{
+                drawerLabel: "Event Log",
+                headerShown: false,
+              }}
+            />
+            <Drawer.Screen
+              name="(account)"
+              options={{
+                drawerLabel: "Account",
+                headerShown: false,
+              }}
+            />
+          </Drawer>
+        </SyncProvider>
       </AuthProvider>
     </SafeAreaProvider>
   )
