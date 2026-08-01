@@ -22,14 +22,9 @@ export default function NewShoppingList() {
   const isSignedIn = status === "signedIn"
 
   const accentColor = useThemeColor({}, "accent")
-  const onAccentColor = useThemeColor({}, "onAccent")
   const dividerColor = useThemeColor({}, "divider")
   const dividerSubtleColor = useThemeColor({}, "dividerSubtle")
   const textSecondaryColor = useThemeColor({}, "textSecondary")
-  const offThumbColor = useThemeColor(
-    { light: "#ffffff", dark: "#ffffff" },
-    "onAccent"
-  )
 
   // A signed-out user can't have toggled this meaningfully - the switch is
   // disabled and shown off in that state, regardless of whatever value was
@@ -119,7 +114,7 @@ export default function NewShoppingList() {
           onValueChange={setSyncEnabled}
           disabled={!isSignedIn}
           trackColor={{ false: dividerSubtleColor, true: accentColor }}
-          thumbColor={effectiveSyncEnabled ? onAccentColor : offThumbColor}
+          thumbColor="#ffffff"
         />
       </View>
 
