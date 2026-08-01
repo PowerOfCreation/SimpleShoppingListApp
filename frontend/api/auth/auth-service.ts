@@ -41,6 +41,29 @@ export class AuthCancelledError extends AuthError {
 
 let discoveryPromise: Promise<DiscoveryDocument> | null = null
 
+// Synchronous cache of the signed-in user's subject, kept in sync with
+// login/restoreSession/logout below. This exists so plain (non-React)
+// modules - client-id.ts, called synchronously from shopping-list-service
+// and ingredient-service - can know "who is signed in right now" without
+// going through useAuth(), which only works inside components.
+let currentUserId: string | null = null
+
+/**
+ * The signed-in user's Keycloak subject, or null if nobody is signed in
+ * (or a session hasn't been restored yet). See client-id.ts for why this
+ * doubles as the identity used for WebSocket ack routing once sync is
+ * active - sync only ever runs while signed in, so there is always a
+ * subject available by the time it would matter.
+ */
+export function getCurrentUserId(): string | null {
+  return currentUserId
+}
+
+/** Test seam - resets the cached signed-in user between tests. */
+export function resetCurrentUserCache(): void {
+  currentUserId = null
+}
+
 /**
  * The discovery document does not change between logins, so it is fetched once
  * per app run. A failed fetch is not cached, otherwise a single offline moment
@@ -137,6 +160,7 @@ export async function login(): Promise<Result<AuthSession, AuthError>> {
 
       await saveTokens(tokens)
       const user = await toUser(tokens)
+      currentUserId = user.subject
 
       logger.info("Login succeeded")
       return { user, tokens }
@@ -168,6 +192,7 @@ export async function restoreSession(): Promise<
         : stored
 
       const user = await toUser(tokens)
+      currentUserId = user.subject
       return { user, tokens }
     })(),
     (err) => toAuthError(err, "Could not restore session")
@@ -231,6 +256,7 @@ export async function logout(): Promise<Result<void, AuthError>> {
     (async () => {
       const stored = await loadTokens()
       await clearTokens()
+      currentUserId = null
 
       if (!stored || !isAuthConfigured()) {
         return
