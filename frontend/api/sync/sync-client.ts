@@ -44,6 +44,51 @@ function toWireEvent(event: DomainEventRow): WireEvent {
   }
 }
 
+/**
+ * The shape GET /api/v1/sync/events actually returns - the same fields as
+ * WireEvent (see mapper.ToSyncEventResponse on the backend, which builds
+ * pull responses from the exact same StoredEvent push already round-trips
+ * through), plus seq. fromWireEvent is toWireEvent's inverse: it turns a
+ * server event back into the locally-stored shape (payload re-stringified,
+ * seq dropped - seq lives in sync_cursors, not on the event row itself).
+ */
+type WireEventFromServer = {
+  event_id: string
+  event_type: string
+  aggregate_id: string
+  aggregate_type: string
+  list_id: string | null
+  occurred_at: number
+  client_id: string
+  payload: unknown
+  seq: number
+}
+
+function fromWireEvent(event: WireEventFromServer): DomainEventRow {
+  return {
+    event_id: event.event_id,
+    event_type: event.event_type,
+    aggregate_id: event.aggregate_id,
+    aggregate_type: event.aggregate_type,
+    list_id: event.list_id,
+    occurred_at: event.occurred_at,
+    client_id: event.client_id,
+    payload: JSON.stringify(event.payload),
+  }
+}
+
+export type ListHead = {
+  listId: string
+  seq: number
+  eventId: string | null
+}
+
+export type EventsPage = {
+  events: DomainEventRow[]
+  nextSeq: number
+  hasMore: boolean
+}
+
 export type FetchLike = typeof fetch
 
 /**
@@ -165,6 +210,118 @@ export class SyncClient {
       logger.warn("Failed to reconcile with the server", error)
       return Result.fail(
         new SyncError("Network error while reconciling", true, error)
+      )
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
+  /**
+   * The pull decision point: for a set of sync-enabled list ids, asks the
+   * server for each list's current head (seq + latest event id). The
+   * engine compares this against its local cursor to decide whether to
+   * pull, push, or do nothing (see SyncEngine.pull).
+   */
+  async getListHeads(
+    listIds: string[]
+  ): Promise<Result<ListHead[], SyncError>> {
+    if (listIds.length === 0) {
+      return Result.ok([])
+    }
+
+    const tokenResult = await getValidAccessToken()
+    if (!tokenResult.success || !tokenResult.getValue()) {
+      return Result.fail(new SyncError("Not signed in", false))
+    }
+    const token = tokenResult.getValue()
+
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+    try {
+      const response = await this.fetchImpl(syncConfig.syncHeadUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ list_ids: listIds }),
+        signal: controller.signal,
+      })
+
+      if (!response.ok) {
+        return Result.fail(
+          new SyncError(`Unexpected response status ${response.status}`, true)
+        )
+      }
+
+      const data = (await response.json()) as {
+        heads?: { list_id: string; seq: number; event_id: string | null }[]
+      }
+      const heads = (data.heads ?? []).map((h) => ({
+        listId: h.list_id,
+        seq: h.seq,
+        eventId: h.event_id,
+      }))
+      return Result.ok(heads)
+    } catch (error) {
+      logger.warn("Failed to fetch list heads", error)
+      return Result.fail(
+        new SyncError("Network error while fetching list heads", true, error)
+      )
+    } finally {
+      clearTimeout(timeout)
+    }
+  }
+
+  /**
+   * Pulls one page of a list's event history, strictly ordered by seq and
+   * starting after sinceSeq. Mirrors sendEvents' wire shape in reverse -
+   * fromWireEvent turns each event straight back into a DomainEventRow the
+   * applier can insert.
+   */
+  async getEventsSince(
+    listId: string,
+    sinceSeq: number,
+    limit = 200
+  ): Promise<Result<EventsPage, SyncError>> {
+    const tokenResult = await getValidAccessToken()
+    if (!tokenResult.success || !tokenResult.getValue()) {
+      return Result.fail(new SyncError("Not signed in", false))
+    }
+    const token = tokenResult.getValue()
+
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
+
+    try {
+      const url = `${syncConfig.syncEventsUrl}?list_id=${encodeURIComponent(listId)}&since_seq=${sinceSeq}&limit=${limit}`
+      const response = await this.fetchImpl(url, {
+        method: "GET",
+        headers: { Authorization: `Bearer ${token}` },
+        signal: controller.signal,
+      })
+
+      if (!response.ok) {
+        return Result.fail(
+          new SyncError(`Unexpected response status ${response.status}`, true)
+        )
+      }
+
+      const data = (await response.json()) as {
+        events?: WireEventFromServer[]
+        next_seq: number
+        has_more: boolean
+      }
+      return Result.ok({
+        events: (data.events ?? []).map(fromWireEvent),
+        nextSeq: data.next_seq,
+        hasMore: data.has_more,
+      })
+    } catch (error) {
+      logger.warn("Failed to pull events", error)
+      return Result.fail(
+        new SyncError("Network error while pulling events", true, error)
       )
     } finally {
       clearTimeout(timeout)

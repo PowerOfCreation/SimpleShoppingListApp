@@ -1,14 +1,18 @@
 import { SyncEngine, MAX_DRAIN_BATCHES } from "../sync-engine"
 import { OutboxRepository } from "@/database/outbox-repository"
 import { EventRepository } from "@/database/event-repository"
+import { SyncCursorRepository } from "@/database/sync-cursor-repository"
 import { SyncClient } from "@/api/sync/sync-client"
+import { EventApplier } from "@/api/sync/event-applier"
 import { Result } from "@/api/common/result"
-import { SyncError } from "@/api/common/error-types"
+import { SyncError, DbQueryError } from "@/api/common/error-types"
 import { DomainEventRow, EventTypes } from "@/types/DomainEvent"
 
 jest.mock("@/database/outbox-repository")
 jest.mock("@/database/event-repository")
+jest.mock("@/database/sync-cursor-repository")
 jest.mock("@/api/sync/sync-client")
+jest.mock("@/api/sync/event-applier")
 
 const MockOutboxRepository = OutboxRepository as jest.MockedClass<
   typeof OutboxRepository
@@ -16,7 +20,11 @@ const MockOutboxRepository = OutboxRepository as jest.MockedClass<
 const MockEventRepository = EventRepository as jest.MockedClass<
   typeof EventRepository
 >
+const MockSyncCursorRepository = SyncCursorRepository as jest.MockedClass<
+  typeof SyncCursorRepository
+>
 const MockSyncClient = SyncClient as jest.MockedClass<typeof SyncClient>
+const MockEventApplier = EventApplier as jest.MockedClass<typeof EventApplier>
 
 const makeEvent = (
   overrides: Partial<DomainEventRow> = {}
@@ -45,7 +53,9 @@ const makeOutboxRow = (eventId: string, overrides = {}) => ({
 describe("SyncEngine", () => {
   let outbox: jest.Mocked<OutboxRepository>
   let events: jest.Mocked<EventRepository>
+  let cursor: jest.Mocked<SyncCursorRepository>
   let client: jest.Mocked<SyncClient>
+  let applier: jest.Mocked<EventApplier>
   let engine: SyncEngine
 
   beforeEach(() => {
@@ -66,16 +76,29 @@ describe("SyncEngine", () => {
       enqueueExistingForSync: jest.fn().mockResolvedValue(Result.ok(undefined)),
     } as unknown as jest.Mocked<EventRepository>
 
+    cursor = {
+      get: jest.fn().mockResolvedValue(Result.ok(null)),
+      set: jest.fn().mockResolvedValue(Result.ok(undefined)),
+    } as unknown as jest.Mocked<SyncCursorRepository>
+
     client = {
       sendEvents: jest.fn().mockResolvedValue(Result.ok(undefined)),
       getKnownEventIds: jest.fn().mockResolvedValue(Result.ok([])),
+      getListHeads: jest.fn().mockResolvedValue(Result.ok([])),
+      getEventsSince: jest.fn(),
     } as unknown as jest.Mocked<SyncClient>
+
+    applier = {
+      apply: jest.fn().mockResolvedValue(Result.ok({ applied: 0 })),
+    } as unknown as jest.Mocked<EventApplier>
 
     MockOutboxRepository.mockImplementation(() => outbox)
     MockEventRepository.mockImplementation(() => events)
+    MockSyncCursorRepository.mockImplementation(() => cursor)
     MockSyncClient.mockImplementation(() => client)
+    MockEventApplier.mockImplementation(() => applier)
 
-    engine = new SyncEngine(outbox, events, client)
+    engine = new SyncEngine(outbox, events, client, cursor, applier)
   })
 
   describe("flush", () => {
@@ -138,7 +161,14 @@ describe("SyncEngine", () => {
     })
 
     it("drains multiple pages in one call via the outbox's keyset cursor", async () => {
-      const engineWithSmallBatch = new SyncEngine(outbox, events, client, 1)
+      const engineWithSmallBatch = new SyncEngine(
+        outbox,
+        events,
+        client,
+        cursor,
+        applier,
+        1
+      )
       outbox.getPending
         .mockResolvedValueOnce(Result.ok([makeOutboxRow("e1")]))
         .mockResolvedValueOnce(Result.ok([makeOutboxRow("e2")]))
@@ -163,7 +193,14 @@ describe("SyncEngine", () => {
     })
 
     it("stops after MAX_DRAIN_BATCHES pages even if more remain pending", async () => {
-      const engineWithSmallBatch = new SyncEngine(outbox, events, client, 1)
+      const engineWithSmallBatch = new SyncEngine(
+        outbox,
+        events,
+        client,
+        cursor,
+        applier,
+        1
+      )
       // Every page is exactly at the batch limit, so the "short page"
       // termination heuristic never fires - only the hard cap should stop
       // this from looping forever against an ever-growing backlog.
@@ -179,7 +216,14 @@ describe("SyncEngine", () => {
     })
 
     it("stops draining (without querying further pages) once a send fails", async () => {
-      const engineWithSmallBatch = new SyncEngine(outbox, events, client, 1)
+      const engineWithSmallBatch = new SyncEngine(
+        outbox,
+        events,
+        client,
+        cursor,
+        applier,
+        1
+      )
       outbox.getPending
         .mockResolvedValueOnce(Result.ok([makeOutboxRow("e1")]))
         .mockResolvedValueOnce(Result.ok([makeOutboxRow("e2")]))
@@ -293,6 +337,180 @@ describe("SyncEngine", () => {
 
       expect(events.enqueueExistingForSync).not.toHaveBeenCalled()
       expect(outbox.resetToPending).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("pull", () => {
+    it("does nothing for an empty list id list", async () => {
+      await engine.pull([])
+
+      expect(client.getListHeads).not.toHaveBeenCalled()
+    })
+
+    it("(a) pulls missing events when the server head is ahead of the local cursor, then flushes", async () => {
+      cursor.get.mockResolvedValue(
+        Result.ok({ list_id: "list-1", last_seen_seq: 0, last_pulled_at: null })
+      )
+      client.getListHeads.mockResolvedValue(
+        Result.ok([{ listId: "list-1", seq: 5, eventId: "e5" }])
+      )
+      client.getEventsSince.mockResolvedValue(
+        Result.ok({
+          events: [makeEvent({ event_id: "e1" })],
+          nextSeq: 5,
+          hasMore: false,
+        })
+      )
+
+      await engine.pull(["list-1"])
+
+      expect(client.getEventsSince).toHaveBeenCalledWith(
+        "list-1",
+        0,
+        expect.any(Number)
+      )
+      expect(applier.apply).toHaveBeenCalledWith(
+        "list-1",
+        [makeEvent({ event_id: "e1" })],
+        5
+      )
+      // Pull always ends with a flush - local state should reflect remote
+      // before anything new goes out, but pending pushes still go out.
+      expect(outbox.getPending).toHaveBeenCalled()
+    })
+
+    it("(a) loops pulling pages until has_more is false", async () => {
+      cursor.get.mockResolvedValue(Result.ok(null))
+      client.getListHeads.mockResolvedValue(
+        Result.ok([{ listId: "list-1", seq: 10, eventId: "e10" }])
+      )
+      client.getEventsSince
+        .mockResolvedValueOnce(
+          Result.ok({
+            events: [makeEvent({ event_id: "e1" })],
+            nextSeq: 5,
+            hasMore: true,
+          })
+        )
+        .mockResolvedValueOnce(
+          Result.ok({
+            events: [makeEvent({ event_id: "e2" })],
+            nextSeq: 10,
+            hasMore: false,
+          })
+        )
+
+      await engine.pull(["list-1"])
+
+      expect(client.getEventsSince).toHaveBeenNthCalledWith(
+        1,
+        "list-1",
+        0,
+        expect.any(Number)
+      )
+      expect(client.getEventsSince).toHaveBeenNthCalledWith(
+        2,
+        "list-1",
+        5,
+        expect.any(Number)
+      )
+      expect(applier.apply).toHaveBeenCalledTimes(2)
+    })
+
+    it("(b)/(c) skips pulling when already caught up, but still flushes", async () => {
+      cursor.get.mockResolvedValue(
+        Result.ok({ list_id: "list-1", last_seen_seq: 5, last_pulled_at: null })
+      )
+      client.getListHeads.mockResolvedValue(
+        Result.ok([{ listId: "list-1", seq: 5, eventId: "e5" }])
+      )
+
+      await engine.pull(["list-1"])
+
+      expect(client.getEventsSince).not.toHaveBeenCalled()
+      expect(applier.apply).not.toHaveBeenCalled()
+      expect(outbox.getPending).toHaveBeenCalled()
+    })
+
+    it("clamps the cursor down when the server head is behind it (server lost data)", async () => {
+      cursor.get.mockResolvedValue(
+        Result.ok({
+          list_id: "list-1",
+          last_seen_seq: 10,
+          last_pulled_at: null,
+        })
+      )
+      client.getListHeads.mockResolvedValue(
+        Result.ok([{ listId: "list-1", seq: 3, eventId: "e3" }])
+      )
+
+      await engine.pull(["list-1"])
+
+      expect(cursor.set).toHaveBeenCalledWith("list-1", 3, expect.any(Number))
+      expect(client.getEventsSince).not.toHaveBeenCalled()
+    })
+
+    it("skips a list id the server's head response omitted, without crashing", async () => {
+      client.getListHeads.mockResolvedValue(Result.ok([]))
+
+      await expect(engine.pull(["list-1"])).resolves.toBeUndefined()
+
+      expect(client.getEventsSince).not.toHaveBeenCalled()
+      // Still flushes - a head lookup gap for one list must not block
+      // pushing whatever else is pending.
+      expect(outbox.getPending).toHaveBeenCalled()
+    })
+
+    it("stops pulling a list (but still flushes) when fetching a page fails", async () => {
+      cursor.get.mockResolvedValue(Result.ok(null))
+      client.getListHeads.mockResolvedValue(
+        Result.ok([{ listId: "list-1", seq: 5, eventId: "e5" }])
+      )
+      client.getEventsSince.mockResolvedValue(
+        Result.fail(new SyncError("network down", true))
+      )
+
+      await engine.pull(["list-1"])
+
+      expect(applier.apply).not.toHaveBeenCalled()
+      expect(outbox.getPending).toHaveBeenCalled()
+    })
+
+    it("stops pulling a list (but still flushes) when applying a page fails", async () => {
+      cursor.get.mockResolvedValue(Result.ok(null))
+      client.getListHeads.mockResolvedValue(
+        Result.ok([{ listId: "list-1", seq: 5, eventId: "e5" }])
+      )
+      client.getEventsSince.mockResolvedValue(
+        Result.ok({ events: [makeEvent()], nextSeq: 5, hasMore: false })
+      )
+      applier.apply.mockResolvedValue(
+        Result.fail(new DbQueryError("boom", "apply", "EventApplier"))
+      )
+
+      await engine.pull(["list-1"])
+
+      expect(outbox.getPending).toHaveBeenCalled()
+    })
+
+    it("does not flush when fetching heads itself fails", async () => {
+      client.getListHeads.mockResolvedValue(
+        Result.fail(new SyncError("network down", true))
+      )
+
+      await engine.pull(["list-1"])
+
+      expect(outbox.getPending).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("pullList", () => {
+    it("delegates to pull with a single-element list id array", async () => {
+      client.getListHeads.mockResolvedValue(Result.ok([]))
+
+      await engine.pullList("list-1")
+
+      expect(client.getListHeads).toHaveBeenCalledWith(["list-1"])
     })
   })
 })

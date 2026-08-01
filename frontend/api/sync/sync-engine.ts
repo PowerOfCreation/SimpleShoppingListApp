@@ -1,12 +1,15 @@
 import { OutboxRepository } from "@/database/outbox-repository"
 import { EventRepository } from "@/database/event-repository"
+import { SyncCursorRepository } from "@/database/sync-cursor-repository"
 import { SyncClient } from "@/api/sync/sync-client"
+import { EventApplier } from "@/api/sync/event-applier"
 import { createLogger } from "@/api/common/logger"
 import { SYNCABLE_EVENT_TYPES } from "@/types/DomainEvent"
 
 const logger = createLogger("SyncEngine")
 
 const DEFAULT_BATCH_LIMIT = 50
+const DEFAULT_PULL_PAGE_LIMIT = 200
 
 // Caps how many pages a single flush() call will drain before yielding,
 // so an unusually large backlog (e.g. hours offline with sync on) can't
@@ -34,7 +37,10 @@ export class SyncEngine {
     private readonly outboxRepository: OutboxRepository,
     private readonly eventRepository: EventRepository,
     private readonly client: SyncClient,
-    private readonly batchLimit: number = DEFAULT_BATCH_LIMIT
+    private readonly cursorRepository: SyncCursorRepository,
+    private readonly eventApplier: EventApplier,
+    private readonly batchLimit: number = DEFAULT_BATCH_LIMIT,
+    private readonly pullPageLimit: number = DEFAULT_PULL_PAGE_LIMIT
   ) {}
 
   /**
@@ -200,5 +206,110 @@ export class SyncEngine {
     }
 
     await this.flush()
+  }
+
+  /**
+   * The pull decision point: for each sync-enabled list, compares the
+   * server's head (fetched in one batched request) against our locally
+   * stored cursor, and pulls whatever's missing. Always finishes with a
+   * flush() - pull runs first so local state reflects remote before
+   * anything new goes out, but a list that's already caught up on pull
+   * still needs its pending outbox rows (new local writes, or another
+   * list's toggle-sync-on replay) pushed.
+   */
+  async pull(listIds: string[]): Promise<void> {
+    if (listIds.length === 0) {
+      return
+    }
+
+    const headsResult = await this.client.getListHeads(listIds)
+    if (!headsResult.success) {
+      logger.warn(
+        "Failed to fetch list heads, will retry on the next trigger",
+        headsResult.getError()
+      )
+      return
+    }
+    const headByListId = new Map(
+      headsResult.getValue()!.map((head) => [head.listId, head])
+    )
+
+    for (const listId of listIds) {
+      const head = headByListId.get(listId)
+      if (!head) {
+        // The server answers every requested id (see SyncPullController);
+        // a missing entry would mean a response we can't trust - skip
+        // rather than guess.
+        continue
+      }
+      await this.pullListToHead(listId, head.seq)
+    }
+
+    await this.flush()
+  }
+
+  /** Single-list entry point - e.g. a WebSocket "new event for this list" notification. */
+  async pullList(listId: string): Promise<void> {
+    await this.pull([listId])
+  }
+
+  private async pullListToHead(listId: string, headSeq: number): Promise<void> {
+    const cursorResult = await this.cursorRepository.get(listId)
+    const cursorSeq = cursorResult.success
+      ? (cursorResult.getValue()?.last_seen_seq ?? 0)
+      : 0
+
+    if (headSeq < cursorSeq) {
+      // The server's head is behind what we last saw - it lost data (e.g.
+      // restored from an older backup). Clamp our cursor down to what it
+      // actually has; reconcile resends anything it's missing from what we
+      // hold locally.
+      logger.warn(
+        `Server head for list ${listId} (seq ${headSeq}) is behind our cursor (seq ${cursorSeq}) - clamping down`
+      )
+      await this.cursorRepository.set(listId, headSeq, Date.now())
+      return
+    }
+
+    if (headSeq === cursorSeq) {
+      // Already caught up - nothing to pull for this list.
+      return
+    }
+
+    let since = cursorSeq
+    let hasMore = true
+    while (hasMore) {
+      const pageResult = await this.client.getEventsSince(
+        listId,
+        since,
+        this.pullPageLimit
+      )
+      if (!pageResult.success) {
+        logger.warn(
+          `Failed to pull events for list ${listId}, will retry on the next trigger`,
+          pageResult.getError()
+        )
+        return
+      }
+      const page = pageResult.getValue()!
+
+      if (page.events.length > 0) {
+        const applyResult = await this.eventApplier.apply(
+          listId,
+          page.events,
+          page.nextSeq
+        )
+        if (!applyResult.success) {
+          logger.error(
+            `Failed to apply pulled events for list ${listId}`,
+            applyResult.getError()
+          )
+          return
+        }
+      }
+
+      since = page.nextSeq
+      hasMore = page.hasMore
+    }
   }
 }

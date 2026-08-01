@@ -82,6 +82,31 @@ describe("IngredientProjection", () => {
         completed_at: null,
       })
     })
+
+    it("is idempotent: applying the same created event twice updates in place instead of throwing", async () => {
+      await projection.handleCreated(db, makeEvent())
+
+      await expect(
+        projection.handleCreated(
+          db,
+          makeEvent({
+            payload: JSON.stringify({
+              name: "Whole Milk",
+              listId: "list-1",
+              completed: true,
+              completedAt: 2000,
+            }),
+          })
+        )
+      ).resolves.toBeUndefined()
+
+      const rows = await db.getAllAsync(`SELECT id FROM ingredients`)
+      expect(rows).toHaveLength(1)
+      const row = await db.getFirstAsync<{ name: string; completed: number }>(
+        `SELECT name, completed FROM ingredients WHERE id = 'ing-1'`
+      )
+      expect(row).toEqual({ name: "Whole Milk", completed: 1 })
+    })
   })
 
   describe("handleUpdated", () => {
@@ -324,6 +349,82 @@ describe("IngredientProjection", () => {
         priority: number | null
       }>(`SELECT id, name, priority FROM ingredients ORDER BY id`)
       expect(rows).toEqual([{ id: "a", name: "Green Apples", priority: null }])
+    })
+  })
+
+  describe("rebuildForList", () => {
+    it("clears only the given list's ingredients, leaving other lists untouched", async () => {
+      await db.execAsync(`
+        INSERT INTO ingredients VALUES ('a','A',0,'list-1',1,1,NULL,NULL);
+        INSERT INTO ingredients VALUES ('other','Other',0,'list-2',1,1,NULL,NULL);
+      `)
+
+      await projection.rebuildForList(db, "list-1", [
+        makeEvent({
+          event_id: "e1",
+          event_type: EventTypes.INGREDIENT_CREATED,
+          aggregate_id: "b",
+          list_id: "list-1",
+          occurred_at: 1000,
+          payload: JSON.stringify({
+            name: "Bread",
+            listId: "list-1",
+            completed: false,
+            completedAt: null,
+          }),
+        }),
+      ])
+
+      const rows = await db.getAllAsync<{ id: string; list_id: string }>(
+        `SELECT id, list_id FROM ingredients ORDER BY id`
+      )
+      expect(rows).toEqual([
+        { id: "b", list_id: "list-1" },
+        { id: "other", list_id: "list-2" },
+      ])
+    })
+
+    it("replays in (occurred_at, event_id) order regardless of the input array's order", async () => {
+      const created = makeEvent({
+        event_id: "e1",
+        event_type: EventTypes.INGREDIENT_CREATED,
+        aggregate_id: "a",
+        list_id: "list-1",
+        occurred_at: 1000,
+        payload: JSON.stringify({
+          name: "Milk",
+          listId: "list-1",
+          completed: false,
+          completedAt: null,
+        }),
+      })
+      const updated = makeEvent({
+        event_id: "e2",
+        event_type: EventTypes.INGREDIENT_UPDATED,
+        aggregate_id: "a",
+        list_id: "list-1",
+        occurred_at: 2000,
+        payload: JSON.stringify({ name: "Whole Milk" }),
+      })
+
+      // Passed newest-first - rebuildForList must sort before replaying.
+      await projection.rebuildForList(db, "list-1", [updated, created])
+
+      const row = await db.getFirstAsync<{ name: string }>(
+        `SELECT name FROM ingredients WHERE id = 'a'`
+      )
+      expect(row?.name).toBe("Whole Milk")
+    })
+
+    it("does not open its own transaction - safe to call from within an existing one", async () => {
+      await db.withTransactionAsync(async () => {
+        await projection.rebuildForList(db, "list-1", [makeEvent()])
+      })
+
+      const row = await db.getFirstAsync(
+        `SELECT id FROM ingredients WHERE id = 'ing-1'`
+      )
+      expect(row).not.toBeNull()
     })
   })
 })

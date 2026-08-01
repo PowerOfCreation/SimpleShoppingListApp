@@ -43,6 +43,7 @@ describe("SyncProvider", () => {
   let flushMock: jest.Mock
   let handleAckMock: jest.Mock
   let reconcileMock: jest.Mock
+  let pullMock: jest.Mock
   let socketConnectMock: jest.Mock
   let socketDisconnectMock: jest.Mock
   let socketReconnectIfTokenChangedMock: jest.Mock
@@ -63,12 +64,14 @@ describe("SyncProvider", () => {
     flushMock = jest.fn().mockResolvedValue(undefined)
     handleAckMock = jest.fn().mockResolvedValue(undefined)
     reconcileMock = jest.fn().mockResolvedValue(undefined)
+    pullMock = jest.fn().mockResolvedValue(undefined)
     MockSyncEngine.mockImplementation(
       () =>
         ({
           flush: flushMock,
           handleAck: handleAckMock,
           reconcile: reconcileMock,
+          pull: pullMock,
         }) as unknown as SyncEngine
     )
 
@@ -105,17 +108,18 @@ describe("SyncProvider", () => {
     )
   }
 
-  it("does not flush or connect the socket when signed out", async () => {
+  it("does not flush, pull, or connect the socket when signed out", async () => {
     mockAuth("signedOut")
 
     renderProvider()
 
     await Promise.resolve()
     expect(flushMock).not.toHaveBeenCalled()
+    expect(pullMock).not.toHaveBeenCalled()
     expect(socketConnectMock).not.toHaveBeenCalled()
   })
 
-  it("does not flush or connect the socket when sync is not configured, even if signed in", async () => {
+  it("does not flush, pull, or connect the socket when sync is not configured, even if signed in", async () => {
     mockAuth("signedIn")
     jest.spyOn(syncConfigModule, "isSyncConfigured").mockReturnValue(false)
 
@@ -123,16 +127,20 @@ describe("SyncProvider", () => {
 
     await Promise.resolve()
     expect(flushMock).not.toHaveBeenCalled()
+    expect(pullMock).not.toHaveBeenCalled()
     expect(socketConnectMock).not.toHaveBeenCalled()
   })
 
-  it("flushes and connects the socket once on mount when signed in and configured", async () => {
+  it("flushes, pulls sync-enabled lists, and connects the socket once on mount when signed in and configured", async () => {
     mockAuth("signedIn")
 
     renderProvider()
 
     await waitFor(() => expect(flushMock).toHaveBeenCalledTimes(1))
     expect(socketConnectMock).toHaveBeenCalledTimes(1)
+    await waitFor(() =>
+      expect(pullMock).toHaveBeenCalledWith(["list-1", "list-2"])
+    )
   })
 
   it("disconnects the socket when signed out after being signed in", async () => {
@@ -190,10 +198,11 @@ describe("SyncProvider", () => {
     expect(handleAckMock).toHaveBeenCalledWith("evt-123")
   })
 
-  it("reconciles sync-enabled list ids when the socket (re)connects", async () => {
+  it("pulls and reconciles sync-enabled list ids when the socket (re)connects", async () => {
     mockAuth("signedIn")
     renderProvider()
     await waitFor(() => expect(socketConnectMock).toHaveBeenCalledTimes(1))
+    pullMock.mockClear()
 
     expect(onConnectedHandler).toBeDefined()
     onConnectedHandler!()
@@ -201,12 +210,14 @@ describe("SyncProvider", () => {
     await waitFor(() =>
       expect(reconcileMock).toHaveBeenCalledWith(["list-1", "list-2"])
     )
+    expect(pullMock).toHaveBeenCalledWith(["list-1", "list-2"])
   })
 
-  it("flushes, reconciles, and reconnects when the app comes to the foreground", async () => {
+  it("flushes, pulls, reconciles, and reconnects when the app comes to the foreground", async () => {
     mockAuth("signedIn")
     renderProvider()
     await waitFor(() => expect(flushMock).toHaveBeenCalledTimes(1))
+    pullMock.mockClear()
 
     const emitAppStateChange = (
       AppState.addEventListener as jest.Mock
@@ -217,6 +228,28 @@ describe("SyncProvider", () => {
 
     await waitFor(() => expect(flushMock).toHaveBeenCalledTimes(2))
     expect(reconcileMock).toHaveBeenCalled()
+    expect(pullMock).toHaveBeenCalledWith(["list-1", "list-2"])
     expect(socketConnectMock.mock.calls.length).toBeGreaterThanOrEqual(2)
+  })
+
+  it("pulls and reconciles again on the periodic safety interval", async () => {
+    jest.useFakeTimers()
+    try {
+      mockAuth("signedIn")
+      renderProvider()
+      await waitFor(() => expect(flushMock).toHaveBeenCalledTimes(1))
+      pullMock.mockClear()
+      reconcileMock.mockClear()
+
+      jest.advanceTimersByTime(5 * 60 * 1000)
+      // Let the interval callback's promises settle.
+      await Promise.resolve()
+      await Promise.resolve()
+
+      expect(pullMock).toHaveBeenCalledWith(["list-1", "list-2"])
+      expect(reconcileMock).toHaveBeenCalledWith(["list-1", "list-2"])
+    } finally {
+      jest.useRealTimers()
+    }
   })
 })

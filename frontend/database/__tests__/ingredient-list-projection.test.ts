@@ -154,4 +154,92 @@ describe("IngredientListProjection", () => {
       expect(rows.length).toBe(0)
     })
   })
+
+  describe("rebuildForList", () => {
+    it("clears and replays only the given list, leaving other lists untouched", async () => {
+      await db.runAsync(
+        `INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES ('list-2', 'Other', 1, 1)`
+      )
+
+      await projection.rebuildForList(db, "list-1", [
+        makeEvent({ event_id: "e1", occurred_at: 1000 }),
+      ])
+
+      const rows = await db.getAllAsync<{ id: string }>(
+        `SELECT id FROM ingredient_lists ORDER BY id`
+      )
+      expect(rows.map((r) => r.id)).toEqual(["list-1", "list-2"])
+    })
+
+    it("replays sync_enabled/sync_disabled so a rebuild doesn't silently disable sync", async () => {
+      await projection.rebuildForList(db, "list-1", [
+        makeEvent({
+          event_id: "e1",
+          event_type: EventTypes.TODO_LIST_CREATED,
+          occurred_at: 1000,
+        }),
+        makeEvent({
+          event_id: "e2",
+          event_type: EventTypes.TODO_LIST_SYNC_ENABLED,
+          occurred_at: 1000,
+        }),
+      ])
+
+      expect(await getSyncEnabled("list-1")).toBe(1)
+    })
+
+    it("leaves no row when the list's history ends in a delete", async () => {
+      await projection.rebuildForList(db, "list-1", [
+        makeEvent({
+          event_id: "e1",
+          event_type: EventTypes.TODO_LIST_CREATED,
+          occurred_at: 1000,
+        }),
+        makeEvent({
+          event_id: "e2",
+          event_type: EventTypes.TODO_LIST_DELETED,
+          occurred_at: 2000,
+          payload: "{}",
+        }),
+      ])
+
+      const row = await db.getFirstAsync(
+        `SELECT id FROM ingredient_lists WHERE id = 'list-1'`
+      )
+      expect(row).toBeNull()
+    })
+
+    it("does not open its own transaction - safe to call from within an existing one", async () => {
+      await db.withTransactionAsync(async () => {
+        await projection.rebuildForList(db, "list-1", [makeEvent()])
+      })
+
+      const row = await db.getFirstAsync(
+        `SELECT id FROM ingredient_lists WHERE id = 'list-1'`
+      )
+      expect(row).not.toBeNull()
+    })
+
+    it("replays in (occurred_at, event_id) order regardless of the input array's order", async () => {
+      const created = makeEvent({
+        event_id: "e1",
+        event_type: EventTypes.TODO_LIST_CREATED,
+        occurred_at: 1000,
+      })
+      const renamed = makeEvent({
+        event_id: "e2",
+        event_type: EventTypes.TODO_LIST_UPDATED,
+        occurred_at: 2000,
+        payload: JSON.stringify({ name: "Lidl" }),
+      })
+
+      // Passed newest-first - rebuildForList must sort before replaying.
+      await projection.rebuildForList(db, "list-1", [renamed, created])
+
+      const row = await db.getFirstAsync<{ name: string }>(
+        `SELECT name FROM ingredient_lists WHERE id = 'list-1'`
+      )
+      expect(row?.name).toBe("Lidl")
+    })
+  })
 })

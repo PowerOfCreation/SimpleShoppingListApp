@@ -1,7 +1,8 @@
-import { useState, useCallback } from "react"
+import { useState, useCallback, useEffect } from "react"
 import { ShoppingListOverview } from "@/types/ShoppingListOverview"
 import { shoppingListService } from "@/api/shopping-list-service"
 import { createLogger } from "@/api/common/logger"
+import { onListDataChanged } from "@/api/sync/sync-events"
 
 const logger = createLogger("useShoppingLists")
 
@@ -40,6 +41,15 @@ export function useShoppingLists() {
     },
     []
   )
+
+  // A pull can create/rename/delete a list, or change its ingredient
+  // counts, in the background - refetch the overview whenever any list's
+  // data changed rather than tracking exactly what changed.
+  useEffect(() => {
+    return onListDataChanged(() => {
+      refetch()
+    })
+  }, [refetch])
 
   return { lists, isLoading, error, refetch, updateList }
 }

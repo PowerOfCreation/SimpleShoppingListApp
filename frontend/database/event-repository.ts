@@ -164,6 +164,59 @@ export class EventRepository extends BaseRepository {
   }
 
   /**
+   * Inserts one pulled event if it isn't already present, without running
+   * any projection and without touching the outbox - the applier
+   * (event-applier.ts) rebuilds the affected list's projection separately
+   * from the full merged history, and a pulled event must never be
+   * re-sent as if it were a local write. Returns the number of rows
+   * actually inserted (0 for an event we already had - an echo of our own
+   * push, or a duplicate delivery of the same pull page), so a caller can
+   * tell "nothing new" from "something changed" without a second query.
+   *
+   * Takes no transaction of its own - call this from within an
+   * already-open transaction (see appendRemote below, or EventApplier,
+   * which needs several such inserts plus a projection rebuild and a
+   * cursor advance to commit together).
+   */
+  async insertRemote(event: DomainEventRow): Promise<number> {
+    const result = await this.db.runAsync(
+      `INSERT OR IGNORE INTO domain_events (event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      event.event_id,
+      event.event_type,
+      event.aggregate_id,
+      event.aggregate_type,
+      event.list_id,
+      event.occurred_at,
+      event.client_id,
+      event.payload
+    )
+    return result.changes
+  }
+
+  /**
+   * Standalone batch version of insertRemote, wrapped in its own
+   * transaction - for callers that only need "get these events into the
+   * log" without the projection rebuild + cursor bookkeeping EventApplier
+   * layers on top (e.g. tests, or a future backfill tool).
+   */
+  async appendRemote(
+    events: DomainEventRow[]
+  ): Promise<Result<{ applied: number }, DbQueryError>> {
+    let applied = 0
+    const result = await this._executeTransaction(async () => {
+      for (const event of events) {
+        applied += await this.insertRemote(event)
+      }
+    }, "appendRemote")
+
+    if (!result.success) {
+      return Result.fail(result.getError())
+    }
+    return Result.ok({ applied })
+  }
+
+  /**
    * Fallback for resolving list_id when the ingredient row is already gone
    * (a delete racing the read that normally supplies list_id - see
    * IngredientRepository.getListContext). Returns the most recently

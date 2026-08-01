@@ -1,5 +1,9 @@
 import { SQLiteDatabase } from "expo-sqlite"
-import { DomainEventRow, EventTypes } from "@/types/DomainEvent"
+import {
+  DomainEventRow,
+  EventTypes,
+  byOccurredAtThenEventId,
+} from "@/types/DomainEvent"
 
 export class IngredientListProjection {
   constructor(private readonly db: SQLiteDatabase) {}
@@ -59,6 +63,42 @@ export class IngredientListProjection {
       `UPDATE ingredient_lists SET sync_enabled = 0 WHERE id = ?`,
       event.aggregate_id
     )
+  }
+
+  /**
+   * List-scoped counterpart to rebuild(), used by EventApplier so a pull's
+   * projection update and cursor advance commit in one transaction - see
+   * IngredientProjection.rebuildForList for the fuller rationale (same
+   * pattern, same reason).
+   */
+  async rebuildForList(
+    db: SQLiteDatabase,
+    listId: string,
+    events: DomainEventRow[]
+  ): Promise<void> {
+    await db.runAsync(`DELETE FROM ingredient_lists WHERE id = ?`, listId)
+    // See IngredientProjection.rebuildForList's comment on this sort - the
+    // same "don't trust the caller got the order right" reasoning applies.
+    const ordered = [...events].sort(byOccurredAtThenEventId)
+    for (const event of ordered) {
+      switch (event.event_type) {
+        case EventTypes.TODO_LIST_CREATED:
+          await this.handleCreated(db, event)
+          break
+        case EventTypes.TODO_LIST_UPDATED:
+          await this.handleUpdated(db, event)
+          break
+        case EventTypes.TODO_LIST_DELETED:
+          await this.handleDeleted(db, event)
+          break
+        case EventTypes.TODO_LIST_SYNC_ENABLED:
+          await this.handleSyncEnabled(db, event)
+          break
+        case EventTypes.TODO_LIST_SYNC_DISABLED:
+          await this.handleSyncDisabled(db, event)
+          break
+      }
+    }
   }
 
   async rebuild(events: DomainEventRow[]): Promise<void> {

@@ -15,6 +15,26 @@ export type DomainEventRow = {
   payload: string
 }
 
+/**
+ * Total, device-independent ordering for replaying a merged (local +
+ * pulled) event history: (occurred_at, event_id). event_id (a uuid) rather
+ * than rowid as the tiebreak, because rowid is local insertion order,
+ * which differs per device - two devices replaying the same event set
+ * would tiebreak same-millisecond events differently and diverge. Used by
+ * the list-scoped rebuildForList methods (ingredient-projection.ts,
+ * ingredient-list-projection.ts) so a projection rebuild is correct
+ * regardless of what order its caller happened to hand events in.
+ */
+export function byOccurredAtThenEventId(
+  a: DomainEventRow,
+  b: DomainEventRow
+): number {
+  if (a.occurred_at !== b.occurred_at) {
+    return a.occurred_at - b.occurred_at
+  }
+  return a.event_id < b.event_id ? -1 : a.event_id > b.event_id ? 1 : 0
+}
+
 export const EventTypes = {
   TODO_LIST_CREATED: "todo_list.created",
   TODO_LIST_UPDATED: "todo_list.updated",

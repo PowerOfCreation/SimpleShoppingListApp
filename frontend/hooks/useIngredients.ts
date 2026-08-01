@@ -8,6 +8,7 @@ import { createLogger } from "@/api/common/logger"
 import { IngredientListRepository } from "@/database/ingredient-list-repository"
 import { getDatabase } from "@/database/database"
 import { isSortedByMode, sortIngredientsByMode } from "@/utils/sortIngredients"
+import { onListDataChanged } from "@/api/sync/sync-events"
 
 const logger = createLogger("useIngredients")
 
@@ -75,6 +76,17 @@ export function useIngredients() {
   React.useEffect(() => {
     loadIngredients()
   }, [loadIngredients])
+
+  // A pull can apply new/changed ingredients for this list in the
+  // background (a WS notification, foreground pull, ...) - without this,
+  // the screen would only pick that up on its next remount.
+  React.useEffect(() => {
+    return onListDataChanged((changedListId) => {
+      if (changedListId === listId) {
+        loadIngredients()
+      }
+    })
+  }, [listId, loadIngredients])
 
   /**
    * Toggle ingredient completion status

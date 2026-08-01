@@ -364,6 +364,60 @@ describe("EventRepository", () => {
     })
   })
 
+  describe("insertRemote / appendRemote", () => {
+    it("insertRemote inserts a new event and reports 1 row changed", async () => {
+      const changes = await repo.insertRemote(makeEvent({ event_id: "e1" }))
+
+      expect(changes).toBe(1)
+      const row = await db.getFirstAsync(
+        `SELECT * FROM domain_events WHERE event_id = 'e1'`
+      )
+      expect(row).not.toBeNull()
+    })
+
+    it("insertRemote is idempotent, reporting 0 changes for an event already present", async () => {
+      await repo.insertRemote(makeEvent({ event_id: "e1" }))
+
+      const changes = await repo.insertRemote(makeEvent({ event_id: "e1" }))
+
+      expect(changes).toBe(0)
+      const count = await db.getFirstAsync<{ c: number }>(
+        `SELECT COUNT(*) as c FROM domain_events`
+      )
+      expect(count?.c).toBe(1)
+    })
+
+    it("appendRemote inserts a batch in one transaction and reports how many were new", async () => {
+      const result = await repo.appendRemote([
+        makeEvent({ event_id: "e1" }),
+        makeEvent({ event_id: "e2" }),
+      ])
+
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toEqual({ applied: 2 })
+    })
+
+    it("appendRemote never writes to the outbox", async () => {
+      const outboxRepo = new OutboxRepository(db)
+
+      await repo.appendRemote([makeEvent({ event_id: "e1" })])
+
+      const pending = await outboxRepo.getPending()
+      expect(pending.getValue()).toEqual([])
+    })
+
+    it("appendRemote counts only the genuinely new rows in a mixed batch", async () => {
+      await repo.append(makeEvent({ event_id: "e1" }))
+
+      const result = await repo.appendRemote([
+        makeEvent({ event_id: "e1" }), // already present locally
+        makeEvent({ event_id: "e2" }), // new
+      ])
+
+      expect(result.getValue()).toEqual({ applied: 1 })
+    })
+  })
+
   describe("getAll", () => {
     it("returns all events ordered by occurred_at DESC", async () => {
       await repo.append(makeEvent({ event_id: "e1", occurred_at: 1000 }))

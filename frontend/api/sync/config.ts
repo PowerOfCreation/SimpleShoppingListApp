@@ -42,6 +42,12 @@ export const syncConfig = {
   get syncStateUrl(): string {
     return `${getApiBaseUrl()}/api/v1/sync/state`
   },
+  get syncHeadUrl(): string {
+    return `${getApiBaseUrl()}/api/v1/sync/head`
+  },
+  get syncEventsUrl(): string {
+    return `${getApiBaseUrl()}/api/v1/sync/events`
+  },
   get webSocketUrl(): string {
     return `${toWebSocketUrl(getApiBaseUrl())}/api/v1/sync/ws`
   },
