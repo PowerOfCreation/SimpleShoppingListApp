@@ -12,15 +12,83 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const getKnownEventIds = `-- name: GetKnownEventIds :many
-SELECT id
+const getEventsSince = `-- name: GetEventsSince :many
+SELECT id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id, seq
 FROM events
-WHERE aggregate_id = ANY($1::uuid[])
-  AND processed_at IS NOT NULL
+WHERE list_id = $1
+  AND seq IS NOT NULL
+  AND seq > $2
+ORDER BY seq ASC
+LIMIT $3
 `
 
-func (q *Queries) GetKnownEventIds(ctx context.Context, aggregateIds []uuid.UUID) ([]uuid.UUID, error) {
-	rows, err := q.db.Query(ctx, getKnownEventIds, aggregateIds)
+type GetEventsSinceParams struct {
+	ListID     pgtype.UUID `db:"list_id" json:"list_id"`
+	SinceSeq   pgtype.Int8 `db:"since_seq" json:"since_seq"`
+	LimitCount int32       `db:"limit_count" json:"limit_count"`
+}
+
+type GetEventsSinceRow struct {
+	ID            uuid.UUID          `db:"id" json:"id"`
+	EventType     string             `db:"event_type" json:"event_type"`
+	AggregateID   uuid.UUID          `db:"aggregate_id" json:"aggregate_id"`
+	AggregateType string             `db:"aggregate_type" json:"aggregate_type"`
+	ListID        pgtype.UUID        `db:"list_id" json:"list_id"`
+	Payload       []byte             `db:"payload" json:"payload"`
+	OccurredAt    pgtype.Timestamptz `db:"occurred_at" json:"occurred_at"`
+	ClientID      string             `db:"client_id" json:"client_id"`
+	Seq           pgtype.Int8        `db:"seq" json:"seq"`
+}
+
+// Pull page: every event for one list with seq strictly greater than
+// since_seq, oldest-first, capped at limit_count. The controller requests
+// limit_count+0 rows and treats a full page as "there may be more" (see
+// sync-pull-controller.go) rather than asking for limit+1 here, keeping
+// this query's shape identical to what it returns.
+func (q *Queries) GetEventsSince(ctx context.Context, arg GetEventsSinceParams) ([]GetEventsSinceRow, error) {
+	rows, err := q.db.Query(ctx, getEventsSince, arg.ListID, arg.SinceSeq, arg.LimitCount)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetEventsSinceRow{}
+	for rows.Next() {
+		var i GetEventsSinceRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.EventType,
+			&i.AggregateID,
+			&i.AggregateType,
+			&i.ListID,
+			&i.Payload,
+			&i.OccurredAt,
+			&i.ClientID,
+			&i.Seq,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getKnownEventIdsByList = `-- name: GetKnownEventIdsByList :many
+SELECT id
+FROM events
+WHERE list_id = ANY($1::uuid[])
+  AND seq IS NOT NULL
+`
+
+// Which of a set of lists' events this server has durably processed - the
+// reconcile self-heal endpoint's query. Keyed by list_id rather than
+// aggregate_id: aggregate_id is the ingredient id for ingredient.* events,
+// so a single list can span arbitrarily many aggregate_ids, but always has
+// exactly one list_id.
+func (q *Queries) GetKnownEventIdsByList(ctx context.Context, listIds []uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, getKnownEventIdsByList, listIds)
 	if err != nil {
 		return nil, err
 	}
@@ -32,6 +100,44 @@ func (q *Queries) GetKnownEventIds(ctx context.Context, aggregateIds []uuid.UUID
 			return nil, err
 		}
 		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getListHeads = `-- name: GetListHeads :many
+SELECT DISTINCT ON (list_id) list_id, seq, id
+FROM events
+WHERE list_id = ANY($1::uuid[])
+  AND seq IS NOT NULL
+ORDER BY list_id, seq DESC
+`
+
+type GetListHeadsRow struct {
+	ListID pgtype.UUID `db:"list_id" json:"list_id"`
+	Seq    pgtype.Int8 `db:"seq" json:"seq"`
+	ID     uuid.UUID   `db:"id" json:"id"`
+}
+
+// The latest (list_id, seq, id) per requested list - "what's the most
+// recent event you have for this list". Lists with zero processed events
+// simply produce no row; the controller fills in the seq=0 head itself so
+// every requested id still appears in the response.
+func (q *Queries) GetListHeads(ctx context.Context, listIds []uuid.UUID) ([]GetListHeadsRow, error) {
+	rows, err := q.db.Query(ctx, getListHeads, listIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetListHeadsRow{}
+	for rows.Next() {
+		var i GetListHeadsRow
+		if err := rows.Scan(&i.ListID, &i.Seq, &i.ID); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err
@@ -124,11 +230,28 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (pgtyp
 	return processed_at, err
 }
 
-const markEventProcessed = `-- name: MarkEventProcessed :exec
-UPDATE events SET processed_at = NOW() WHERE id = $1
+const markEventProcessed = `-- name: MarkEventProcessed :one
+UPDATE events
+SET processed_at = NOW(), seq = nextval('events_seq_seq')
+WHERE id = $1 AND seq IS NULL
+RETURNING seq, list_id
 `
 
-func (q *Queries) MarkEventProcessed(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, markEventProcessed, id)
-	return err
+type MarkEventProcessedRow struct {
+	Seq    pgtype.Int8 `db:"seq" json:"seq"`
+	ListID pgtype.UUID `db:"list_id" json:"list_id"`
+}
+
+// Assigns seq from the dedicated events_seq_seq sequence atomically with
+// marking the row processed (see migration 00004 for why seq is assigned
+// here rather than at insert). The `seq IS NULL` guard makes a second call
+// for the same id a no-op that returns zero rows rather than silently
+// handing out a second seq - callers can only reach this for a row that
+// was genuinely never marked before, so a zero-row result signals a bug,
+// not a legitimate race (see EventIngestor's single-writer guarantee).
+func (q *Queries) MarkEventProcessed(ctx context.Context, id uuid.UUID) (MarkEventProcessedRow, error) {
+	row := q.db.QueryRow(ctx, markEventProcessed, id)
+	var i MarkEventProcessedRow
+	err := row.Scan(&i.Seq, &i.ListID)
+	return i, err
 }

@@ -134,7 +134,10 @@ func (ing *EventIngestor) dispatchAndAck(ctx context.Context, event *repositorie
 		)
 		return
 	}
-	if err := ing.eventRepo.MarkProcessed(ctx, event.EventID); err != nil {
+	// seq/listID are unused for now - a later change publishes a
+	// server->client "new event" WebSocket notification from here, which
+	// is exactly what these two values are for.
+	if _, _, err := ing.eventRepo.MarkProcessed(ctx, event.EventID); err != nil {
 		log.Printf("event-ingestor: failed to mark event %s processed: %v", event.EventID, err)
 		return
 	}

@@ -18,7 +18,23 @@ type Querier interface {
 	DeleteToDoList(ctx context.Context, id uuid.UUID) error
 	GetAllToDoLists(ctx context.Context) ([]GetAllToDoListsRow, error)
 	GetAllToDos(ctx context.Context) ([]GetAllToDosRow, error)
-	GetKnownEventIds(ctx context.Context, aggregateIds []uuid.UUID) ([]uuid.UUID, error)
+	// Pull page: every event for one list with seq strictly greater than
+	// since_seq, oldest-first, capped at limit_count. The controller requests
+	// limit_count+0 rows and treats a full page as "there may be more" (see
+	// sync-pull-controller.go) rather than asking for limit+1 here, keeping
+	// this query's shape identical to what it returns.
+	GetEventsSince(ctx context.Context, arg GetEventsSinceParams) ([]GetEventsSinceRow, error)
+	// Which of a set of lists' events this server has durably processed - the
+	// reconcile self-heal endpoint's query. Keyed by list_id rather than
+	// aggregate_id: aggregate_id is the ingredient id for ingredient.* events,
+	// so a single list can span arbitrarily many aggregate_ids, but always has
+	// exactly one list_id.
+	GetKnownEventIdsByList(ctx context.Context, listIds []uuid.UUID) ([]uuid.UUID, error)
+	// The latest (list_id, seq, id) per requested list - "what's the most
+	// recent event you have for this list". Lists with zero processed events
+	// simply produce no row; the controller fills in the seq=0 head itself so
+	// every requested id still appears in the response.
+	GetListHeads(ctx context.Context, listIds []uuid.UUID) ([]GetListHeadsRow, error)
 	GetToDoById(ctx context.Context, id uuid.UUID) (GetToDoByIdRow, error)
 	GetToDoListById(ctx context.Context, id uuid.UUID) (GetToDoListByIdRow, error)
 	GetUnprocessedEvents(ctx context.Context) ([]GetUnprocessedEventsRow, error)
@@ -27,7 +43,14 @@ type Querier interface {
 	// or already existed from a previous delivery. Callers use processed_at to
 	// tell the two cases apart without a second round-trip.
 	InsertEvent(ctx context.Context, arg InsertEventParams) (pgtype.Timestamptz, error)
-	MarkEventProcessed(ctx context.Context, id uuid.UUID) error
+	// Assigns seq from the dedicated events_seq_seq sequence atomically with
+	// marking the row processed (see migration 00004 for why seq is assigned
+	// here rather than at insert). The `seq IS NULL` guard makes a second call
+	// for the same id a no-op that returns zero rows rather than silently
+	// handing out a second seq - callers can only reach this for a row that
+	// was genuinely never marked before, so a zero-row result signals a bug,
+	// not a legitimate race (see EventIngestor's single-writer guarantee).
+	MarkEventProcessed(ctx context.Context, id uuid.UUID) (MarkEventProcessedRow, error)
 	UpdateToDo(ctx context.Context, arg UpdateToDoParams) error
 	UpdateToDoList(ctx context.Context, arg UpdateToDoListParams) error
 }

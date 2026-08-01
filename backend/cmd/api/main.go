@@ -49,6 +49,7 @@ func main() {
 	rest.NewEventController(e, eventIngestor)
 	rest.NewSyncWebSocketController(e, hub)
 	rest.NewSyncStateController(e, eventRepo)
+	rest.NewSyncPullController(e, eventRepo)
 
 	if err := e.Start(port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)

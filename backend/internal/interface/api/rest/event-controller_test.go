@@ -37,16 +37,29 @@ func (f *fakeEventRepo) Insert(ctx context.Context, event *repositories.StoredEv
 	return false, nil
 }
 
-func (f *fakeEventRepo) MarkProcessed(ctx context.Context, eventID uuid.UUID) error {
+func (f *fakeEventRepo) MarkProcessed(ctx context.Context, eventID uuid.UUID) (int64, *uuid.UUID, error) {
 	f.processed[eventID] = true
-	return nil
+	return 1, nil, nil
 }
 
 func (f *fakeEventRepo) FindUnprocessed(ctx context.Context) ([]*repositories.StoredEvent, error) {
 	return nil, nil
 }
 
-func (f *fakeEventRepo) FindKnownEventIDs(ctx context.Context, aggregateIDs []uuid.UUID) ([]uuid.UUID, error) {
+func (f *fakeEventRepo) FindKnownEventIDsByList(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error) {
+	return nil, nil
+}
+
+func (f *fakeEventRepo) FindListHeads(ctx context.Context, listIDs []uuid.UUID) ([]*repositories.ListHead, error) {
+	return nil, nil
+}
+
+func (f *fakeEventRepo) FindEventsSince(
+	ctx context.Context,
+	listID uuid.UUID,
+	sinceSeq int64,
+	limit int32,
+) ([]*repositories.StoredEvent, error) {
 	return nil, nil
 }
 

@@ -26,6 +26,7 @@ type fakeEventRepo struct {
 	insertErr   error
 	markErr     error
 	unprocessed []*repositories.StoredEvent
+	nextSeq     int64
 }
 
 func newFakeEventRepo() *fakeEventRepo {
@@ -48,14 +49,20 @@ func (f *fakeEventRepo) Insert(ctx context.Context, event *repositories.StoredEv
 	return false, nil
 }
 
-func (f *fakeEventRepo) MarkProcessed(ctx context.Context, eventID uuid.UUID) error {
+func (f *fakeEventRepo) MarkProcessed(ctx context.Context, eventID uuid.UUID) (int64, *uuid.UUID, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.markErr != nil {
-		return f.markErr
+		return 0, nil, f.markErr
 	}
 	f.processed[eventID] = true
-	return nil
+	f.nextSeq++
+	seq := f.nextSeq
+	var listID *uuid.UUID
+	if event, ok := f.stored[eventID]; ok {
+		listID = event.ListID
+	}
+	return seq, listID, nil
 }
 
 func (f *fakeEventRepo) FindUnprocessed(ctx context.Context) ([]*repositories.StoredEvent, error) {
@@ -64,7 +71,20 @@ func (f *fakeEventRepo) FindUnprocessed(ctx context.Context) ([]*repositories.St
 	return f.unprocessed, nil
 }
 
-func (f *fakeEventRepo) FindKnownEventIDs(ctx context.Context, aggregateIDs []uuid.UUID) ([]uuid.UUID, error) {
+func (f *fakeEventRepo) FindKnownEventIDsByList(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error) {
+	return nil, nil
+}
+
+func (f *fakeEventRepo) FindListHeads(ctx context.Context, listIDs []uuid.UUID) ([]*repositories.ListHead, error) {
+	return nil, nil
+}
+
+func (f *fakeEventRepo) FindEventsSince(
+	ctx context.Context,
+	listID uuid.UUID,
+	sinceSeq int64,
+	limit int32,
+) ([]*repositories.StoredEvent, error) {
 	return nil, nil
 }
 
