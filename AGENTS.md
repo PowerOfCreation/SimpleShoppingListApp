@@ -72,9 +72,9 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
   `list_id`). Pull only ever fetches lists already known and sync-enabled
   locally — there is **no** "restore my lists after reinstall" / discovery
   endpoint. See `frontend/docs/sync-design-decisions.md`.
-- **Backend auth:** verifies Keycloak bearer tokens (see
+- **Backend auth:** mandatory. Verifies Keycloak bearer tokens (see
   `backend/internal/interface/api/middleware`) on `/api/v1/events` and every
-  `/api/v1/sync/*` route; falls back to no auth (with a loud warning) if
+  `/api/v1/sync/*` route; the API refuses to start if
   `KEYCLOAK_ISSUER`/`KEYCLOAK_CLIENT_ID` aren't set or the issuer is
   unreachable. Still **no user scoping** of the data itself — any valid token
   can read/write any known list id (see design doc).

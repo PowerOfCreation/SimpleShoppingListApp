@@ -45,7 +45,10 @@ func main() {
 	eventIngestor.Start(ctx)
 	defer eventIngestor.Stop()
 
-	authMW := middleware.NewKeycloakAuth(ctx)
+	authMW, err := middleware.NewKeycloakAuth(ctx)
+	if err != nil {
+		log.Fatalf("auth: %v", err)
+	}
 
 	e := echo.New()
 	rest.NewToDoListController(e, toDoListService)

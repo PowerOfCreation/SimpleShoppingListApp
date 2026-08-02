@@ -145,7 +145,8 @@ func TestNewKeycloakAuth_ValidTokenPasses(t *testing.T) {
 	t.Setenv(envKeycloakIssuer, provider.issuer())
 	t.Setenv(envKeycloakClientID, testClientID)
 
-	mw := NewKeycloakAuth(context.Background())
+	mw, err := NewKeycloakAuth(context.Background())
+	require.NoError(t, err)
 	e, called := newTestEcho(mw)
 	token := provider.signToken(t, defaultClaims(provider.issuer(), nil))
 
@@ -160,7 +161,8 @@ func TestNewKeycloakAuth_MissingTokenReturns401(t *testing.T) {
 	t.Setenv(envKeycloakIssuer, provider.issuer())
 	t.Setenv(envKeycloakClientID, testClientID)
 
-	mw := NewKeycloakAuth(context.Background())
+	mw, err := NewKeycloakAuth(context.Background())
+	require.NoError(t, err)
 	e, called := newTestEcho(mw)
 
 	rec := doGet(e, "")
@@ -174,7 +176,8 @@ func TestNewKeycloakAuth_ExpiredTokenReturns401(t *testing.T) {
 	t.Setenv(envKeycloakIssuer, provider.issuer())
 	t.Setenv(envKeycloakClientID, testClientID)
 
-	mw := NewKeycloakAuth(context.Background())
+	mw, err := NewKeycloakAuth(context.Background())
+	require.NoError(t, err)
 	e, called := newTestEcho(mw)
 	token := provider.signToken(t, defaultClaims(provider.issuer(), map[string]any{
 		"exp": time.Now().Add(-time.Hour).Unix(),
@@ -192,7 +195,8 @@ func TestNewKeycloakAuth_WrongSignatureReturns401(t *testing.T) {
 	t.Setenv(envKeycloakIssuer, provider.issuer())
 	t.Setenv(envKeycloakClientID, testClientID)
 
-	mw := NewKeycloakAuth(context.Background())
+	mw, err := NewKeycloakAuth(context.Background())
+	require.NoError(t, err)
 	e, called := newTestEcho(mw)
 	// Claims say it's from `provider`'s issuer, but it was actually signed
 	// by a different key - the JWKS lookup for `provider`'s kid will fetch
@@ -210,7 +214,8 @@ func TestNewKeycloakAuth_WrongAzpReturns401(t *testing.T) {
 	t.Setenv(envKeycloakIssuer, provider.issuer())
 	t.Setenv(envKeycloakClientID, testClientID)
 
-	mw := NewKeycloakAuth(context.Background())
+	mw, err := NewKeycloakAuth(context.Background())
+	require.NoError(t, err)
 	e, called := newTestEcho(mw)
 	token := provider.signToken(t, defaultClaims(provider.issuer(), map[string]any{
 		"azp": "some-other-client",
@@ -227,7 +232,8 @@ func TestNewKeycloakAuth_WrongIssuerReturns401(t *testing.T) {
 	t.Setenv(envKeycloakIssuer, provider.issuer())
 	t.Setenv(envKeycloakClientID, testClientID)
 
-	mw := NewKeycloakAuth(context.Background())
+	mw, err := NewKeycloakAuth(context.Background())
+	require.NoError(t, err)
 	e, called := newTestEcho(mw)
 	token := provider.signToken(t, defaultClaims("https://not-the-configured-issuer.example", nil))
 
@@ -237,30 +243,24 @@ func TestNewKeycloakAuth_WrongIssuerReturns401(t *testing.T) {
 	require.False(t, *called)
 }
 
-func TestNewKeycloakAuth_MissingConfigDisablesAuth(t *testing.T) {
+func TestNewKeycloakAuth_MissingConfigReturnsError(t *testing.T) {
 	t.Setenv(envKeycloakIssuer, "")
 	t.Setenv(envKeycloakClientID, "")
 
-	mw := NewKeycloakAuth(context.Background())
-	e, called := newTestEcho(mw)
+	mw, err := NewKeycloakAuth(context.Background())
 
-	rec := doGet(e, "")
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.True(t, *called)
+	require.Error(t, err)
+	require.Nil(t, mw)
 }
 
-func TestNewKeycloakAuth_UnreachableIssuerDisablesAuth(t *testing.T) {
+func TestNewKeycloakAuth_UnreachableIssuerReturnsError(t *testing.T) {
 	t.Setenv(envKeycloakIssuer, "http://127.0.0.1:1")
 	t.Setenv(envKeycloakClientID, testClientID)
 
-	mw := NewKeycloakAuth(context.Background())
-	e, called := newTestEcho(mw)
+	mw, err := NewKeycloakAuth(context.Background())
 
-	rec := doGet(e, "")
-
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.True(t, *called)
+	require.Error(t, err)
+	require.Nil(t, mw)
 }
 
 func TestPassthrough_AlwaysCallsNext(t *testing.T) {
