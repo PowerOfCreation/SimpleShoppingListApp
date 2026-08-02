@@ -115,7 +115,7 @@ func (ing *EventIngestor) sweepUnprocessed(ctx context.Context) {
 }
 
 func (ing *EventIngestor) process(ctx context.Context, event *repositories.StoredEvent) {
-	alreadyProcessed, err := ing.eventRepo.Insert(ctx, event)
+	alreadyProcessed, seq, _, err := ing.eventRepo.Insert(ctx, event)
 	if err != nil {
 		log.Printf("event-ingestor: failed to insert event %s: %v", event.EventID, err)
 		return
@@ -130,7 +130,7 @@ func (ing *EventIngestor) process(ctx context.Context, event *repositories.Store
 		// event got was already published the first time it was
 		// processed), so a client that missed that original notification
 		// recovers on its next head check instead.
-		ing.publisher.PublishAck(event.ClientID, event.EventID)
+		ing.publisher.PublishAck(event.ClientID, event.EventID, seq)
 		return
 	}
 	ing.dispatchAndAck(ctx, event)
@@ -153,7 +153,7 @@ func (ing *EventIngestor) dispatchAndAck(ctx context.Context, event *repositorie
 		log.Printf("event-ingestor: failed to mark event %s processed: %v", event.EventID, err)
 		return
 	}
-	ing.publisher.PublishAck(event.ClientID, event.EventID)
+	ing.publisher.PublishAck(event.ClientID, event.EventID, seq)
 	if listID != nil {
 		ing.publisher.PublishListEvent(*listID, seq)
 	}

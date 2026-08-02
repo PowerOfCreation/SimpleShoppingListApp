@@ -155,8 +155,8 @@ func (h *Hub) subscribersFor(listID uuid.UUID) []*connection {
 // connection is registered for clientID (offline, or never connected),
 // this is a silent no-op - the client's reconcile pass is the source of
 // truth, not the ack.
-func (h *Hub) PublishAck(clientID string, eventID uuid.UUID) {
-	msg := map[string]string{"type": "ack", "event_id": eventID.String()}
+func (h *Hub) PublishAck(clientID string, eventID uuid.UUID, seq int64) {
+	msg := map[string]any{"type": "ack", "event_id": eventID.String(), "seq": seq}
 	for _, conn := range h.connectionsFor(clientID) {
 		if err := conn.writeJSON(msg); err != nil {
 			log.Printf("realtime: failed to send ack to client %s: %v", clientID, err)

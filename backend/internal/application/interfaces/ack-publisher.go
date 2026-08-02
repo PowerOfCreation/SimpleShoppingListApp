@@ -8,5 +8,5 @@ import "github.com/google/uuid"
 // "ack" means the server has durably processed the event, not just
 // received it - see EventIngestor.
 type AckPublisher interface {
-	PublishAck(clientID string, eventID uuid.UUID)
+	PublishAck(clientID string, eventID uuid.UUID, seq int64)
 }

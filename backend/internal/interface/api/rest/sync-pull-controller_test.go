@@ -26,7 +26,7 @@ type stubPullEventRepository struct {
 	findEventsSince func(ctx context.Context, listID uuid.UUID, sinceSeq int64, limit int32) ([]*repositories.StoredEvent, error)
 }
 
-func (s *stubPullEventRepository) Insert(ctx context.Context, event *repositories.StoredEvent) (bool, error) {
+func (s *stubPullEventRepository) Insert(ctx context.Context, event *repositories.StoredEvent) (bool, int64, *uuid.UUID, error) {
 	panic("Insert not used by SyncPullController")
 }
 

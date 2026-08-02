@@ -49,8 +49,9 @@ function toWireEvent(event: DomainEventRow): WireEvent {
  * WireEvent (see mapper.ToSyncEventResponse on the backend, which builds
  * pull responses from the exact same StoredEvent push already round-trips
  * through), plus seq. fromWireEvent is toWireEvent's inverse: it turns a
- * server event back into the locally-stored shape (payload re-stringified,
- * seq dropped - seq lives in sync_cursors, not on the event row itself).
+ * server event back into the locally-stored shape (payload re-stringified).
+ * seq carries over rather than being dropped - it's the server's
+ * authoritative replay position, see byServerSeqThenLocal.
  */
 type WireEventFromServer = {
   event_id: string
@@ -74,6 +75,7 @@ function fromWireEvent(event: WireEventFromServer): DomainEventRow {
     occurred_at: event.occurred_at,
     client_id: event.client_id,
     payload: JSON.stringify(event.payload),
+    seq: event.seq,
   }
 }
 

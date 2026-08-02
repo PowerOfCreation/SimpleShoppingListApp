@@ -19,6 +19,7 @@ const makeEvent = (
   occurred_at: 1000,
   client_id: "client-1",
   payload: JSON.stringify({ name: "Rewe" }),
+  seq: null,
   ...overrides,
 })
 
@@ -220,17 +221,17 @@ describe("IngredientListProjection", () => {
       expect(row).not.toBeNull()
     })
 
-    it("replays in (occurred_at, event_id) order regardless of the input array's order", async () => {
+    it("replays confirmed events by seq regardless of the input array's order", async () => {
       const created = makeEvent({
         event_id: "e1",
         event_type: EventTypes.TODO_LIST_CREATED,
-        occurred_at: 1000,
+        seq: 1,
       })
       const renamed = makeEvent({
         event_id: "e2",
         event_type: EventTypes.TODO_LIST_UPDATED,
-        occurred_at: 2000,
         payload: JSON.stringify({ name: "Lidl" }),
+        seq: 2,
       })
 
       // Passed newest-first - rebuildForList must sort before replaying.

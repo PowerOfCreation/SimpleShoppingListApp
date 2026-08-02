@@ -37,6 +37,7 @@ const makeEvent = (
   occurred_at: 1000,
   client_id: "client-1",
   payload: "{}",
+  seq: null,
   ...overrides,
 })
 
@@ -72,9 +73,9 @@ describe("SyncEngine", () => {
 
     events = {
       getByEventIds: jest.fn().mockResolvedValue(Result.ok([])),
-      getByAggregateId: jest.fn().mockResolvedValue(Result.ok([])),
       getByListId: jest.fn().mockResolvedValue(Result.ok([])),
       enqueueExistingForSync: jest.fn().mockResolvedValue(Result.ok(undefined)),
+      markSeq: jest.fn().mockResolvedValue(Result.ok(undefined)),
     } as unknown as jest.Mocked<EventRepository>
 
     cursor = {
@@ -91,6 +92,7 @@ describe("SyncEngine", () => {
 
     applier = {
       apply: jest.fn().mockResolvedValue(Result.ok({ applied: 0 })),
+      rebuildForAck: jest.fn().mockResolvedValue(Result.ok(undefined)),
     } as unknown as jest.Mocked<EventApplier>
 
     MockOutboxRepository.mockImplementation(() => outbox)
@@ -267,9 +269,51 @@ describe("SyncEngine", () => {
 
   describe("handleAck", () => {
     it("marks the acked event as synced", async () => {
-      await engine.handleAck("e1")
+      await engine.handleAck("e1", 5)
 
       expect(outbox.markSynced).toHaveBeenCalledWith("e1")
+    })
+
+    it("records the seq and rebuilds the event's list when it was previously unconfirmed", async () => {
+      events.getByEventIds.mockResolvedValue(
+        Result.ok([makeEvent({ event_id: "e1", list_id: "list-1", seq: null })])
+      )
+
+      await engine.handleAck("e1", 5)
+
+      expect(events.markSeq).toHaveBeenCalledWith("e1", 5)
+      expect(applier.rebuildForAck).toHaveBeenCalledWith("list-1")
+    })
+
+    it("does nothing beyond marking synced for a resent ack (event already has a seq)", async () => {
+      events.getByEventIds.mockResolvedValue(
+        Result.ok([makeEvent({ event_id: "e1", list_id: "list-1", seq: 5 })])
+      )
+
+      await engine.handleAck("e1", 5)
+
+      expect(events.markSeq).not.toHaveBeenCalled()
+      expect(applier.rebuildForAck).not.toHaveBeenCalled()
+    })
+
+    it("does not rebuild when the acked event has no list_id", async () => {
+      events.getByEventIds.mockResolvedValue(
+        Result.ok([makeEvent({ event_id: "e1", list_id: null, seq: null })])
+      )
+
+      await engine.handleAck("e1", 5)
+
+      expect(events.markSeq).toHaveBeenCalledWith("e1", 5)
+      expect(applier.rebuildForAck).not.toHaveBeenCalled()
+    })
+
+    it("does nothing beyond marking synced when the acked event isn't found locally", async () => {
+      events.getByEventIds.mockResolvedValue(Result.ok([]))
+
+      await engine.handleAck("e1", 5)
+
+      expect(events.markSeq).not.toHaveBeenCalled()
+      expect(applier.rebuildForAck).not.toHaveBeenCalled()
     })
   })
 

@@ -44,11 +44,12 @@ type EventRepository interface {
 	// Insert durably stores the event (idempotent on EventID). Returns
 	// alreadyProcessed=true if this exact event_id had already finished
 	// processing on a previous delivery - the caller must not dispatch it
-	// again in that case, only ack it. Returns alreadyProcessed=false for
-	// a brand-new event (dispatch it), which is also the only way an
-	// existing-but-still-unprocessed row is reported - see
-	// EventIngestor for why that combination can't otherwise arise.
-	Insert(ctx context.Context, event *StoredEvent) (alreadyProcessed bool, err error)
+	// again in that case, only ack it (using the returned seq/listID, which
+	// are only meaningful when alreadyProcessed is true). Returns
+	// alreadyProcessed=false for a brand-new event (dispatch it), which is
+	// also the only way an existing-but-still-unprocessed row is reported -
+	// see EventIngestor for why that combination can't otherwise arise.
+	Insert(ctx context.Context, event *StoredEvent) (alreadyProcessed bool, seq int64, listID *uuid.UUID, err error)
 	// MarkProcessed marks the event durably processed and assigns it the
 	// next value from the shared seq sequence, returning that seq and the
 	// event's list_id - handing the list_id back here saves a caller

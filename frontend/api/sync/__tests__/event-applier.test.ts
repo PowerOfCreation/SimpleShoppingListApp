@@ -28,6 +28,7 @@ const makeEvent = (
   occurred_at: 1000,
   client_id: "client-1",
   payload: JSON.stringify({ name: "Rewe" }),
+  seq: null,
   ...overrides,
 })
 
@@ -42,6 +43,7 @@ const makeIngredientCreated = (
   occurred_at: 1000,
   client_id: "client-1",
   payload: JSON.stringify({ name: "Milk", listId: "list-1" }),
+  seq: null,
   ...overrides,
 })
 
@@ -82,7 +84,8 @@ describe("EventApplier", () => {
         list_id TEXT,
         occurred_at INTEGER NOT NULL,
         client_id TEXT NOT NULL,
-        payload TEXT NOT NULL
+        payload TEXT NOT NULL,
+        seq INTEGER
       );
       CREATE TABLE event_outbox (
         event_id TEXT PRIMARY KEY,
@@ -147,7 +150,10 @@ describe("EventApplier", () => {
   })
 
   it("is idempotent: re-applying the same page is a pure echo that only advances the cursor", async () => {
-    const events = [makeEvent(), makeIngredientCreated()]
+    // Real pulled events always carry the seq the server assigned them -
+    // insertRemote's "already present" check is keyed on that, not just
+    // presence, so the fixtures need one for this to be a genuine no-op.
+    const events = [makeEvent({ seq: 0 }), makeIngredientCreated({ seq: 1 })]
     await applier.apply("list-1", events, 5)
     jest.mocked(notifyListDataChanged).mockClear()
 
@@ -185,20 +191,20 @@ describe("EventApplier", () => {
   })
 
   it("converges to the same state regardless of the array order events were pulled in", async () => {
-    const created = makeIngredientCreated({ occurred_at: 1000 })
+    const created = makeIngredientCreated({ seq: 1 })
     const updated = makeEvent({
       event_id: "ing-updated",
       event_type: EventTypes.INGREDIENT_UPDATED,
       aggregate_id: "ing-1",
       aggregate_type: "ingredient",
       list_id: "list-1",
-      occurred_at: 2000,
       payload: JSON.stringify({ name: "Whole Milk" }),
+      seq: 2,
     })
 
-    // Delivered out of chronological order - the applier must re-sort by
-    // (occurred_at, event_id) before replaying, not trust array order.
-    await applier.apply("list-1", [makeEvent(), updated, created], 5)
+    // Delivered out of server order - the applier must re-sort by seq
+    // before replaying, not trust array order.
+    await applier.apply("list-1", [makeEvent({ seq: 0 }), updated, created], 5)
 
     const ingredient = await db.getFirstAsync<{ name: string }>(
       `SELECT name FROM ingredients WHERE id = 'ing-1'`
@@ -263,5 +269,44 @@ describe("EventApplier", () => {
       `SELECT list_id FROM sync_cursors WHERE list_id = 'list-1'`
     )
     expect(cursorRow).toBeNull()
+  })
+
+  describe("rebuildForAck", () => {
+    it("rebuilds the list's projections from local state and notifies", async () => {
+      await eventRepository.append(makeEvent())
+      await eventRepository.append(makeIngredientCreated())
+
+      const result = await applier.rebuildForAck("list-1")
+
+      expect(result.success).toBe(true)
+      const ingredient = await db.getFirstAsync<{ name: string }>(
+        `SELECT name FROM ingredients WHERE id = 'ing-1'`
+      )
+      expect(ingredient?.name).toBe("Milk")
+      expect(notifyListDataChanged).toHaveBeenCalledWith("list-1")
+    })
+
+    it("does not touch the pull cursor", async () => {
+      await eventRepository.append(makeEvent())
+
+      await applier.rebuildForAck("list-1")
+
+      const cursorRow = await db.getFirstAsync(
+        `SELECT list_id FROM sync_cursors WHERE list_id = 'list-1'`
+      )
+      expect(cursorRow).toBeNull()
+    })
+
+    it("fails without notifying when the rebuild throws", async () => {
+      await eventRepository.append(makeEvent())
+      jest
+        .spyOn(listProjection, "rebuildForList")
+        .mockRejectedValueOnce(new Error("boom"))
+
+      const result = await applier.rebuildForAck("list-1")
+
+      expect(result.success).toBe(false)
+      expect(notifyListDataChanged).not.toHaveBeenCalled()
+    })
   })
 })

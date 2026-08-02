@@ -25,8 +25,8 @@ func NewSqlcEventRepository(queries *db.Queries) repositories.EventRepository {
 func (r *SqlcEventRepository) Insert(
 	ctx context.Context,
 	event *repositories.StoredEvent,
-) (bool, error) {
-	processedAt, err := r.queries.InsertEvent(ctx, db.InsertEventParams{
+) (bool, int64, *uuid.UUID, error) {
+	row, err := r.queries.InsertEvent(ctx, db.InsertEventParams{
 		ID:            event.EventID,
 		EventType:     event.EventType,
 		AggregateID:   event.AggregateID,
@@ -37,13 +37,13 @@ func (r *SqlcEventRepository) Insert(
 		ClientID:      event.ClientID,
 	})
 	if err != nil {
-		return false, err
+		return false, 0, nil, err
 	}
 	// InsertEvent upserts (ON CONFLICT DO UPDATE SET id = events.id) purely
 	// so RETURNING always yields a row, whether this was a fresh insert or
 	// a duplicate delivery of the same event_id. processed_at reflects
 	// what's currently stored either way, without a second round-trip.
-	return processedAt.Valid, nil
+	return row.ProcessedAt.Valid, row.Seq.Int64, uuidPtrFromPgtype(row.ListID), nil
 }
 
 func (r *SqlcEventRepository) MarkProcessed(

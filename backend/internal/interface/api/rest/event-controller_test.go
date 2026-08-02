@@ -30,12 +30,12 @@ func newFakeEventRepo() *fakeEventRepo {
 	return &fakeEventRepo{stored: map[uuid.UUID]bool{}, processed: map[uuid.UUID]bool{}}
 }
 
-func (f *fakeEventRepo) Insert(ctx context.Context, event *repositories.StoredEvent) (bool, error) {
+func (f *fakeEventRepo) Insert(ctx context.Context, event *repositories.StoredEvent) (bool, int64, *uuid.UUID, error) {
 	if f.stored[event.EventID] {
-		return f.processed[event.EventID], nil
+		return f.processed[event.EventID], 1, nil, nil
 	}
 	f.stored[event.EventID] = true
-	return false, nil
+	return false, 0, nil, nil
 }
 
 func (f *fakeEventRepo) MarkProcessed(ctx context.Context, eventID uuid.UUID) (int64, *uuid.UUID, error) {
@@ -68,7 +68,7 @@ type fakeAckPublisher struct {
 	acked map[uuid.UUID]bool
 }
 
-func (f *fakeAckPublisher) PublishAck(clientID string, eventID uuid.UUID) {
+func (f *fakeAckPublisher) PublishAck(clientID string, eventID uuid.UUID, seq int64) {
 	f.acked[eventID] = true
 }
 

@@ -24,7 +24,7 @@ type stubEventRepository struct {
 	findKnownEventIDsByList func(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error)
 }
 
-func (s *stubEventRepository) Insert(ctx context.Context, event *repositories.StoredEvent) (bool, error) {
+func (s *stubEventRepository) Insert(ctx context.Context, event *repositories.StoredEvent) (bool, int64, *uuid.UUID, error) {
 	panic("Insert not used by SyncStateController")
 }
 

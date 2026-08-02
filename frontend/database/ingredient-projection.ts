@@ -2,7 +2,7 @@ import { SQLiteDatabase } from "expo-sqlite"
 import {
   DomainEventRow,
   EventTypes,
-  byOccurredAtThenEventId,
+  byServerSeqThenLocal,
 } from "@/types/DomainEvent"
 
 export class IngredientProjection {
@@ -98,10 +98,9 @@ export class IngredientProjection {
 
   /**
    * Rebuilds one list's ingredients from a fully-merged (local + pulled)
-   * event history, ordered by (occurred_at, event_id) - see
-   * EventRepository.getByListId for why that tiebreak, not rowid, is what
-   * makes two devices converge on the same state regardless of which
-   * order the events actually arrived in.
+   * event history, ordered by byServerSeqThenLocal - see that function for
+   * why the server's seq, not occurred_at, is what makes two devices
+   * converge on the same state regardless of arrival order.
    *
    * Unlike rebuild(), this does not open its own transaction: it's always
    * called from within EventApplier's transaction, which also updates the
@@ -119,7 +118,7 @@ export class IngredientProjection {
     // devices depends on this exact order, and defending it at the one
     // place that actually replays events is cheaper than auditing every
     // future call site.
-    const ordered = [...events].sort(byOccurredAtThenEventId)
+    const ordered = [...events].sort(byServerSeqThenLocal)
     for (const event of ordered) {
       switch (event.event_type) {
         case EventTypes.INGREDIENT_CREATED:
@@ -144,7 +143,8 @@ export class IngredientProjection {
   async rebuild(events: DomainEventRow[]): Promise<void> {
     await this.db.withTransactionAsync(async () => {
       await this.db.runAsync(`DELETE FROM ingredients`)
-      for (const event of events) {
+      const ordered = [...events].sort(byServerSeqThenLocal)
+      for (const event of ordered) {
         switch (event.event_type) {
           case EventTypes.INGREDIENT_CREATED:
             await this.handleCreated(this.db, event)

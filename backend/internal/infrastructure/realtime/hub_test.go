@@ -52,20 +52,21 @@ func TestHub_PublishAck_DeliversToConnectedClient(t *testing.T) {
 		return len(hub.connectionsFor("client-1")) == 1
 	}, time.Second, time.Millisecond)
 
-	hub.PublishAck("client-1", eventID)
+	hub.PublishAck("client-1", eventID, 42)
 
 	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
-	var msg map[string]string
+	var msg map[string]any
 	require.NoError(t, conn.ReadJSON(&msg))
 	assert.Equal(t, "ack", msg["type"])
 	assert.Equal(t, eventID.String(), msg["event_id"])
+	assert.Equal(t, float64(42), msg["seq"])
 }
 
 func TestHub_PublishAck_NoConnectedClientIsANoOp(t *testing.T) {
 	hub := NewHub()
 
 	assert.NotPanics(t, func() {
-		hub.PublishAck("nobody-home", uuid.New())
+		hub.PublishAck("nobody-home", uuid.New(), 1)
 	})
 }
 
@@ -80,11 +81,11 @@ func TestHub_PublishAck_FansOutToEveryConnectionOfTheSameClient(t *testing.T) {
 	}, time.Second, time.Millisecond)
 
 	eventID := uuid.New()
-	hub.PublishAck("client-1", eventID)
+	hub.PublishAck("client-1", eventID, 42)
 
 	for _, conn := range []*websocket.Conn{connA, connB} {
 		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
-		var msg map[string]string
+		var msg map[string]any
 		require.NoError(t, conn.ReadJSON(&msg))
 		assert.Equal(t, eventID.String(), msg["event_id"])
 	}

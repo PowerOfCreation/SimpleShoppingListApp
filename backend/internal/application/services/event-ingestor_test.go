@@ -23,6 +23,7 @@ type fakeEventRepo struct {
 	mu          sync.Mutex
 	stored      map[uuid.UUID]*repositories.StoredEvent
 	processed   map[uuid.UUID]bool
+	seqs        map[uuid.UUID]int64
 	insertErr   error
 	markErr     error
 	unprocessed []*repositories.StoredEvent
@@ -33,20 +34,21 @@ func newFakeEventRepo() *fakeEventRepo {
 	return &fakeEventRepo{
 		stored:    make(map[uuid.UUID]*repositories.StoredEvent),
 		processed: make(map[uuid.UUID]bool),
+		seqs:      make(map[uuid.UUID]int64),
 	}
 }
 
-func (f *fakeEventRepo) Insert(ctx context.Context, event *repositories.StoredEvent) (bool, error) {
+func (f *fakeEventRepo) Insert(ctx context.Context, event *repositories.StoredEvent) (bool, int64, *uuid.UUID, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.insertErr != nil {
-		return false, f.insertErr
+		return false, 0, nil, f.insertErr
 	}
-	if _, exists := f.stored[event.EventID]; exists {
-		return f.processed[event.EventID], nil
+	if existing, exists := f.stored[event.EventID]; exists {
+		return f.processed[event.EventID], f.seqs[event.EventID], existing.ListID, nil
 	}
 	f.stored[event.EventID] = event
-	return false, nil
+	return false, 0, nil, nil
 }
 
 func (f *fakeEventRepo) MarkProcessed(ctx context.Context, eventID uuid.UUID) (int64, *uuid.UUID, error) {
@@ -58,6 +60,7 @@ func (f *fakeEventRepo) MarkProcessed(ctx context.Context, eventID uuid.UUID) (i
 	f.processed[eventID] = true
 	f.nextSeq++
 	seq := f.nextSeq
+	f.seqs[eventID] = seq
 	var listID *uuid.UUID
 	if event, ok := f.stored[eventID]; ok {
 		listID = event.ListID
@@ -97,6 +100,7 @@ func (f *fakeEventRepo) isProcessed(id uuid.UUID) bool {
 type ackCall struct {
 	clientID string
 	eventID  uuid.UUID
+	seq      int64
 }
 
 type listEventCall struct {
@@ -110,10 +114,10 @@ type fakeAckPublisher struct {
 	listEvents []listEventCall
 }
 
-func (f *fakeAckPublisher) PublishAck(clientID string, eventID uuid.UUID) {
+func (f *fakeAckPublisher) PublishAck(clientID string, eventID uuid.UUID, seq int64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.acked = append(f.acked, ackCall{clientID, eventID})
+	f.acked = append(f.acked, ackCall{clientID, eventID, seq})
 }
 
 func (f *fakeAckPublisher) PublishListEvent(listID uuid.UUID, seq int64) {
@@ -154,6 +158,17 @@ func (f *fakeAckPublisher) has(eventID uuid.UUID) bool {
 		}
 	}
 	return false
+}
+
+func (f *fakeAckPublisher) seqOf(eventID uuid.UUID) int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, a := range f.acked {
+		if a.eventID == eventID {
+			return a.seq
+		}
+	}
+	return 0
 }
 
 type fakeHandler struct {
@@ -307,11 +322,13 @@ func TestEventIngestor_DuplicateEventID_AcksWithoutRedispatching(t *testing.T) {
 	require.Eventually(t, func() bool { return ack.has(event.EventID) }, time.Second, time.Millisecond)
 
 	// A resend of the exact same event, e.g. because the client's ack got
-	// lost - this must not run the handler again, but must still ack.
+	// lost - this must not run the handler again, but must still ack, with
+	// the same seq it was originally assigned.
 	require.NoError(t, ingestor.Enqueue(ctx, event))
 	require.Eventually(t, func() bool { return ack.count() == 2 }, time.Second, time.Millisecond)
 
 	assert.Equal(t, 1, handler.callCount())
+	assert.Equal(t, ack.seqOf(event.EventID), int64(1))
 }
 
 func TestEventIngestor_DispatchFailure_NoAckAndNotMarkedProcessed(t *testing.T) {

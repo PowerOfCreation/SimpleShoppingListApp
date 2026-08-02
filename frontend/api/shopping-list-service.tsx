@@ -62,6 +62,7 @@ export class ShoppingListService {
         occurred_at: now,
         client_id: getClientId(),
         payload: JSON.stringify({ name: listName }),
+        seq: null,
       }
 
       const entries: AppendEntry[] = [
@@ -84,6 +85,7 @@ export class ShoppingListService {
           occurred_at: now,
           client_id: getClientId(),
           payload: JSON.stringify({}),
+          seq: null,
         }
         entries.push({
           event: syncEnabledEvent,
@@ -155,6 +157,7 @@ export class ShoppingListService {
         occurred_at: now,
         client_id: getClientId(),
         payload: JSON.stringify({}),
+        seq: null,
       }
 
       const appendResult = await this.eventRepository.appendAll([
@@ -241,6 +244,7 @@ export class ShoppingListService {
         occurred_at: now,
         client_id: getClientId(),
         payload: JSON.stringify({ name: newName }),
+        seq: null,
       }
 
       const result = await this.eventRepository.appendWithProjection(
@@ -303,6 +307,7 @@ export class ShoppingListService {
         occurred_at: Date.now(),
         client_id: getClientId(),
         payload: JSON.stringify({}),
+        seq: null,
       }
 
       const result = await this.eventRepository.appendWithProjection(

@@ -49,7 +49,7 @@ describe("SyncProvider", () => {
   let socketDisconnectMock: jest.Mock
   let socketReconnectIfTokenChangedMock: jest.Mock
   let socketSubscribeMock: jest.Mock
-  let ackHandler: ((eventId: string) => void) | undefined
+  let ackHandler: ((eventId: string, seq: number) => void) | undefined
   let onConnectedHandler: (() => void) | undefined
   let listEventHandler: ((listId: string, seq: number) => void) | undefined
 
@@ -214,9 +214,9 @@ describe("SyncProvider", () => {
     await waitFor(() => expect(socketConnectMock).toHaveBeenCalledTimes(1))
 
     expect(ackHandler).toBeDefined()
-    ackHandler!("evt-123")
+    ackHandler!("evt-123", 7)
 
-    expect(handleAckMock).toHaveBeenCalledWith("evt-123")
+    expect(handleAckMock).toHaveBeenCalledWith("evt-123", 7)
   })
 
   it("pulls and reconciles sync-enabled list ids when the socket (re)connects", async () => {

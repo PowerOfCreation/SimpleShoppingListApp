@@ -13,26 +13,34 @@ export type DomainEventRow = {
   occurred_at: number
   client_id: string
   payload: string
+  // The server's pull cursor position for this event. Null means "not yet
+  // acked/pulled" - our own unconfirmed local write, or an event on a list
+  // that was never synced. Once set, it's the authoritative replay order
+  // (see byServerSeqThenLocal).
+  seq: number | null
 }
 
 /**
- * Total, device-independent ordering for replaying a merged (local +
- * pulled) event history: (occurred_at, event_id). event_id (a uuid) rather
- * than rowid as the tiebreak, because rowid is local insertion order,
- * which differs per device - two devices replaying the same event set
- * would tiebreak same-millisecond events differently and diverge. Used by
- * the list-scoped rebuildForList methods (ingredient-projection.ts,
- * ingredient-list-projection.ts) so a projection rebuild is correct
- * regardless of what order its caller happened to hand events in.
+ * Replay order for a merged (local + pulled) event history: events the
+ * server has confirmed (seq set) sort by seq, ahead of our own
+ * unconfirmed writes (seq null), which keep whatever order the caller
+ * handed them in (their local insertion order). This mirrors a rebase:
+ * the confirmed prefix is the server's order, unconfirmed local writes are
+ * the tail replayed on top. occurred_at plays no role - device clocks
+ * aren't trusted for ordering. Used by the list-scoped rebuildForList
+ * methods (ingredient-projection.ts, ingredient-list-projection.ts).
  */
-export function byOccurredAtThenEventId(
+export function byServerSeqThenLocal(
   a: DomainEventRow,
   b: DomainEventRow
 ): number {
-  if (a.occurred_at !== b.occurred_at) {
-    return a.occurred_at - b.occurred_at
+  if (a.seq !== null && b.seq !== null) {
+    return a.seq - b.seq
   }
-  return a.event_id < b.event_id ? -1 : a.event_id > b.event_id ? 1 : 0
+  if (a.seq === null && b.seq === null) {
+    return 0
+  }
+  return a.seq === null ? 1 : -1
 }
 
 export const EventTypes = {

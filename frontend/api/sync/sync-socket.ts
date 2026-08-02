@@ -12,7 +12,7 @@ const PONG_TIMEOUT_MS = 10_000
 const INITIAL_BACKOFF_MS = 1_000
 const MAX_BACKOFF_MS = 60_000
 
-export type AckHandler = (eventId: string) => void
+export type AckHandler = (eventId: string, seq: number) => void
 export type ConnectedHandler = () => void
 export type ListEventHandler = (listId: string, seq: number) => void
 
@@ -217,8 +217,12 @@ export class SyncSocket {
       return
     }
 
-    if (message.type === "ack" && typeof message.event_id === "string") {
-      this.onAck(message.event_id)
+    if (
+      message.type === "ack" &&
+      typeof message.event_id === "string" &&
+      typeof message.seq === "number"
+    ) {
+      this.onAck(message.event_id, message.seq)
       return
     }
 

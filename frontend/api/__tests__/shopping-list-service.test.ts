@@ -55,7 +55,6 @@ describe("ShoppingListService", () => {
       appendWithProjection: jest.fn(),
       appendAll: jest.fn().mockResolvedValue(Result.ok(undefined)),
       enqueueExistingForSync: jest.fn().mockResolvedValue(Result.ok(undefined)),
-      getByAggregateId: jest.fn(),
       getByListId: jest.fn(),
       getByAggregateType: jest.fn(),
       getAll: jest.fn(),
@@ -157,6 +156,7 @@ describe("ShoppingListService", () => {
       occurred_at: 1000,
       client_id: "test-device",
       payload: "{}",
+      seq: null,
       ...overrides,
     })
 

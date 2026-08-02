@@ -196,7 +196,7 @@ const insertEvent = `-- name: InsertEvent :one
 INSERT INTO events (id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 ON CONFLICT (id) DO UPDATE SET id = events.id
-RETURNING processed_at
+RETURNING processed_at, seq, list_id
 `
 
 type InsertEventParams struct {
@@ -210,11 +210,18 @@ type InsertEventParams struct {
 	ClientID      string             `db:"client_id" json:"client_id"`
 }
 
+type InsertEventRow struct {
+	ProcessedAt pgtype.Timestamptz `db:"processed_at" json:"processed_at"`
+	Seq         pgtype.Int8        `db:"seq" json:"seq"`
+	ListID      pgtype.UUID        `db:"list_id" json:"list_id"`
+}
+
 // Upserts as a no-op update (rather than DO NOTHING) purely so RETURNING
 // always yields exactly one row, whether this event_id was just inserted
 // or already existed from a previous delivery. Callers use processed_at to
-// tell the two cases apart without a second round-trip.
-func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (pgtype.Timestamptz, error) {
+// tell the two cases apart without a second round-trip; seq/list_id ride
+// along so a duplicate delivery can still ack with the event's seq.
+func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (InsertEventRow, error) {
 	row := q.db.QueryRow(ctx, insertEvent,
 		arg.ID,
 		arg.EventType,
@@ -225,9 +232,9 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (pgtyp
 		arg.OccurredAt,
 		arg.ClientID,
 	)
-	var processed_at pgtype.Timestamptz
-	err := row.Scan(&processed_at)
-	return processed_at, err
+	var i InsertEventRow
+	err := row.Scan(&i.ProcessedAt, &i.Seq, &i.ListID)
+	return i, err
 }
 
 const markEventProcessed = `-- name: MarkEventProcessed :one

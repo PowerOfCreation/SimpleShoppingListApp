@@ -18,6 +18,7 @@ const makeEvent = (
     occurred_at: number
     client_id: string
     payload: string
+    seq: number | null
   }> = {}
 ) => ({
   event_id: "evt-1",
@@ -27,6 +28,7 @@ const makeEvent = (
   list_id: "list-1",
   occurred_at: 1000,
   client_id: "client-1",
+  seq: null,
   payload: JSON.stringify({
     name: "Milk",
     listId: "list-1",
@@ -384,13 +386,13 @@ describe("IngredientProjection", () => {
       ])
     })
 
-    it("replays in (occurred_at, event_id) order regardless of the input array's order", async () => {
+    it("replays confirmed events by seq regardless of the input array's order", async () => {
       const created = makeEvent({
         event_id: "e1",
         event_type: EventTypes.INGREDIENT_CREATED,
         aggregate_id: "a",
         list_id: "list-1",
-        occurred_at: 1000,
+        seq: 1,
         payload: JSON.stringify({
           name: "Milk",
           listId: "list-1",
@@ -403,7 +405,7 @@ describe("IngredientProjection", () => {
         event_type: EventTypes.INGREDIENT_UPDATED,
         aggregate_id: "a",
         list_id: "list-1",
-        occurred_at: 2000,
+        seq: 2,
         payload: JSON.stringify({ name: "Whole Milk" }),
       })
 

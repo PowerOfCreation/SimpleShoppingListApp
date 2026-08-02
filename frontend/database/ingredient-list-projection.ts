@@ -2,7 +2,7 @@ import { SQLiteDatabase } from "expo-sqlite"
 import {
   DomainEventRow,
   EventTypes,
-  byOccurredAtThenEventId,
+  byServerSeqThenLocal,
 } from "@/types/DomainEvent"
 
 export class IngredientListProjection {
@@ -79,7 +79,7 @@ export class IngredientListProjection {
     await db.runAsync(`DELETE FROM ingredient_lists WHERE id = ?`, listId)
     // See IngredientProjection.rebuildForList's comment on this sort - the
     // same "don't trust the caller got the order right" reasoning applies.
-    const ordered = [...events].sort(byOccurredAtThenEventId)
+    const ordered = [...events].sort(byServerSeqThenLocal)
     for (const event of ordered) {
       switch (event.event_type) {
         case EventTypes.TODO_LIST_CREATED:
@@ -104,7 +104,8 @@ export class IngredientListProjection {
   async rebuild(events: DomainEventRow[]): Promise<void> {
     await this.db.withTransactionAsync(async () => {
       await this.db.runAsync(`DELETE FROM ingredient_lists`)
-      for (const event of events) {
+      const ordered = [...events].sort(byServerSeqThenLocal)
+      for (const event of ordered) {
         switch (event.event_type) {
           case EventTypes.TODO_LIST_CREATED:
             await this.handleCreated(this.db, event)

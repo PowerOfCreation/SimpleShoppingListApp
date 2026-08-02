@@ -100,8 +100,7 @@ export class EventRepository extends BaseRepository {
   /**
    * Fetches the full event rows for the given ids, preserving the order of
    * `eventIds` (not SQL's arbitrary IN-clause order) - callers such as the
-   * sync engine pass ids already in the order they must be sent, and that
-   * order matters (see the rowid tiebreak on getByAggregateId/Type above).
+   * sync engine pass ids already in the order they must be sent.
    */
   async getByEventIds(
     eventIds: string[]
@@ -112,7 +111,7 @@ export class EventRepository extends BaseRepository {
     return this._executeQuery(async () => {
       const placeholders = eventIds.map(() => "?").join(", ")
       const rows = await this.db.getAllAsync<DomainEventRow>(
-        `SELECT event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload
+        `SELECT event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload, seq
          FROM domain_events
          WHERE event_id IN (${placeholders})`,
         ...eventIds
@@ -124,54 +123,42 @@ export class EventRepository extends BaseRepository {
     }, "getByEventIds")
   }
 
-  async getByAggregateId(
-    aggregateId: string
-  ): Promise<Result<DomainEventRow[], DbQueryError>> {
-    return this._executeQuery(async () => {
-      return this.db.getAllAsync<DomainEventRow>(
-        `SELECT event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload
-         FROM domain_events
-         WHERE aggregate_id = ?
-         ORDER BY occurred_at ASC, rowid ASC`,
-        aggregateId
-      )
-    }, "getByAggregateId")
-  }
-
   /**
    * Fetches every event for a list (its own todo_list.* history plus every
-   * ingredient.* event resolved to it via list_id), ordered by
-   * (occurred_at, event_id) - a total, device-independent order. This is
-   * deliberately *not* the (occurred_at, rowid) tiebreak getByAggregateId
-   * uses: rowid is local insertion order, which differs per device, so two
-   * devices replaying the same event set in rowid order could tiebreak
-   * differently and diverge. event_id (a uuid) breaks ties identically
-   * everywhere. Used by the pull applier to rebuild a list's projection from
-   * its full local history after merging in remote events.
+   * ingredient.* event resolved to it via list_id), ordered by server seq
+   * with our own unconfirmed writes (seq IS NULL) trailing in local
+   * insertion order - see byServerSeqThenLocal for why. Used by the pull
+   * applier to rebuild a list's projection from its full local history
+   * after merging in remote events.
    */
   async getByListId(
     listId: string
   ): Promise<Result<DomainEventRow[], DbQueryError>> {
     return this._executeQuery(async () => {
       return this.db.getAllAsync<DomainEventRow>(
-        `SELECT event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload
+        `SELECT event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload, seq
          FROM domain_events
          WHERE list_id = ?
-         ORDER BY occurred_at ASC, event_id ASC`,
+         ORDER BY (seq IS NULL) ASC, seq ASC, rowid ASC`,
         listId
       )
     }, "getByListId")
   }
 
   /**
-   * Inserts one pulled event if it isn't already present, without running
-   * any projection and without touching the outbox - the applier
-   * (event-applier.ts) rebuilds the affected list's projection separately
-   * from the full merged history, and a pulled event must never be
-   * re-sent as if it were a local write. Returns the number of rows
-   * actually inserted (0 for an event we already had - an echo of our own
-   * push, or a duplicate delivery of the same pull page), so a caller can
-   * tell "nothing new" from "something changed" without a second query.
+   * Inserts one pulled event, or - if we already have it as our own
+   * unconfirmed write (an echo of our own push) - just fills in the seq it
+   * was missing, without running any projection and without touching the
+   * outbox: the applier (event-applier.ts) rebuilds the affected list's
+   * projection separately from the full merged history, and a pulled event
+   * must never be re-sent as if it were a local write.
+   *
+   * Returns the number of rows actually changed (0 for an event we already
+   * had *with* a seq - a duplicate delivery of the same pull page), so a
+   * caller can tell "nothing new" from "something changed" without a
+   * second query. A seq getting filled in counts as a change: that event
+   * just moved from the unconfirmed tail into the confirmed order, which
+   * can shift replay order and needs a rebuild.
    *
    * Takes no transaction of its own - call this from within an
    * already-open transaction (see appendRemote below, or EventApplier,
@@ -180,8 +167,9 @@ export class EventRepository extends BaseRepository {
    */
   async insertRemote(event: DomainEventRow): Promise<number> {
     const result = await this.db.runAsync(
-      `INSERT OR IGNORE INTO domain_events (event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO domain_events (event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload, seq)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(event_id) DO UPDATE SET seq = excluded.seq WHERE domain_events.seq IS NULL`,
       event.event_id,
       event.event_type,
       event.aggregate_id,
@@ -189,9 +177,29 @@ export class EventRepository extends BaseRepository {
       event.list_id,
       event.occurred_at,
       event.client_id,
-      event.payload
+      event.payload,
+      event.seq
     )
     return result.changes
+  }
+
+  /**
+   * Records the seq the server assigned an event we pushed, once its ack
+   * arrives - the event moves from the unconfirmed tail into the confirmed
+   * order at that point (see byServerSeqThenLocal). A no-op if the event
+   * already has a seq (a resent ack).
+   */
+  async markSeq(
+    eventId: string,
+    seq: number
+  ): Promise<Result<void, DbQueryError>> {
+    return this._executeTransaction(async () => {
+      await this.db.runAsync(
+        `UPDATE domain_events SET seq = ? WHERE event_id = ? AND seq IS NULL`,
+        seq,
+        eventId
+      )
+    }, "markSeq")
   }
 
   /**
@@ -219,7 +227,7 @@ export class EventRepository extends BaseRepository {
   async getAll(): Promise<Result<DomainEventRow[], DbQueryError>> {
     return this._executeQuery(async () => {
       return this.db.getAllAsync<DomainEventRow>(
-        `SELECT event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload
+        `SELECT event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload, seq
          FROM domain_events
          ORDER BY occurred_at DESC`
       )
@@ -231,10 +239,10 @@ export class EventRepository extends BaseRepository {
   ): Promise<Result<DomainEventRow[], DbQueryError>> {
     return this._executeQuery(async () => {
       return this.db.getAllAsync<DomainEventRow>(
-        `SELECT event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload
+        `SELECT event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload, seq
          FROM domain_events
          WHERE aggregate_type = ?
-         ORDER BY occurred_at ASC, rowid ASC`,
+         ORDER BY (seq IS NULL) ASC, seq ASC, rowid ASC`,
         aggregateType
       )
     }, "getByAggregateType")

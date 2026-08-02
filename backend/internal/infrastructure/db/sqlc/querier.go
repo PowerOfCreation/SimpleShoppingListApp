@@ -8,7 +8,6 @@ import (
 	"context"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
@@ -41,8 +40,9 @@ type Querier interface {
 	// Upserts as a no-op update (rather than DO NOTHING) purely so RETURNING
 	// always yields exactly one row, whether this event_id was just inserted
 	// or already existed from a previous delivery. Callers use processed_at to
-	// tell the two cases apart without a second round-trip.
-	InsertEvent(ctx context.Context, arg InsertEventParams) (pgtype.Timestamptz, error)
+	// tell the two cases apart without a second round-trip; seq/list_id ride
+	// along so a duplicate delivery can still ack with the event's seq.
+	InsertEvent(ctx context.Context, arg InsertEventParams) (InsertEventRow, error)
 	// Assigns seq from the dedicated events_seq_seq sequence atomically with
 	// marking the row processed (see migration 00004 for why seq is assigned
 	// here rather than at insert). The `seq IS NULL` guard makes a second call

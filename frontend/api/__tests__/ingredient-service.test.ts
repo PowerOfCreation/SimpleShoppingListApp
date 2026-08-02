@@ -69,7 +69,6 @@ describe("IngredientService", () => {
       append: jest.fn(),
       appendWithProjection: jest.fn(),
       appendAll: jest.fn().mockResolvedValue(Result.ok(undefined)),
-      getByAggregateId: jest.fn(),
       getByListId: jest.fn(),
       getAll: jest.fn(),
       getByAggregateType: jest.fn(),

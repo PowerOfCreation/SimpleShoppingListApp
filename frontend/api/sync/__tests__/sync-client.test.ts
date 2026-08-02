@@ -20,6 +20,7 @@ const makeEvent = (
   occurred_at: 1234,
   client_id: "client-1",
   payload: JSON.stringify({ name: "Rewe" }),
+  seq: null,
   ...overrides,
 })
 
@@ -251,7 +252,7 @@ describe("SyncClient", () => {
 
       expect(result.success).toBe(true)
       expect(result.getValue()).toEqual({
-        events: [makeEvent()], // payload re-stringified back to "{...}"
+        events: [makeEvent({ seq: 7 })], // payload re-stringified back to "{...}"
         nextSeq: 7,
         hasMore: true,
       })

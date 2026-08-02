@@ -127,8 +127,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     const pendingPulls = new Map<string, ReturnType<typeof setTimeout>>()
 
     return new SyncSocket(
-      (eventId) => {
-        engine.handleAck(eventId).catch((error) => {
+      (eventId, seq) => {
+        engine.handleAck(eventId, seq).catch((error) => {
           logger.error("Failed to handle ack", error)
         })
       },

@@ -96,6 +96,7 @@ export class IngredientService {
         occurred_at: now,
         client_id: getClientId(),
         payload: JSON.stringify({ name: ingredientName, listId }),
+        seq: null,
       }
 
       const result = await this.eventRepository.appendAll([
@@ -157,6 +158,7 @@ export class IngredientService {
         occurred_at: now,
         client_id: getClientId(),
         payload: JSON.stringify({ completed, completedAt }),
+        seq: null,
       }
 
       const result = await this.eventRepository.appendAll([
@@ -225,6 +227,7 @@ export class IngredientService {
         occurred_at: now,
         client_id: getClientId(),
         payload: JSON.stringify({ name }),
+        seq: null,
       }
 
       const result = await this.eventRepository.appendAll([
@@ -289,6 +292,7 @@ export class IngredientService {
         occurred_at: now,
         client_id: getClientId(),
         payload: JSON.stringify({ priority }),
+        seq: null,
       }
 
       const result = await this.eventRepository.appendAll([
@@ -347,6 +351,7 @@ export class IngredientService {
         occurred_at: now,
         client_id: getClientId(),
         payload: JSON.stringify({}),
+        seq: null,
       }
 
       const result = await this.eventRepository.appendAll([
@@ -404,6 +409,7 @@ export class IngredientService {
         occurred_at: Date.now(),
         client_id: getClientId(),
         payload: JSON.stringify({}),
+        seq: null,
       }
 
       const result = await this.eventRepository.appendAll([

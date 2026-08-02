@@ -71,7 +71,10 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
   /api/v1/sync/state` reconciles lost acks (self-heal for push, keyed by
   `list_id`). Pull only ever fetches lists already known and sync-enabled
   locally — there is **no** "restore my lists after reinstall" / discovery
-  endpoint. See `frontend/docs/sync-design-decisions.md`.
+  endpoint. Replay order is a rebase on the server's `seq` (confirmed prefix,
+  server-authoritative) with our own unacked writes as a local tail
+  (`byServerSeqThenLocal`), not wall-clock `occurred_at` — see
+  `frontend/docs/sync-design-decisions.md`.
 - **Backend auth:** mandatory. Verifies Keycloak bearer tokens (see
   `backend/internal/interface/api/middleware`) on `/api/v1/events` and every
   `/api/v1/sync/*` route; the API refuses to start if

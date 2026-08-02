@@ -151,14 +151,52 @@ export class SyncEngine {
     }
   }
 
-  /** The server confirmed (via WebSocket) that this event actually committed. */
-  async handleAck(eventId: string): Promise<void> {
+  /**
+   * The server confirmed (via WebSocket) that this event actually
+   * committed, at position `seq`. Besides marking the outbox row synced,
+   * that seq moves the event from the unconfirmed local tail into the
+   * confirmed replay order (see byServerSeqThenLocal) - skipped for a
+   * resent ack, which finds the event already positioned.
+   */
+  async handleAck(eventId: string, seq: number): Promise<void> {
     const result = await this.outboxRepository.markSynced(eventId)
     if (!result.success) {
       logger.error(
         `Failed to mark event ${eventId} as synced`,
         result.getError()
       )
+    }
+
+    const eventsResult = await this.eventRepository.getByEventIds([eventId])
+    if (!eventsResult.success) {
+      logger.error(
+        `Failed to look up acked event ${eventId}`,
+        eventsResult.getError()
+      )
+      return
+    }
+    const event = eventsResult.getValue()![0]
+    if (!event || event.seq !== null) {
+      return
+    }
+
+    const seqResult = await this.eventRepository.markSeq(eventId, seq)
+    if (!seqResult.success) {
+      logger.error(
+        `Failed to record seq for event ${eventId}`,
+        seqResult.getError()
+      )
+      return
+    }
+
+    if (event.list_id) {
+      const rebuildResult = await this.eventApplier.rebuildForAck(event.list_id)
+      if (!rebuildResult.success) {
+        logger.error(
+          `Failed to rebuild list ${event.list_id} after ack`,
+          rebuildResult.getError()
+        )
+      }
     }
   }
 
