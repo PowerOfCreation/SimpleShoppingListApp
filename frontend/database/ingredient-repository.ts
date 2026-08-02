@@ -228,41 +228,6 @@ export class IngredientRepository extends BaseRepository {
   }
 
   /**
-   * Resolves the list an ingredient belongs to, plus whether that list
-   * currently has sync enabled - one read serving both the `list_id` an
-   * event needs (see types/DomainEvent.ts) and the "should this be
-   * enqueued for sync?" decision, since both come from the same join.
-   *
-   * Returns null if the ingredient's row is already gone (e.g. a delete
-   * racing this read) - callers should fall back to the most recent
-   * domain_events row for this aggregate instead.
-   */
-  async getListContext(
-    ingredientId: string
-  ): Promise<
-    Result<{ listId: string; syncEnabled: boolean } | null, DbQueryError>
-  > {
-    return this._executeQuery(async () => {
-      const result = await this.db.getFirstAsync<{
-        list_id: string
-        sync_enabled: number
-      }>(
-        `SELECT i.list_id AS list_id, l.sync_enabled AS sync_enabled
-         FROM ingredients i
-         JOIN ingredient_lists l ON l.id = i.list_id
-         WHERE i.id = ?`,
-        ingredientId
-      )
-
-      if (!result) {
-        return null
-      }
-
-      return { listId: result.list_id, syncEnabled: result.sync_enabled === 1 }
-    }, "getListContext")
-  }
-
-  /**
    * Delete ingredient
    * @param id Ingredient ID
    * @returns Result indicating success or error

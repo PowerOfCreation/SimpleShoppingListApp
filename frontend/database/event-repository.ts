@@ -216,28 +216,6 @@ export class EventRepository extends BaseRepository {
     return Result.ok({ applied })
   }
 
-  /**
-   * Fallback for resolving list_id when the ingredient row is already gone
-   * (a delete racing the read that normally supplies list_id - see
-   * IngredientRepository.getListContext). Returns the most recently
-   * recorded list_id for this aggregate, or null if none of its events
-   * have one (e.g. the created event was itself lost).
-   */
-  async getLastListIdForAggregate(
-    aggregateId: string
-  ): Promise<Result<string | null, DbQueryError>> {
-    return this._executeQuery(async () => {
-      const row = await this.db.getFirstAsync<{ list_id: string | null }>(
-        `SELECT list_id FROM domain_events
-         WHERE aggregate_id = ? AND list_id IS NOT NULL
-         ORDER BY occurred_at DESC, rowid DESC
-         LIMIT 1`,
-        aggregateId
-      )
-      return row?.list_id ?? null
-    }, "getLastListIdForAggregate")
-  }
-
   async getAll(): Promise<Result<DomainEventRow[], DbQueryError>> {
     return this._executeQuery(async () => {
       return this.db.getAllAsync<DomainEventRow>(

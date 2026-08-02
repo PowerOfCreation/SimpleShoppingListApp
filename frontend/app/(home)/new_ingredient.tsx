@@ -72,7 +72,11 @@ export default function NewIngredient() {
     }
 
     if (priority !== undefined) {
-      await ingredientService.setPriority(result.getValue()!.id, priority)
+      await ingredientService.setPriority(
+        result.getValue()!.id,
+        listId,
+        priority
+      )
     }
 
     onChangeText("")

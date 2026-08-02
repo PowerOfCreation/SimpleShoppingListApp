@@ -331,39 +331,6 @@ describe("EventRepository", () => {
     })
   })
 
-  describe("getLastListIdForAggregate", () => {
-    it("returns the most recently recorded list_id for an aggregate", async () => {
-      await repo.append(
-        makeEvent({
-          event_id: "e1",
-          aggregate_id: "ing-1",
-          list_id: "list-1",
-          occurred_at: 1000,
-        })
-      )
-      await repo.append(
-        makeEvent({
-          event_id: "e2",
-          aggregate_id: "ing-1",
-          list_id: "list-1",
-          occurred_at: 2000,
-        })
-      )
-
-      const result = await repo.getLastListIdForAggregate("ing-1")
-
-      expect(result.success).toBe(true)
-      expect(result.getValue()).toBe("list-1")
-    })
-
-    it("returns null when no event for the aggregate has a list_id", async () => {
-      const result = await repo.getLastListIdForAggregate("unknown")
-
-      expect(result.success).toBe(true)
-      expect(result.getValue()).toBeNull()
-    })
-  })
-
   describe("insertRemote / appendRemote", () => {
     it("insertRemote inserts a new event and reports 1 row changed", async () => {
       const changes = await repo.insertRemote(makeEvent({ event_id: "e1" }))

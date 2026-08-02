@@ -107,7 +107,7 @@ export function useIngredients() {
       )
 
       try {
-        await ingredientService.updateCompletion(id, newCompletedState)
+        await ingredientService.updateCompletion(id, listId, newCompletedState)
       } catch (err) {
         logger.error("Error toggling completion", err)
         // Revert on error
@@ -118,7 +118,7 @@ export function useIngredients() {
         )
       }
     },
-    [ingredients]
+    [ingredients, listId]
   )
 
   /**
@@ -136,7 +136,7 @@ export function useIngredients() {
       )
 
       try {
-        const result = await ingredientService.updateName(id, newName)
+        const result = await ingredientService.updateName(id, listId, newName)
         if (!result.success) {
           // Revert on error
           setIngredients((prev) =>
@@ -155,7 +155,7 @@ export function useIngredients() {
         )
       }
     },
-    [ingredients]
+    [ingredients, listId]
   )
 
   /**
@@ -175,7 +175,7 @@ export function useIngredients() {
       )
 
       try {
-        const result = await ingredientService.setPriority(id, priority)
+        const result = await ingredientService.setPriority(id, listId, priority)
         if (!result.success) {
           // Revert on error
           setIngredients((prev) =>
@@ -194,7 +194,7 @@ export function useIngredients() {
         )
       }
     },
-    [ingredients]
+    [ingredients, listId]
   )
 
   /**
@@ -216,7 +216,7 @@ export function useIngredients() {
       )
 
       try {
-        const result = await ingredientService.clearPriority(id)
+        const result = await ingredientService.clearPriority(id, listId)
         if (!result.success) {
           // Revert on error
           setIngredients((prev) =>
@@ -235,7 +235,7 @@ export function useIngredients() {
         )
       }
     },
-    [ingredients]
+    [ingredients, listId]
   )
 
   /**
@@ -244,7 +244,7 @@ export function useIngredients() {
   const deleteIngredient = React.useCallback(
     async (id: string) => {
       try {
-        const result = await ingredientService.deleteIngredient(id)
+        const result = await ingredientService.deleteIngredient(id, listId)
         if (result.success) {
           // Refetch to update the list
           await loadIngredients()
@@ -253,7 +253,7 @@ export function useIngredients() {
         logger.error("Error deleting ingredient", err)
       }
     },
-    [loadIngredients]
+    [loadIngredients, listId]
   )
 
   /**

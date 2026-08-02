@@ -37,36 +37,12 @@ export class IngredientService {
     this.listRepository = listRepository || new IngredientListRepository(db)
   }
 
-  /**
-   * Resolves the list_id (and whether it's sync-enabled) for an ingredient
-   * that isn't being freshly created, i.e. every mutation but
-   * AddIngredients, which already receives listId directly. Falls back to
-   * the aggregate's own event history for the rare race where the
-   * ingredient row is already gone (e.g. a concurrent delete) by the time
-   * this read runs.
-   */
-  private async resolveListContext(
-    ingredientId: string
-  ): Promise<{ listId: string | null; syncEnabled: boolean }> {
-    const contextResult = await this.repository.getListContext(ingredientId)
-    if (contextResult.success) {
-      const context = contextResult.getValue()
-      if (context) {
-        return context
-      }
-    } else {
-      logger.warn(
-        `Failed to resolve list context for ingredient ${ingredientId}`,
-        contextResult.getError()
-      )
-    }
-
-    const fallbackResult =
-      await this.eventRepository.getLastListIdForAggregate(ingredientId)
-    const listId = fallbackResult.success ? fallbackResult.getValue()! : null
-    // We can't tell sync-enabled from this fallback path (the list row is
-    // gone from view) - default to not syncing rather than guessing.
-    return { listId, syncEnabled: false }
+  /** Whether the given list currently has sync enabled. */
+  private async resolveSyncEnabled(listId: string): Promise<boolean> {
+    const listResult = await this.listRepository.getById(listId)
+    return listResult.success
+      ? (listResult.getValue()?.syncEnabled ?? false)
+      : false
   }
 
   async GetIngredients(
@@ -110,10 +86,7 @@ export class IngredientService {
     try {
       const now = Date.now()
       const ingredientId = uuidv4()
-      const listResult = await this.listRepository.getById(listId)
-      const syncEnabled = listResult.success
-        ? (listResult.getValue()?.syncEnabled ?? false)
-        : false
+      const syncEnabled = await this.resolveSyncEnabled(listId)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_CREATED,
@@ -168,12 +141,13 @@ export class IngredientService {
 
   async updateCompletion(
     id: string,
+    listId: string,
     completed: boolean
   ): Promise<Result<void, DbQueryError>> {
     try {
       const now = Date.now()
       const completedAt = completed ? now : null
-      const { listId, syncEnabled } = await this.resolveListContext(id)
+      const syncEnabled = await this.resolveSyncEnabled(listId)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_UPDATED,
@@ -228,6 +202,7 @@ export class IngredientService {
 
   async updateName(
     id: string,
+    listId: string,
     name: string
   ): Promise<Result<void, ValidationError | DbQueryError>> {
     if (!name.trim()) {
@@ -240,7 +215,7 @@ export class IngredientService {
 
     try {
       const now = Date.now()
-      const { listId, syncEnabled } = await this.resolveListContext(id)
+      const syncEnabled = await this.resolveSyncEnabled(listId)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_UPDATED,
@@ -294,6 +269,7 @@ export class IngredientService {
 
   async setPriority(
     id: string,
+    listId: string,
     priority: Priority
   ): Promise<Result<void, ValidationError | DbQueryError>> {
     if (!Object.values(Priority).includes(priority)) {
@@ -303,7 +279,7 @@ export class IngredientService {
 
     try {
       const now = Date.now()
-      const { listId, syncEnabled } = await this.resolveListContext(id)
+      const syncEnabled = await this.resolveSyncEnabled(listId)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_PRIORITY_SET,
@@ -355,10 +331,13 @@ export class IngredientService {
     }
   }
 
-  async clearPriority(id: string): Promise<Result<void, DbQueryError>> {
+  async clearPriority(
+    id: string,
+    listId: string
+  ): Promise<Result<void, DbQueryError>> {
     try {
       const now = Date.now()
-      const { listId, syncEnabled } = await this.resolveListContext(id)
+      const syncEnabled = await this.resolveSyncEnabled(listId)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_PRIORITY_CLEARED,
@@ -410,11 +389,12 @@ export class IngredientService {
     }
   }
 
-  async deleteIngredient(id: string): Promise<Result<void, DbQueryError>> {
+  async deleteIngredient(
+    id: string,
+    listId: string
+  ): Promise<Result<void, DbQueryError>> {
     try {
-      // Resolve before the projection below runs the delete handler -
-      // once the ingredient row is gone, getListContext can't find it.
-      const { listId, syncEnabled } = await this.resolveListContext(id)
+      const syncEnabled = await this.resolveSyncEnabled(listId)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_DELETED,
