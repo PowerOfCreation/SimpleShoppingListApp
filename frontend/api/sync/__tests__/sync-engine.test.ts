@@ -7,6 +7,7 @@ import { EventApplier } from "@/api/sync/event-applier"
 import { Result } from "@/api/common/result"
 import { SyncError, DbQueryError } from "@/api/common/error-types"
 import { DomainEventRow, EventTypes } from "@/types/DomainEvent"
+import { flushMicrotasks } from "../test-helpers"
 
 jest.mock("@/database/outbox-repository")
 jest.mock("@/database/event-repository")
@@ -258,8 +259,7 @@ describe("SyncEngine", () => {
 
       const first = engine.flush()
       // Let the first flush grab e1 and start "sending" before resolving.
-      await Promise.resolve()
-      await Promise.resolve()
+      await flushMicrotasks()
 
       resolveSend(Result.ok(undefined))
       await first

@@ -10,6 +10,7 @@ import { IngredientListRepository } from "@/database/ingredient-list-repository"
 import { Result } from "@/api/common/result"
 import { notifyOutboxChanged } from "@/api/sync/outbox-events"
 import * as syncConfigModule from "@/api/sync/config"
+import { flushMicrotasks } from "../test-helpers"
 
 jest.mock("@/api/auth/AuthProvider")
 jest.mock("@/api/sync/sync-engine")
@@ -122,7 +123,7 @@ describe("SyncProvider", () => {
 
     renderProvider()
 
-    await Promise.resolve()
+    await flushMicrotasks()
     expect(flushMock).not.toHaveBeenCalled()
     expect(pullMock).not.toHaveBeenCalled()
     expect(socketSubscribeMock).not.toHaveBeenCalled()
@@ -135,7 +136,7 @@ describe("SyncProvider", () => {
 
     renderProvider()
 
-    await Promise.resolve()
+    await flushMicrotasks()
     expect(flushMock).not.toHaveBeenCalled()
     expect(pullMock).not.toHaveBeenCalled()
     expect(socketSubscribeMock).not.toHaveBeenCalled()
@@ -194,7 +195,7 @@ describe("SyncProvider", () => {
     mockAuth("signedOut")
     const { rerender } = renderProvider()
 
-    await Promise.resolve()
+    await flushMicrotasks()
     expect(flushMock).not.toHaveBeenCalled()
 
     mockAuth("signedIn")
@@ -263,9 +264,7 @@ describe("SyncProvider", () => {
       reconcileMock.mockClear()
 
       jest.advanceTimersByTime(5 * 60 * 1000)
-      // Let the interval callback's promises settle.
-      await Promise.resolve()
-      await Promise.resolve()
+      await flushMicrotasks()
 
       expect(pullMock).toHaveBeenCalledWith(["list-1", "list-2"])
       expect(reconcileMock).toHaveBeenCalledWith(["list-1", "list-2"])
@@ -287,8 +286,7 @@ describe("SyncProvider", () => {
       listEventHandler!("list-1", 7)
 
       jest.advanceTimersByTime(400)
-      await Promise.resolve()
-      await Promise.resolve()
+      await flushMicrotasks()
 
       expect(pullListMock).toHaveBeenCalledTimes(1)
       expect(pullListMock).toHaveBeenCalledWith("list-1")
@@ -309,8 +307,7 @@ describe("SyncProvider", () => {
       listEventHandler!("list-2", 9)
 
       jest.advanceTimersByTime(400)
-      await Promise.resolve()
-      await Promise.resolve()
+      await flushMicrotasks()
 
       expect(pullListMock).toHaveBeenCalledTimes(2)
       expect(pullListMock).toHaveBeenCalledWith("list-1")

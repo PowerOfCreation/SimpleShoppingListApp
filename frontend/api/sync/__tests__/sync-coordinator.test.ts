@@ -7,6 +7,7 @@ import { IngredientListRepository } from "@/database/ingredient-list-repository"
 import { Result } from "@/api/common/result"
 import { notifyOutboxChanged } from "@/api/sync/outbox-events"
 import { notifySyncListsChanged } from "@/api/sync/sync-events"
+import { flushMicrotasks } from "../test-helpers"
 
 jest.mock("@/api/sync/sync-engine")
 jest.mock("@/api/sync/sync-socket")
@@ -112,9 +113,7 @@ describe("SyncCoordinator", () => {
     const coordinator = buildCoordinator()
 
     coordinator.start()
-
-    await Promise.resolve()
-    await Promise.resolve()
+    await flushMicrotasks()
 
     expect(socketSubscribeMock).toHaveBeenCalledWith(["list-1", "list-2"])
     expect(socketConnectMock).toHaveBeenCalledTimes(1)
@@ -129,7 +128,7 @@ describe("SyncCoordinator", () => {
 
       coordinator.start()
       coordinator.start()
-      await Promise.resolve()
+      await flushMicrotasks()
 
       expect(socketConnectMock).toHaveBeenCalledTimes(1)
       expect(AppState.addEventListener).toHaveBeenCalledTimes(1)
@@ -157,7 +156,7 @@ describe("SyncCoordinator", () => {
 
     expect(onConnectedHandler).toBeDefined()
     onConnectedHandler!()
-    await Promise.resolve()
+    await flushMicrotasks()
 
     expect(pullMock).toHaveBeenCalledWith(["list-1", "list-2"])
     expect(reconcileMock).toHaveBeenCalledWith(["list-1", "list-2"])
@@ -165,7 +164,7 @@ describe("SyncCoordinator", () => {
 
   it("flushes again when the outbox reports a change", async () => {
     buildCoordinator().start()
-    await Promise.resolve()
+    await flushMicrotasks()
     flushMock.mockClear()
 
     notifyOutboxChanged()
@@ -175,12 +174,12 @@ describe("SyncCoordinator", () => {
 
   it("re-subscribes and pulls when the sync-enabled list set changes", async () => {
     buildCoordinator().start()
-    await Promise.resolve()
+    await flushMicrotasks()
     socketSubscribeMock.mockClear()
     pullMock.mockClear()
 
     notifySyncListsChanged()
-    await Promise.resolve()
+    await flushMicrotasks()
 
     expect(socketSubscribeMock).toHaveBeenCalledWith(["list-1", "list-2"])
     expect(pullMock).toHaveBeenCalledWith(["list-1", "list-2"])
@@ -188,7 +187,7 @@ describe("SyncCoordinator", () => {
 
   it("flushes, pulls, reconciles, and reconnects when the app comes to the foreground", async () => {
     buildCoordinator().start()
-    await Promise.resolve()
+    await flushMicrotasks()
     flushMock.mockClear()
     pullMock.mockClear()
     socketConnectMock.mockClear()
@@ -196,7 +195,7 @@ describe("SyncCoordinator", () => {
     const emitAppStateChange = (AppState.addEventListener as jest.Mock).mock
       .calls[0][1]
     emitAppStateChange("active")
-    await Promise.resolve()
+    await flushMicrotasks()
 
     expect(flushMock).toHaveBeenCalledTimes(1)
     expect(reconcileMock).toHaveBeenCalledWith(["list-1", "list-2"])
@@ -208,13 +207,12 @@ describe("SyncCoordinator", () => {
     jest.useFakeTimers()
     try {
       buildCoordinator().start()
-      await Promise.resolve()
+      await flushMicrotasks()
       pullMock.mockClear()
       reconcileMock.mockClear()
 
       jest.advanceTimersByTime(5 * 60 * 1000)
-      await Promise.resolve()
-      await Promise.resolve()
+      await flushMicrotasks()
 
       expect(pullMock).toHaveBeenCalledWith(["list-1", "list-2"])
       expect(reconcileMock).toHaveBeenCalledWith(["list-1", "list-2"])
@@ -235,7 +233,7 @@ describe("SyncCoordinator", () => {
       listEventHandler!("list-1", 7)
 
       jest.advanceTimersByTime(400)
-      await Promise.resolve()
+      await flushMicrotasks()
 
       expect(pullListMock).toHaveBeenCalledTimes(1)
       expect(pullListMock).toHaveBeenCalledWith("list-1")
@@ -249,6 +247,7 @@ describe("SyncCoordinator", () => {
     try {
       const coordinator = buildCoordinator()
       coordinator.start()
+      await flushMicrotasks()
       listEventHandler!("list-1", 5)
 
       coordinator.stop()
@@ -260,7 +259,7 @@ describe("SyncCoordinator", () => {
       pullListMock.mockClear()
       notifyOutboxChanged()
       jest.advanceTimersByTime(400)
-      await Promise.resolve()
+      await flushMicrotasks()
 
       expect(flushMock).not.toHaveBeenCalled()
       expect(pullListMock).not.toHaveBeenCalled()
@@ -280,7 +279,7 @@ describe("SyncCoordinator", () => {
     socketConnectMock.mockClear()
 
     coordinator.start()
-    await Promise.resolve()
+    await flushMicrotasks()
 
     expect(socketConnectMock).toHaveBeenCalledTimes(1)
   })

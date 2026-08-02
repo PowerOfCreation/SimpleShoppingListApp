@@ -150,12 +150,15 @@ export class SyncCoordinator {
     // Try immediately rather than waiting for the first trigger - e.g. a
     // list created with sync on while offline should go out as soon as the
     // user (re)gains a signed-in, connected session. Pull before flush:
-    // local state should reflect remote before anything new goes out - see
-    // pullNow's call into engine.pull.
-    this.pullNow().catch((error) => {
-      logger.error("Pull on mount failed", error)
-    })
-    this.flush()
+    // local state should reflect remote before anything new goes out -
+    // chained via .finally() (not awaited) so it doesn't block connect()/
+    // subscribeNow() below; engine.pull() already flushes on success, this
+    // is the fallback for when pullNow() fails before reaching that.
+    this.pullNow()
+      .catch((error) => {
+        logger.error("Pull on mount failed", error)
+      })
+      .finally(() => this.flush())
     this.socket.connect().catch((error) => {
       logger.error("Failed to connect sync socket", error)
     })

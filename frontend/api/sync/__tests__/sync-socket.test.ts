@@ -1,5 +1,6 @@
 import { SyncSocket } from "../sync-socket"
 import { Result } from "@/api/common/result"
+import { flushMicrotasks } from "../test-helpers"
 
 import { getValidAccessToken } from "@/api/auth/auth-service"
 
@@ -240,8 +241,7 @@ describe("SyncSocket", () => {
 
       createdSockets[0].close() // triggers reconnect
       jest.advanceTimersByTime(1_000)
-      await Promise.resolve()
-      await Promise.resolve()
+      await flushMicrotasks()
 
       const reconnected = createdSockets[1]
       reconnected.sent = []
@@ -286,14 +286,12 @@ describe("SyncSocket", () => {
 
     createdSockets[0].close() // triggers onclose -> scheduleReconnect(1s)
     jest.advanceTimersByTime(1_000)
-    await Promise.resolve() // let the async connect() continue
-    await Promise.resolve()
+    await flushMicrotasks() // let the async connect() continue
     expect(createSocket).toHaveBeenCalledTimes(2)
 
     createdSockets[1].close() // next backoff: 2s
     jest.advanceTimersByTime(2_000)
-    await Promise.resolve()
-    await Promise.resolve()
+    await flushMicrotasks()
     expect(createSocket).toHaveBeenCalledTimes(3)
 
     jest.restoreAllMocks()
