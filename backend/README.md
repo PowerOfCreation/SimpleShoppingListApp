@@ -59,6 +59,23 @@ fetches lists already known and sync-enabled locally. See
 | GET | `/api/v1/sync/events` | Pull: one page of a list's event history since a given seq |
 | GET | `/api/v1/sync/ws` | WebSocket; pushes per-event `ack`s and, to clients subscribed to a list (`{"type":"subscribe","list_ids":[...]}`), a `{"type":"event"}` notification when that list gets a new event |
 
+## Logging
+
+The API logs structured JSON to stdout (via `log/slog`), one line per event
+or request:
+
+```json
+{"time":"2026-08-02T10:00:00Z","level":"INFO","msg":"request","service":"shopping-list-api","version":"dev","request_id":"3f9c...","method":"GET","uri":"/api/v1/todo-lists","status":200,"latency":1200000}
+```
+
+- `LOG_LEVEL` — `debug|info|warn|error` (default `info`). `debug` also adds
+  source file/line and per-connection WebSocket detail.
+- `LOG_FORMAT` — `json` (default) or `text` for a more readable local format.
+- Every request gets a `request_id` (from `X-Request-Id` or generated), set
+  on the response header and threaded through the request's logger so
+  access-log lines, handler errors, and panics for the same request all
+  carry the same id.
+
 ## Updating the dev database schema
 
 Migrations are embedded into the binary (`migrations/migrations.go`) and

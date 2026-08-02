@@ -1,23 +1,26 @@
 package rest
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
-	"github.com/labstack/echo/v4/middleware"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/command"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/interfaces"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/rest/dto/mapper"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/rest/dto/request"
 )
 
 type ToDoListController struct {
+	logger  *slog.Logger
 	service interfaces.ToDoListService
 }
 
-func NewToDoListController(e *echo.Echo, service interfaces.ToDoListService) *ToDoListController {
+func NewToDoListController(e *echo.Echo, logger *slog.Logger, service interfaces.ToDoListService) *ToDoListController {
 	controller := &ToDoListController{
+		logger:  logger,
 		service: service,
 	}
 
@@ -25,7 +28,6 @@ func NewToDoListController(e *echo.Echo, service interfaces.ToDoListService) *To
 	e.GET("/api/v1/todo-lists", controller.GetAllToDoListsController)
 	e.PUT("/api/v1/todo-lists/:id", controller.UpdateToDoListController)
 	e.DELETE("/api/v1/todo-lists/:id", controller.DeleteToDoListController)
-	e.Use(middleware.Recover())
 
 	return controller
 }
@@ -48,6 +50,7 @@ func (pc *ToDoListController) CreateToDoListController(c echo.Context) error {
 
 	result, err := pc.service.CreateToDoList(toDoListCommand)
 	if err != nil {
+		middleware.RequestScopedLogger(pc.logger, c).Error("failed to create todo list", "error", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to create ToDoList",
 		})
@@ -61,6 +64,7 @@ func (pc *ToDoListController) CreateToDoListController(c echo.Context) error {
 func (pc *ToDoListController) GetAllToDoListsController(c echo.Context) error {
 	toDoLists, err := pc.service.FindAllToDoLists()
 	if err != nil {
+		middleware.RequestScopedLogger(pc.logger, c).Error("failed to fetch todo lists", "error", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to fetch ToDoLists",
 		})
@@ -88,6 +92,7 @@ func (pc *ToDoListController) UpdateToDoListController(c echo.Context) error {
 
 	result, err := pc.service.UpdateToDoList(updateRequest.ToUpdateToDoListCommand(id))
 	if err != nil {
+		middleware.RequestScopedLogger(pc.logger, c).Error("failed to update todo list", "id", id, "error", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to update ToDoList",
 		})
@@ -107,6 +112,7 @@ func (pc *ToDoListController) DeleteToDoListController(c echo.Context) error {
 
 	_, err = pc.service.DeleteToDoList(&command.DeleteToDoListCommand{Id: id})
 	if err != nil {
+		middleware.RequestScopedLogger(pc.logger, c).Error("failed to delete todo list", "id", id, "error", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to delete ToDoList",
 		})

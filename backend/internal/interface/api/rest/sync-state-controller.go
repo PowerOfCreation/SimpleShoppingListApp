@@ -1,11 +1,13 @@
 package rest
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/rest/dto/request"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/rest/dto/response"
 )
@@ -18,15 +20,17 @@ import (
 const maxSyncListIDs = 200
 
 type SyncStateController struct {
+	logger    *slog.Logger
 	eventRepo repositories.EventRepository
 }
 
 func NewSyncStateController(
 	e *echo.Echo,
+	logger *slog.Logger,
 	eventRepo repositories.EventRepository,
 	authMW echo.MiddlewareFunc,
 ) *SyncStateController {
-	controller := &SyncStateController{eventRepo: eventRepo}
+	controller := &SyncStateController{logger: logger, eventRepo: eventRepo}
 	e.POST("/api/v1/sync/state", controller.GetSyncState, authMW)
 	return controller
 }
@@ -53,6 +57,7 @@ func (ssc *SyncStateController) GetSyncState(c echo.Context) error {
 
 	knownEventIDs, err := ssc.eventRepo.FindKnownEventIDsByList(c.Request().Context(), req.ListIDs)
 	if err != nil {
+		middleware.RequestScopedLogger(ssc.logger, c).Error("failed to look up sync state", "list_ids", req.ListIDs, "error", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to look up sync state",
 		})

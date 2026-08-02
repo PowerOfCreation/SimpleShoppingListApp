@@ -72,7 +72,7 @@ func TestSyncStateController_ReturnsKnownEventIDsForRequestedLists(t *testing.T)
 	}
 
 	e := echo.New()
-	NewSyncStateController(e, repo, middleware.Passthrough)
+	NewSyncStateController(e, testLogger(), repo, middleware.Passthrough)
 
 	body := fmt.Sprintf(`{"list_ids":["%s","%s"]}`, knownList, unknownList)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/state", strings.NewReader(body))
@@ -88,7 +88,7 @@ func TestSyncStateController_ReturnsKnownEventIDsForRequestedLists(t *testing.T)
 func TestSyncStateController_MalformedBodyReturns400(t *testing.T) {
 	repo := &stubEventRepository{}
 	e := echo.New()
-	NewSyncStateController(e, repo, middleware.Passthrough)
+	NewSyncStateController(e, testLogger(), repo, middleware.Passthrough)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/state", strings.NewReader(`{not valid`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -102,7 +102,7 @@ func TestSyncStateController_MalformedBodyReturns400(t *testing.T) {
 func TestSyncStateController_TooManyListIDsReturns400(t *testing.T) {
 	repo := &stubEventRepository{}
 	e := echo.New()
-	NewSyncStateController(e, repo, middleware.Passthrough)
+	NewSyncStateController(e, testLogger(), repo, middleware.Passthrough)
 
 	ids := make([]string, maxSyncListIDs+1)
 	for i := range ids {
@@ -126,7 +126,7 @@ func TestSyncStateController_RepositoryErrorReturns500(t *testing.T) {
 		},
 	}
 	e := echo.New()
-	NewSyncStateController(e, repo, middleware.Passthrough)
+	NewSyncStateController(e, testLogger(), repo, middleware.Passthrough)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/state", strings.NewReader(`{"list_ids":[]}`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -144,7 +144,7 @@ func TestSyncStateController_EmptyListIDsReturnsEmptyList(t *testing.T) {
 		},
 	}
 	e := echo.New()
-	NewSyncStateController(e, repo, middleware.Passthrough)
+	NewSyncStateController(e, testLogger(), repo, middleware.Passthrough)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/state", strings.NewReader(`{"list_ids":[]}`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)

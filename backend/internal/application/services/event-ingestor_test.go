@@ -1,9 +1,11 @@
 package services
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -14,6 +16,38 @@ import (
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
 )
+
+func testLogger() *slog.Logger {
+	return slog.New(slog.DiscardHandler)
+}
+
+// syncBuffer wraps bytes.Buffer with a mutex so it's safe to write from the
+// ingestor's worker goroutine while a test concurrently polls it (e.g. via
+// require.Eventually, which runs its check function in its own goroutine) -
+// slog's handler only synchronizes its own writes against each other, not
+// against unrelated reads of the same io.Writer.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *syncBuffer) Len() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Len()
+}
+
+func (s *syncBuffer) Bytes() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]byte(nil), s.buf.Bytes()...)
+}
 
 // fakeEventRepo is a hand-rolled in-memory double - this backend has no
 // mocking library, and testcontainers (used elsewhere) would be overkill
@@ -208,9 +242,9 @@ func makeIngestorTestEvent(eventType string) *repositories.StoredEvent {
 func TestEventIngestor_ProcessesAndAcksAFreshEvent(t *testing.T) {
 	repo := newFakeEventRepo()
 	handler := &fakeHandler{eventType: "todo_list.created"}
-	dispatcher := NewEventDispatcher(handler)
+	dispatcher := NewEventDispatcher(testLogger(), handler)
 	ack := &fakeAckPublisher{}
-	ingestor := NewEventIngestor(repo, dispatcher, ack)
+	ingestor := NewEventIngestor(testLogger(), repo, dispatcher, ack)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -231,9 +265,9 @@ func TestEventIngestor_ProcessesAndAcksAFreshEvent(t *testing.T) {
 func TestEventIngestor_PublishesAListEventWithTheAssignedSeqAfterProcessing(t *testing.T) {
 	repo := newFakeEventRepo()
 	handler := &fakeHandler{eventType: "todo_list.created"}
-	dispatcher := NewEventDispatcher(handler)
+	dispatcher := NewEventDispatcher(testLogger(), handler)
 	ack := &fakeAckPublisher{}
-	ingestor := NewEventIngestor(repo, dispatcher, ack)
+	ingestor := NewEventIngestor(testLogger(), repo, dispatcher, ack)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -255,9 +289,9 @@ func TestEventIngestor_PublishesAListEventWithTheAssignedSeqAfterProcessing(t *t
 func TestEventIngestor_DoesNotPublishAListEventWhenTheEventHasNoListID(t *testing.T) {
 	repo := newFakeEventRepo()
 	handler := &fakeHandler{eventType: "todo_list.created"}
-	dispatcher := NewEventDispatcher(handler)
+	dispatcher := NewEventDispatcher(testLogger(), handler)
 	ack := &fakeAckPublisher{}
-	ingestor := NewEventIngestor(repo, dispatcher, ack)
+	ingestor := NewEventIngestor(testLogger(), repo, dispatcher, ack)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -280,9 +314,9 @@ func TestEventIngestor_DoesNotPublishAListEventWhenTheEventHasNoListID(t *testin
 func TestEventIngestor_DuplicateEventID_DoesNotPublishASecondListEvent(t *testing.T) {
 	repo := newFakeEventRepo()
 	handler := &fakeHandler{eventType: "todo_list.created"}
-	dispatcher := NewEventDispatcher(handler)
+	dispatcher := NewEventDispatcher(testLogger(), handler)
 	ack := &fakeAckPublisher{}
-	ingestor := NewEventIngestor(repo, dispatcher, ack)
+	ingestor := NewEventIngestor(testLogger(), repo, dispatcher, ack)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -308,9 +342,9 @@ func TestEventIngestor_DuplicateEventID_DoesNotPublishASecondListEvent(t *testin
 func TestEventIngestor_DuplicateEventID_AcksWithoutRedispatching(t *testing.T) {
 	repo := newFakeEventRepo()
 	handler := &fakeHandler{eventType: "todo_list.created"}
-	dispatcher := NewEventDispatcher(handler)
+	dispatcher := NewEventDispatcher(testLogger(), handler)
 	ack := &fakeAckPublisher{}
-	ingestor := NewEventIngestor(repo, dispatcher, ack)
+	ingestor := NewEventIngestor(testLogger(), repo, dispatcher, ack)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -334,9 +368,9 @@ func TestEventIngestor_DuplicateEventID_AcksWithoutRedispatching(t *testing.T) {
 func TestEventIngestor_DispatchFailure_NoAckAndNotMarkedProcessed(t *testing.T) {
 	repo := newFakeEventRepo()
 	handler := &fakeHandler{eventType: "todo_list.updated", err: errors.New("todo list not found")}
-	dispatcher := NewEventDispatcher(handler)
+	dispatcher := NewEventDispatcher(testLogger(), handler)
 	ack := &fakeAckPublisher{}
-	ingestor := NewEventIngestor(repo, dispatcher, ack)
+	ingestor := NewEventIngestor(testLogger(), repo, dispatcher, ack)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -354,13 +388,45 @@ func TestEventIngestor_DispatchFailure_NoAckAndNotMarkedProcessed(t *testing.T) 
 	assert.False(t, repo.isProcessed(event.EventID))
 }
 
+// TestEventIngestor_DispatchFailure_LogsWithEventContext asserts the
+// injected logger is actually used, not just accepted - a failed dispatch
+// must produce a structured error record carrying the event id, so an
+// on-call engineer can find it without a debugger.
+func TestEventIngestor_DispatchFailure_LogsWithEventContext(t *testing.T) {
+	var buf syncBuffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	repo := newFakeEventRepo()
+	handler := &fakeHandler{eventType: "todo_list.updated", err: errors.New("todo list not found")}
+	dispatcher := NewEventDispatcher(logger, handler)
+	ack := &fakeAckPublisher{}
+	ingestor := NewEventIngestor(logger, repo, dispatcher, ack)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ingestor.Start(ctx)
+	defer ingestor.Stop()
+
+	event := makeIngestorTestEvent("todo_list.updated")
+	require.NoError(t, ingestor.Enqueue(ctx, event))
+	require.Eventually(t, func() bool { return handler.callCount() == 1 }, time.Second, time.Millisecond)
+	// Give the (async) log write a moment to land.
+	require.Eventually(t, func() bool { return buf.Len() > 0 }, time.Second, time.Millisecond)
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &decoded))
+	assert.Equal(t, "ERROR", decoded["level"])
+	assert.Equal(t, event.EventID.String(), decoded["event_id"])
+	assert.Contains(t, decoded["error"], "todo list not found")
+}
+
 func TestEventIngestor_UnknownEventType_StillAckedForwardCompatibly(t *testing.T) {
 	repo := newFakeEventRepo()
 	// No handler registered for "ingredient.created" - EventDispatcher
 	// silently no-ops per its own forward-compatibility contract.
-	dispatcher := NewEventDispatcher()
+	dispatcher := NewEventDispatcher(testLogger())
 	ack := &fakeAckPublisher{}
-	ingestor := NewEventIngestor(repo, dispatcher, ack)
+	ingestor := NewEventIngestor(testLogger(), repo, dispatcher, ack)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -380,9 +446,9 @@ func TestEventIngestor_Start_SweepsUnprocessedEventsFromPreviousRun(t *testing.T
 	repo.unprocessed = []*repositories.StoredEvent{stuck}
 
 	handler := &fakeHandler{eventType: "todo_list.created"}
-	dispatcher := NewEventDispatcher(handler)
+	dispatcher := NewEventDispatcher(testLogger(), handler)
 	ack := &fakeAckPublisher{}
-	ingestor := NewEventIngestor(repo, dispatcher, ack)
+	ingestor := NewEventIngestor(testLogger(), repo, dispatcher, ack)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -407,9 +473,9 @@ func TestEventIngestor_ProcessesEventsForTheSameAggregateInEnqueueOrder(t *testi
 			order = append(order, string(payload))
 		},
 	}
-	dispatcher := NewEventDispatcher(handler)
+	dispatcher := NewEventDispatcher(testLogger(), handler)
 	ack := &fakeAckPublisher{}
-	ingestor := NewEventIngestor(repo, dispatcher, ack)
+	ingestor := NewEventIngestor(testLogger(), repo, dispatcher, ack)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
@@ -449,9 +515,9 @@ func (h *orderTrackingHandler) Handle(ctx context.Context, aggregateID uuid.UUID
 
 func TestEventIngestor_Stop_ReturnsWithoutHanging(t *testing.T) {
 	repo := newFakeEventRepo()
-	dispatcher := NewEventDispatcher()
+	dispatcher := NewEventDispatcher(testLogger())
 	ack := &fakeAckPublisher{}
-	ingestor := NewEventIngestor(repo, dispatcher, ack)
+	ingestor := NewEventIngestor(testLogger(), repo, dispatcher, ack)
 
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()

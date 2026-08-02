@@ -2,6 +2,7 @@ package postgres_test
 
 import (
 	"context"
+	"log/slog"
 	"testing"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -38,7 +39,7 @@ func TestMigrateAppliesPendingAndIsIdempotent(t *testing.T) {
 	defer pool.Close()
 
 	// A fresh, schema-less DB: Migrate should apply every .up.sql migration.
-	err = db.Migrate(ctx, pool, appmigrations.FS)
+	err = db.Migrate(ctx, slog.New(slog.DiscardHandler), pool, appmigrations.FS)
 	require.NoError(t, err, "first Migrate run should succeed")
 
 	var versionCount int
@@ -54,6 +55,6 @@ func TestMigrateAppliesPendingAndIsIdempotent(t *testing.T) {
 	require.True(t, hasListID, "expected events.list_id after migrations")
 
 	// A second run must be a no-op, not an error or a duplicate apply.
-	err = db.Migrate(ctx, pool, appmigrations.FS)
+	err = db.Migrate(ctx, slog.New(slog.DiscardHandler), pool, appmigrations.FS)
 	require.NoError(t, err, "second (idempotent) Migrate run should succeed")
 }
