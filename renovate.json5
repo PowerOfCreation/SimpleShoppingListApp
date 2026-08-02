@@ -1,7 +1,6 @@
 {
   $schema: 'https://docs.renovatebot.com/renovate-schema.json',
   minimumReleaseAge: '48 hours',
-  prHourlyLimit: 10,
   extends: [
     'config:best-practices',
     'helpers:pinGitHubActionDigestsToSemver',
@@ -14,6 +13,36 @@
       minimumReleaseAge: null,
     },
     {
+      matchFileNames: [
+        'frontend/**',
+      ],
+      prConcurrentLimit: 10,
+      addLabels: [
+        'frontend',
+      ],
+    },
+    {
+      matchFileNames: [
+        'backend/**',
+      ],
+      prConcurrentLimit: 10,
+      addLabels: [
+        'backend',
+      ],
+    },
+    {
+      matchFileNames: [
+        '.github/**',
+        'renovate.json5',
+      ],
+      addLabels: [
+        'actions',
+      ],
+    },
+    {
+      matchFileNames: [
+        'frontend/**',
+      ],
       matchPackageNames: [
         'expo',
         'react',
