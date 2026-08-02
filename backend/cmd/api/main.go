@@ -20,6 +20,11 @@ import (
 
 func main() {
 	logger := logging.New(os.Stdout)
+	// Every component here gets logger via DI, not slog.Default() - this
+	// only exists so a stray stdlib log.Print in a dependency we don't
+	// control (or a future log.Println someone reaches for instead of the
+	// injected logger) still lands in the same JSON stream instead of
+	// unstructured plaintext on stderr.
 	slog.SetDefault(logger)
 
 	if err := run(logger); err != nil {

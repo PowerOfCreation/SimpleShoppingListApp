@@ -44,9 +44,9 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
 - **Validated types:** repos only accept validated domain types — invalid state unrepresentable at compile time.
 - **Soft deletes:** `todo_lists`/`todos` have `deleted_at`; queries filter `WHERE deleted_at IS NULL`.
 - **sqlc workflow:** edit `sql/queries/*.sql`, run `sqlc generate`, implement in `postgres/`. Never edit `internal/infrastructure/db/sqlc/` manually.
-- **Events:** `EventDispatcher` routes by `event_type` string; unknown types silently ignored (forward compat).
+- **Events:** `EventDispatcher` routes by `event_type` string; unknown types are a no-op, not an error (forward compat), but logged at `warn` since it signals client/server version skew.
 - **Testing:** real Postgres via testcontainers (`testhelpers.SetupTestDB(t)`), no DB mocking; Docker must be running.
-- **Logging:** structured JSON via `log/slog` (`internal/infrastructure/logging`), stdout, level via `LOG_LEVEL`. Logger is passed by constructor DI, never a global — every service/controller that logs takes a `*slog.Logger` param. No `log.Printf`/`fmt.Print*`.
+- **Logging:** structured JSON via `log/slog` (`internal/infrastructure/logging`), stdout, level via `LOG_LEVEL`. Logger is passed by constructor DI — every service/controller that logs takes a `*slog.Logger` param; no `log.Printf`/`fmt.Print*`. `slog.SetDefault` is set once in `main` purely to catch stray stdlib `log` output from dependencies, not as a substitute for DI.
 
 ## Architecture notes
 

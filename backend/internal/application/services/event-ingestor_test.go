@@ -21,6 +21,34 @@ func testLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
+// syncBuffer wraps bytes.Buffer with a mutex so it's safe to write from the
+// ingestor's worker goroutine while a test concurrently polls it (e.g. via
+// require.Eventually, which runs its check function in its own goroutine) -
+// slog's handler only synchronizes its own writes against each other, not
+// against unrelated reads of the same io.Writer.
+type syncBuffer struct {
+	mu  sync.Mutex
+	buf bytes.Buffer
+}
+
+func (s *syncBuffer) Write(p []byte) (int, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Write(p)
+}
+
+func (s *syncBuffer) Len() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.buf.Len()
+}
+
+func (s *syncBuffer) Bytes() []byte {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return append([]byte(nil), s.buf.Bytes()...)
+}
+
 // fakeEventRepo is a hand-rolled in-memory double - this backend has no
 // mocking library, and testcontainers (used elsewhere) would be overkill
 // for testing the ingestor's own orchestration logic, which is what these
@@ -365,7 +393,7 @@ func TestEventIngestor_DispatchFailure_NoAckAndNotMarkedProcessed(t *testing.T) 
 // must produce a structured error record carrying the event id, so an
 // on-call engineer can find it without a debugger.
 func TestEventIngestor_DispatchFailure_LogsWithEventContext(t *testing.T) {
-	var buf bytes.Buffer
+	var buf syncBuffer
 	logger := slog.New(slog.NewJSONHandler(&buf, nil))
 
 	repo := newFakeEventRepo()
