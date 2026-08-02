@@ -2,6 +2,7 @@ import React from "react"
 import { Ingredient } from "@/types/Ingredient"
 import { ingredientService } from "@/api/ingredient-service"
 import { createLogger } from "@/api/common/logger"
+import { onListDataChanged } from "@/api/sync/sync-events"
 
 const logger = createLogger("useCompletedIngredients")
 
@@ -47,6 +48,17 @@ export function useCompletedIngredients(listId: string | undefined) {
   React.useEffect(() => {
     loadCompletedIngredients()
   }, [loadCompletedIngredients])
+
+  // Same list as useIngredients (both read the ingredients table for this
+  // screen) - without this, a pull could leave "previously completed" out
+  // of sync with the main list until the next remount.
+  React.useEffect(() => {
+    return onListDataChanged((changedListId) => {
+      if (changedListId === listId) {
+        loadCompletedIngredients()
+      }
+    })
+  }, [listId, loadCompletedIngredients])
 
   return {
     completedIngredients,

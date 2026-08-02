@@ -15,11 +15,12 @@ screen just reports that login is not configured.
 - **Auth:** optional Keycloak (OIDC, PKCE, public client). The same hosted
   Keycloak (`sso.ops.light-dev-solutions.de`) is used for dev and prod; it runs
   in the K8s cluster and is **never started locally**.
-- **Sync (WIP):** offline mutations are pushed via `POST /api/v1/events`
-  (REST). A WebSocket (`/api/v1/sync/ws`) delivers server acks so the client
-  doesn't have to poll — currently used only for acks/ping, not for
-  broadcasting other devices' changes; server→client (pull) sync is not
-  implemented yet.
+- **Sync:** bidirectional. Offline mutations (list *and* item changes) are
+  pushed via `POST /api/v1/events` (REST); a WebSocket (`/api/v1/sync/ws`)
+  delivers acks and, for lists the client subscribes to, live "new event"
+  notifications from other devices, so pull doesn't have to poll either.
+  Restoring lists after a reinstall isn't implemented - pull only fetches
+  lists already known and sync-enabled locally.
 - **Deployment:** backend + Postgres run locally during development and are
   configured elsewhere in prod; env (`EXPO_PUBLIC_API_URL`, `DATABASE_URL`,
   `.env.development`/`.env.production`) picks the target.
@@ -109,12 +110,19 @@ and `android:prod:apk` get `.env.production`). Sync is optional — without a
 configured URL, or without being signed in, the app works the same as before
 and just never syncs.
 
-Sync is still work in progress. Today only client→server push exists:
-offline mutations go to `POST /api/v1/events` (accepted in bulk with 202), and
-a WebSocket (`/api/v1/sync/ws`) delivers per-event `ack`s after the backend has
-durably committed them, so nothing needs polling. `/api/v1/sync/state` is the
-reconcile/safety net for lost acks. Server→client pull sync and pushing other
-devices' changes over the socket are not implemented yet.
+Sync works in both directions. Offline mutations (list *and* item events) go
+to `POST /api/v1/events` (accepted in bulk with 202); a WebSocket
+(`/api/v1/sync/ws`) delivers per-event `ack`s after the backend has durably
+committed them, so push doesn't need polling. `/api/v1/sync/state` is the
+reconcile/safety net for lost acks. For pull, `POST /api/v1/sync/head` +
+`GET /api/v1/sync/events` fetch whatever a sync-enabled list is missing
+locally, and the same WebSocket connection - after sending
+`{"type":"subscribe","list_ids":[...]}` - gets a live `{"type":"event"}`
+notification whenever one of those lists changes on another device, instead
+of waiting for the next periodic pull. Not implemented: restoring/discovering
+lists after a reinstall (pull only ever fetches lists already known and
+sync-enabled locally) and user-scoping on the backend (see
+`docs/sync-design-decisions.md`).
 
 `.env.development` points at `http://10.0.2.2:8080`, the Android emulator's
 alias for the host machine's localhost, so `pnpm android:dev` talks to a

@@ -23,39 +23,49 @@ type fakeEventRepo struct {
 	mu          sync.Mutex
 	stored      map[uuid.UUID]*repositories.StoredEvent
 	processed   map[uuid.UUID]bool
+	seqs        map[uuid.UUID]int64
 	insertErr   error
 	markErr     error
 	unprocessed []*repositories.StoredEvent
+	nextSeq     int64
 }
 
 func newFakeEventRepo() *fakeEventRepo {
 	return &fakeEventRepo{
 		stored:    make(map[uuid.UUID]*repositories.StoredEvent),
 		processed: make(map[uuid.UUID]bool),
+		seqs:      make(map[uuid.UUID]int64),
 	}
 }
 
-func (f *fakeEventRepo) Insert(ctx context.Context, event *repositories.StoredEvent) (bool, error) {
+func (f *fakeEventRepo) Insert(ctx context.Context, event *repositories.StoredEvent) (bool, int64, *uuid.UUID, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.insertErr != nil {
-		return false, f.insertErr
+		return false, 0, nil, f.insertErr
 	}
-	if _, exists := f.stored[event.EventID]; exists {
-		return f.processed[event.EventID], nil
+	if existing, exists := f.stored[event.EventID]; exists {
+		return f.processed[event.EventID], f.seqs[event.EventID], existing.ListID, nil
 	}
 	f.stored[event.EventID] = event
-	return false, nil
+	return false, 0, nil, nil
 }
 
-func (f *fakeEventRepo) MarkProcessed(ctx context.Context, eventID uuid.UUID) error {
+func (f *fakeEventRepo) MarkProcessed(ctx context.Context, eventID uuid.UUID) (int64, *uuid.UUID, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	if f.markErr != nil {
-		return f.markErr
+		return 0, nil, f.markErr
 	}
 	f.processed[eventID] = true
-	return nil
+	f.nextSeq++
+	seq := f.nextSeq
+	f.seqs[eventID] = seq
+	var listID *uuid.UUID
+	if event, ok := f.stored[eventID]; ok {
+		listID = event.ListID
+	}
+	return seq, listID, nil
 }
 
 func (f *fakeEventRepo) FindUnprocessed(ctx context.Context) ([]*repositories.StoredEvent, error) {
@@ -64,7 +74,20 @@ func (f *fakeEventRepo) FindUnprocessed(ctx context.Context) ([]*repositories.St
 	return f.unprocessed, nil
 }
 
-func (f *fakeEventRepo) FindKnownEventIDs(ctx context.Context, aggregateIDs []uuid.UUID) ([]uuid.UUID, error) {
+func (f *fakeEventRepo) FindKnownEventIDsByList(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error) {
+	return nil, nil
+}
+
+func (f *fakeEventRepo) FindListHeads(ctx context.Context, listIDs []uuid.UUID) ([]*repositories.ListHead, error) {
+	return nil, nil
+}
+
+func (f *fakeEventRepo) FindEventsSince(
+	ctx context.Context,
+	listID uuid.UUID,
+	sinceSeq int64,
+	limit int32,
+) ([]*repositories.StoredEvent, error) {
 	return nil, nil
 }
 
@@ -77,17 +100,47 @@ func (f *fakeEventRepo) isProcessed(id uuid.UUID) bool {
 type ackCall struct {
 	clientID string
 	eventID  uuid.UUID
+	seq      int64
+}
+
+type listEventCall struct {
+	listID uuid.UUID
+	seq    int64
 }
 
 type fakeAckPublisher struct {
-	mu    sync.Mutex
-	acked []ackCall
+	mu         sync.Mutex
+	acked      []ackCall
+	listEvents []listEventCall
 }
 
-func (f *fakeAckPublisher) PublishAck(clientID string, eventID uuid.UUID) {
+func (f *fakeAckPublisher) PublishAck(clientID string, eventID uuid.UUID, seq int64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.acked = append(f.acked, ackCall{clientID, eventID})
+	f.acked = append(f.acked, ackCall{clientID, eventID, seq})
+}
+
+func (f *fakeAckPublisher) PublishListEvent(listID uuid.UUID, seq int64) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.listEvents = append(f.listEvents, listEventCall{listID, seq})
+}
+
+func (f *fakeAckPublisher) listEventCount() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return len(f.listEvents)
+}
+
+func (f *fakeAckPublisher) hasListEvent(listID uuid.UUID) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, e := range f.listEvents {
+		if e.listID == listID {
+			return true
+		}
+	}
+	return false
 }
 
 func (f *fakeAckPublisher) count() int {
@@ -105,6 +158,17 @@ func (f *fakeAckPublisher) has(eventID uuid.UUID) bool {
 		}
 	}
 	return false
+}
+
+func (f *fakeAckPublisher) seqOf(eventID uuid.UUID) int64 {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	for _, a := range f.acked {
+		if a.eventID == eventID {
+			return a.seq
+		}
+	}
+	return 0
 }
 
 type fakeHandler struct {
@@ -164,6 +228,83 @@ func TestEventIngestor_ProcessesAndAcksAFreshEvent(t *testing.T) {
 	assert.True(t, repo.isProcessed(event.EventID))
 }
 
+func TestEventIngestor_PublishesAListEventWithTheAssignedSeqAfterProcessing(t *testing.T) {
+	repo := newFakeEventRepo()
+	handler := &fakeHandler{eventType: "todo_list.created"}
+	dispatcher := NewEventDispatcher(handler)
+	ack := &fakeAckPublisher{}
+	ingestor := NewEventIngestor(repo, dispatcher, ack)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ingestor.Start(ctx)
+	defer ingestor.Stop()
+
+	event := makeIngestorTestEvent("todo_list.created")
+	listID := event.AggregateID
+	event.ListID = &listID
+	require.NoError(t, ingestor.Enqueue(ctx, event))
+
+	require.Eventually(t, func() bool {
+		return ack.hasListEvent(listID)
+	}, time.Second, time.Millisecond)
+
+	assert.Equal(t, 1, ack.listEventCount())
+}
+
+func TestEventIngestor_DoesNotPublishAListEventWhenTheEventHasNoListID(t *testing.T) {
+	repo := newFakeEventRepo()
+	handler := &fakeHandler{eventType: "todo_list.created"}
+	dispatcher := NewEventDispatcher(handler)
+	ack := &fakeAckPublisher{}
+	ingestor := NewEventIngestor(repo, dispatcher, ack)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ingestor.Start(ctx)
+	defer ingestor.Stop()
+
+	// makeIngestorTestEvent leaves ListID nil - an older client, or an
+	// event whose list_id couldn't be resolved.
+	event := makeIngestorTestEvent("todo_list.created")
+	require.NoError(t, ingestor.Enqueue(ctx, event))
+
+	require.Eventually(t, func() bool { return ack.has(event.EventID) }, time.Second, time.Millisecond)
+	// Give a wrongly-published list event a moment to arrive before
+	// asserting its absence.
+	time.Sleep(20 * time.Millisecond)
+
+	assert.Equal(t, 0, ack.listEventCount())
+}
+
+func TestEventIngestor_DuplicateEventID_DoesNotPublishASecondListEvent(t *testing.T) {
+	repo := newFakeEventRepo()
+	handler := &fakeHandler{eventType: "todo_list.created"}
+	dispatcher := NewEventDispatcher(handler)
+	ack := &fakeAckPublisher{}
+	ingestor := NewEventIngestor(repo, dispatcher, ack)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ingestor.Start(ctx)
+	defer ingestor.Stop()
+
+	event := makeIngestorTestEvent("todo_list.created")
+	listID := event.AggregateID
+	event.ListID = &listID
+	require.NoError(t, ingestor.Enqueue(ctx, event))
+	require.Eventually(t, func() bool { return ack.hasListEvent(listID) }, time.Second, time.Millisecond)
+
+	// A resend after the ack was lost - nothing newly became visible (the
+	// seq this event got was already published), so a client that missed
+	// the original notification must recover via its next head check
+	// instead of a second notification here.
+	require.NoError(t, ingestor.Enqueue(ctx, event))
+	require.Eventually(t, func() bool { return ack.count() == 2 }, time.Second, time.Millisecond)
+
+	assert.Equal(t, 1, ack.listEventCount())
+}
+
 func TestEventIngestor_DuplicateEventID_AcksWithoutRedispatching(t *testing.T) {
 	repo := newFakeEventRepo()
 	handler := &fakeHandler{eventType: "todo_list.created"}
@@ -181,11 +322,13 @@ func TestEventIngestor_DuplicateEventID_AcksWithoutRedispatching(t *testing.T) {
 	require.Eventually(t, func() bool { return ack.has(event.EventID) }, time.Second, time.Millisecond)
 
 	// A resend of the exact same event, e.g. because the client's ack got
-	// lost - this must not run the handler again, but must still ack.
+	// lost - this must not run the handler again, but must still ack, with
+	// the same seq it was originally assigned.
 	require.NoError(t, ingestor.Enqueue(ctx, event))
 	require.Eventually(t, func() bool { return ack.count() == 2 }, time.Second, time.Millisecond)
 
 	assert.Equal(t, 1, handler.callCount())
+	assert.Equal(t, ack.seqOf(event.EventID), int64(1))
 }
 
 func TestEventIngestor_DispatchFailure_NoAckAndNotMarkedProcessed(t *testing.T) {

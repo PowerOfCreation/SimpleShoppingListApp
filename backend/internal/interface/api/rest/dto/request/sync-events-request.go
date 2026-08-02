@@ -13,6 +13,10 @@ type SyncEventRequest struct {
 	EventType     string    `json:"event_type"`
 	AggregateID   uuid.UUID `json:"aggregate_id"`
 	AggregateType string    `json:"aggregate_type"`
+	// Pointer (not uuid.UUID) so older clients that don't send list_id yet
+	// still bind successfully instead of failing to parse - it's simply
+	// nil, matching repositories.StoredEvent.ListID.
+	ListID *uuid.UUID `json:"list_id"`
 	// Epoch milliseconds, matching how the frontend stores and sends
 	// occurred_at (a plain JS Date.now() number) - not time.Time, which
 	// would fail to bind against a JSON number.
@@ -27,6 +31,7 @@ func (req *SyncEventRequest) ToStoredEvent() *repositories.StoredEvent {
 		EventType:     req.EventType,
 		AggregateID:   req.AggregateID,
 		AggregateType: req.AggregateType,
+		ListID:        req.ListID,
 		Payload:       req.Payload,
 		OccurredAt:    time.UnixMilli(req.OccurredAt).UTC(),
 		ClientID:      req.ClientID,

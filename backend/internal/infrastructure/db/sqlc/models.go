@@ -19,6 +19,8 @@ type Event struct {
 	ReceivedAt    pgtype.Timestamptz `db:"received_at" json:"received_at"`
 	ClientID      string             `db:"client_id" json:"client_id"`
 	ProcessedAt   pgtype.Timestamptz `db:"processed_at" json:"processed_at"`
+	ListID        pgtype.UUID        `db:"list_id" json:"list_id"`
+	Seq           pgtype.Int8        `db:"seq" json:"seq"`
 }
 
 type Todo struct {

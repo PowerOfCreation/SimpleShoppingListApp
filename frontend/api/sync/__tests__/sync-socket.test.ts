@@ -1,5 +1,6 @@
 import { SyncSocket } from "../sync-socket"
 import { Result } from "@/api/common/result"
+import { flushMicrotasks } from "../test-helpers"
 
 import { getValidAccessToken } from "@/api/auth/auth-service"
 
@@ -41,6 +42,7 @@ describe("SyncSocket", () => {
   let createSocket: jest.Mock
   let onAck: jest.Mock
   let onConnected: jest.Mock
+  let onListEvent: jest.Mock
 
   beforeEach(() => {
     jest.useFakeTimers()
@@ -52,6 +54,7 @@ describe("SyncSocket", () => {
     })
     onAck = jest.fn()
     onConnected = jest.fn()
+    onListEvent = jest.fn()
     mockGetValidAccessToken.mockResolvedValue(Result.ok("token-1"))
   })
 
@@ -61,7 +64,7 @@ describe("SyncSocket", () => {
   })
 
   function makeSocket() {
-    return new SyncSocket(onAck, onConnected, createSocket)
+    return new SyncSocket(onAck, onConnected, onListEvent, createSocket)
   }
 
   it("connects with the client id in the URL and the token as a bearer header", async () => {
@@ -140,12 +143,131 @@ describe("SyncSocket", () => {
     expect(fake.closeCalls).toBe(1)
   })
 
-  it("calls onAck with the event id from an ack message", async () => {
+  it("calls onAck with the event id and seq from an ack message", async () => {
     const socket = makeSocket()
     await socket.connect()
-    createdSockets[0].triggerMessage({ type: "ack", event_id: "evt-123" })
+    createdSockets[0].triggerMessage({
+      type: "ack",
+      event_id: "evt-123",
+      seq: 7,
+    })
 
-    expect(onAck).toHaveBeenCalledWith("evt-123")
+    expect(onAck).toHaveBeenCalledWith("evt-123", 7)
+  })
+
+  it("ignores an ack message with a malformed seq", async () => {
+    const socket = makeSocket()
+    await socket.connect()
+    createdSockets[0].triggerMessage({
+      type: "ack",
+      event_id: "evt-123",
+      seq: "not-a-number",
+    })
+
+    expect(onAck).not.toHaveBeenCalled()
+  })
+
+  it("calls onListEvent with the list id and seq from an event message", async () => {
+    const socket = makeSocket()
+    await socket.connect()
+    createdSockets[0].triggerMessage({
+      type: "event",
+      list_id: "list-1",
+      seq: 42,
+    })
+
+    expect(onListEvent).toHaveBeenCalledWith("list-1", 42)
+  })
+
+  it("ignores an event message with a malformed seq", async () => {
+    const socket = makeSocket()
+    await socket.connect()
+    createdSockets[0].triggerMessage({
+      type: "event",
+      list_id: "list-1",
+      seq: "not-a-number",
+    })
+
+    expect(onListEvent).not.toHaveBeenCalled()
+  })
+
+  describe("subscribe", () => {
+    it("sends the subscribe frame immediately when already connected", async () => {
+      const socket = makeSocket()
+      await socket.connect()
+      const fake = createdSockets[0]
+      fake.triggerOpen()
+      fake.sent = []
+
+      socket.subscribe(["list-1", "list-2"])
+
+      expect(fake.sent).toEqual([
+        JSON.stringify({ type: "subscribe", list_ids: ["list-1", "list-2"] }),
+      ])
+    })
+
+    it("does nothing (no throw) when called before a socket exists", async () => {
+      const socket = makeSocket()
+      expect(() => socket.subscribe(["list-1"])).not.toThrow()
+    })
+
+    it("resends the current subscription on every (re)connect, before onConnected fires", async () => {
+      const callOrder: string[] = []
+      onConnected.mockImplementation(() => callOrder.push("connected"))
+
+      const socket = makeSocket()
+      await socket.connect()
+      socket.subscribe(["list-1"])
+
+      const fake = createdSockets[0]
+      const originalSend = fake.send.bind(fake)
+      fake.send = (data: string) => {
+        if (JSON.parse(data).type === "subscribe") {
+          callOrder.push("subscribed")
+        }
+        originalSend(data)
+      }
+
+      fake.triggerOpen()
+
+      expect(callOrder).toEqual(["subscribed", "connected"])
+    })
+
+    it("carries the subscription across a reconnect", async () => {
+      jest.spyOn(Math, "random").mockReturnValue(0) // deterministic: no jitter
+      const socket = makeSocket()
+      await socket.connect()
+      socket.subscribe(["list-1"])
+
+      createdSockets[0].close() // triggers reconnect
+      jest.advanceTimersByTime(1_000)
+      await flushMicrotasks()
+
+      const reconnected = createdSockets[1]
+      reconnected.sent = []
+      reconnected.triggerOpen()
+
+      expect(reconnected.sent).toEqual([
+        JSON.stringify({ type: "subscribe", list_ids: ["list-1"] }),
+      ])
+
+      jest.restoreAllMocks()
+    })
+
+    it("a later subscribe() call replaces rather than adds to the list ids sent on the next open", async () => {
+      const socket = makeSocket()
+      await socket.connect()
+      socket.subscribe(["list-1"])
+      socket.subscribe(["list-2"])
+
+      const fake = createdSockets[0]
+      fake.sent = []
+      fake.triggerOpen()
+
+      expect(fake.sent).toEqual([
+        JSON.stringify({ type: "subscribe", list_ids: ["list-2"] }),
+      ])
+    })
   })
 
   it("ignores malformed messages without throwing", async () => {
@@ -164,14 +286,12 @@ describe("SyncSocket", () => {
 
     createdSockets[0].close() // triggers onclose -> scheduleReconnect(1s)
     jest.advanceTimersByTime(1_000)
-    await Promise.resolve() // let the async connect() continue
-    await Promise.resolve()
+    await flushMicrotasks() // let the async connect() continue
     expect(createSocket).toHaveBeenCalledTimes(2)
 
     createdSockets[1].close() // next backoff: 2s
     jest.advanceTimersByTime(2_000)
-    await Promise.resolve()
-    await Promise.resolve()
+    await flushMicrotasks()
     expect(createSocket).toHaveBeenCalledTimes(3)
 
     jest.restoreAllMocks()

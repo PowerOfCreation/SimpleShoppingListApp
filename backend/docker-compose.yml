@@ -17,6 +17,7 @@ services:
       - ./migrations/00001-initial-schema.up.sql:/docker-entrypoint-initdb.d/01-initial-schema.sql
       - ./migrations/00002-events-table.up.sql:/docker-entrypoint-initdb.d/02-events-table.sql
       - ./migrations/00003-events-processed-at.up.sql:/docker-entrypoint-initdb.d/03-events-processed-at.sql
+      - ./migrations/00004-events-list-id-and-seq.up.sql:/docker-entrypoint-initdb.d/04-events-list-id-and-seq.sql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
@@ -29,6 +30,10 @@ services:
       - "8080:8080"
     environment:
       DATABASE_URL: "host=postgres user=postgres password=postgres dbname=todos port=5432 sslmode=disable"
+      # Same hosted Keycloak instance/client the frontend uses (never run
+      # locally). Required - the API refuses to start without it.
+      KEYCLOAK_ISSUER: "https://sso.ops.light-dev-solutions.de/realms/user-apps"
+      KEYCLOAK_CLIENT_ID: "shopping-list"
     depends_on:
       postgres:
         condition: service_healthy

@@ -3,8 +3,12 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
 	db "github.com/powerofcreation/simpleshoppinglistapp/internal/infrastructure/db/sqlc"
@@ -21,28 +25,44 @@ func NewSqlcEventRepository(queries *db.Queries) repositories.EventRepository {
 func (r *SqlcEventRepository) Insert(
 	ctx context.Context,
 	event *repositories.StoredEvent,
-) (bool, error) {
-	processedAt, err := r.queries.InsertEvent(ctx, db.InsertEventParams{
+) (bool, int64, *uuid.UUID, error) {
+	row, err := r.queries.InsertEvent(ctx, db.InsertEventParams{
 		ID:            event.EventID,
 		EventType:     event.EventType,
 		AggregateID:   event.AggregateID,
 		AggregateType: event.AggregateType,
+		ListID:        pgtypeFromUUIDPtr(event.ListID),
 		Payload:       []byte(event.Payload),
 		OccurredAt:    timestamptzFromTime(event.OccurredAt),
 		ClientID:      event.ClientID,
 	})
 	if err != nil {
-		return false, err
+		return false, 0, nil, err
 	}
 	// InsertEvent upserts (ON CONFLICT DO UPDATE SET id = events.id) purely
 	// so RETURNING always yields a row, whether this was a fresh insert or
 	// a duplicate delivery of the same event_id. processed_at reflects
 	// what's currently stored either way, without a second round-trip.
-	return processedAt.Valid, nil
+	return row.ProcessedAt.Valid, row.Seq.Int64, uuidPtrFromPgtype(row.ListID), nil
 }
 
-func (r *SqlcEventRepository) MarkProcessed(ctx context.Context, eventID uuid.UUID) error {
-	return r.queries.MarkEventProcessed(ctx, eventID)
+func (r *SqlcEventRepository) MarkProcessed(
+	ctx context.Context,
+	eventID uuid.UUID,
+) (int64, *uuid.UUID, error) {
+	row, err := r.queries.MarkEventProcessed(ctx, eventID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Zero rows means the WHERE clause (id = $1 AND seq IS NULL)
+			// matched nothing - either the id doesn't exist, or it was
+			// already marked processed. Both are bugs given the single
+			// ingestor writer this relies on (see the interface doc), not
+			// a race to quietly swallow.
+			return 0, nil, fmt.Errorf("event %s was already processed or does not exist", eventID)
+		}
+		return 0, nil, err
+	}
+	return row.Seq.Int64, uuidPtrFromPgtype(row.ListID), nil
 }
 
 func (r *SqlcEventRepository) FindUnprocessed(
@@ -60,6 +80,7 @@ func (r *SqlcEventRepository) FindUnprocessed(
 			EventType:     row.EventType,
 			AggregateID:   row.AggregateID,
 			AggregateType: row.AggregateType,
+			ListID:        uuidPtrFromPgtype(row.ListID),
 			Payload:       json.RawMessage(row.Payload),
 			OccurredAt:    timeFromTimestamptz(row.OccurredAt),
 			ClientID:      row.ClientID,
@@ -68,9 +89,61 @@ func (r *SqlcEventRepository) FindUnprocessed(
 	return events, nil
 }
 
-func (r *SqlcEventRepository) FindKnownEventIDs(
+func (r *SqlcEventRepository) FindKnownEventIDsByList(
 	ctx context.Context,
-	aggregateIDs []uuid.UUID,
+	listIDs []uuid.UUID,
 ) ([]uuid.UUID, error) {
-	return r.queries.GetKnownEventIds(ctx, aggregateIDs)
+	return r.queries.GetKnownEventIdsByList(ctx, listIDs)
+}
+
+func (r *SqlcEventRepository) FindListHeads(
+	ctx context.Context,
+	listIDs []uuid.UUID,
+) ([]*repositories.ListHead, error) {
+	rows, err := r.queries.GetListHeads(ctx, listIDs)
+	if err != nil {
+		return nil, err
+	}
+
+	heads := make([]*repositories.ListHead, len(rows))
+	for i, row := range rows {
+		heads[i] = &repositories.ListHead{
+			ListID:  uuid.UUID(row.ListID.Bytes),
+			Seq:     row.Seq.Int64,
+			EventID: row.ID,
+		}
+	}
+	return heads, nil
+}
+
+func (r *SqlcEventRepository) FindEventsSince(
+	ctx context.Context,
+	listID uuid.UUID,
+	sinceSeq int64,
+	limit int32,
+) ([]*repositories.StoredEvent, error) {
+	rows, err := r.queries.GetEventsSince(ctx, db.GetEventsSinceParams{
+		ListID:     pgtypeFromUUIDPtr(&listID),
+		SinceSeq:   pgtype.Int8{Int64: sinceSeq, Valid: true},
+		LimitCount: limit,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	events := make([]*repositories.StoredEvent, len(rows))
+	for i, row := range rows {
+		events[i] = &repositories.StoredEvent{
+			EventID:       row.ID,
+			EventType:     row.EventType,
+			AggregateID:   row.AggregateID,
+			AggregateType: row.AggregateType,
+			ListID:        uuidPtrFromPgtype(row.ListID),
+			Payload:       json.RawMessage(row.Payload),
+			OccurredAt:    timeFromTimestamptz(row.OccurredAt),
+			ClientID:      row.ClientID,
+			Seq:           row.Seq.Int64,
+		}
+	}
+	return events, nil
 }

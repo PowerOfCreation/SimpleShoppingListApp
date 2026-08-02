@@ -8,6 +8,7 @@ import { createLogger } from "@/api/common/logger"
 import { IngredientListRepository } from "@/database/ingredient-list-repository"
 import { getDatabase } from "@/database/database"
 import { isSortedByMode, sortIngredientsByMode } from "@/utils/sortIngredients"
+import { onListDataChanged } from "@/api/sync/sync-events"
 
 const logger = createLogger("useIngredients")
 
@@ -76,6 +77,17 @@ export function useIngredients() {
     loadIngredients()
   }, [loadIngredients])
 
+  // A pull can apply new/changed ingredients for this list in the
+  // background (a WS notification, foreground pull, ...) - without this,
+  // the screen would only pick that up on its next remount.
+  React.useEffect(() => {
+    return onListDataChanged((changedListId) => {
+      if (changedListId === listId) {
+        loadIngredients()
+      }
+    })
+  }, [listId, loadIngredients])
+
   /**
    * Toggle ingredient completion status
    * Uses optimistic update - item stays in place, no auto-sorting
@@ -95,7 +107,7 @@ export function useIngredients() {
       )
 
       try {
-        await ingredientService.updateCompletion(id, newCompletedState)
+        await ingredientService.updateCompletion(id, listId, newCompletedState)
       } catch (err) {
         logger.error("Error toggling completion", err)
         // Revert on error
@@ -106,7 +118,7 @@ export function useIngredients() {
         )
       }
     },
-    [ingredients]
+    [ingredients, listId]
   )
 
   /**
@@ -124,7 +136,7 @@ export function useIngredients() {
       )
 
       try {
-        const result = await ingredientService.updateName(id, newName)
+        const result = await ingredientService.updateName(id, listId, newName)
         if (!result.success) {
           // Revert on error
           setIngredients((prev) =>
@@ -143,7 +155,7 @@ export function useIngredients() {
         )
       }
     },
-    [ingredients]
+    [ingredients, listId]
   )
 
   /**
@@ -163,7 +175,7 @@ export function useIngredients() {
       )
 
       try {
-        const result = await ingredientService.setPriority(id, priority)
+        const result = await ingredientService.setPriority(id, listId, priority)
         if (!result.success) {
           // Revert on error
           setIngredients((prev) =>
@@ -182,7 +194,7 @@ export function useIngredients() {
         )
       }
     },
-    [ingredients]
+    [ingredients, listId]
   )
 
   /**
@@ -204,7 +216,7 @@ export function useIngredients() {
       )
 
       try {
-        const result = await ingredientService.clearPriority(id)
+        const result = await ingredientService.clearPriority(id, listId)
         if (!result.success) {
           // Revert on error
           setIngredients((prev) =>
@@ -223,7 +235,7 @@ export function useIngredients() {
         )
       }
     },
-    [ingredients]
+    [ingredients, listId]
   )
 
   /**
@@ -232,7 +244,7 @@ export function useIngredients() {
   const deleteIngredient = React.useCallback(
     async (id: string) => {
       try {
-        const result = await ingredientService.deleteIngredient(id)
+        const result = await ingredientService.deleteIngredient(id, listId)
         if (result.success) {
           // Refetch to update the list
           await loadIngredients()
@@ -241,7 +253,7 @@ export function useIngredients() {
         logger.error("Error deleting ingredient", err)
       }
     },
-    [loadIngredients]
+    [loadIngredients, listId]
   )
 
   /**

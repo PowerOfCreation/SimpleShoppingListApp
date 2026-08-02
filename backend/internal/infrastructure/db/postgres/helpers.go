@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -18,6 +19,24 @@ func timeFromTimestamptz(ts pgtype.Timestamptz) time.Time {
 		return ts.Time
 	}
 	return time.Time{}
+}
+
+// pgtypeFromUUIDPtr converts a nullable domain uuid.UUID (nil = not
+// resolved / not sent by an older client) into pgx's nullable wire type.
+func pgtypeFromUUIDPtr(id *uuid.UUID) pgtype.UUID {
+	if id == nil {
+		return pgtype.UUID{}
+	}
+	return pgtype.UUID{Bytes: *id, Valid: true}
+}
+
+// uuidPtrFromPgtype is the inverse of pgtypeFromUUIDPtr.
+func uuidPtrFromPgtype(id pgtype.UUID) *uuid.UUID {
+	if !id.Valid {
+		return nil
+	}
+	value := uuid.UUID(id.Bytes)
+	return &value
 }
 
 func numericFromFloat64(f float64) pgtype.Numeric {

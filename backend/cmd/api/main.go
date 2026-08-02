@@ -9,6 +9,7 @@ import (
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/services"
 	postgres2 "github.com/powerofcreation/simpleshoppinglistapp/internal/infrastructure/db/postgres"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/infrastructure/realtime"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/rest"
 )
 
@@ -44,11 +45,17 @@ func main() {
 	eventIngestor.Start(ctx)
 	defer eventIngestor.Stop()
 
+	authMW, err := middleware.NewKeycloakAuth(ctx)
+	if err != nil {
+		log.Fatalf("auth: %v", err)
+	}
+
 	e := echo.New()
 	rest.NewToDoListController(e, toDoListService)
-	rest.NewEventController(e, eventIngestor)
-	rest.NewSyncWebSocketController(e, hub)
-	rest.NewSyncStateController(e, eventRepo)
+	rest.NewEventController(e, eventIngestor, authMW)
+	rest.NewSyncWebSocketController(e, hub, authMW)
+	rest.NewSyncStateController(e, eventRepo, authMW)
+	rest.NewSyncPullController(e, eventRepo, authMW)
 
 	if err := e.Start(port); err != nil {
 		log.Fatalf("Failed to start server: %v", err)

@@ -16,6 +16,7 @@ describe("OutboxRepository", () => {
     repo = new OutboxRepository(db)
 
     await db.execAsync(`DROP TABLE IF EXISTS event_outbox`)
+    await db.execAsync(`DROP TABLE IF EXISTS domain_events`)
     await db.execAsync(`
       CREATE TABLE event_outbox (
         event_id TEXT PRIMARY KEY,
@@ -26,7 +27,28 @@ describe("OutboxRepository", () => {
         created_at INTEGER NOT NULL
       )
     `)
+    await db.execAsync(`
+      CREATE TABLE domain_events (
+        event_id TEXT PRIMARY KEY,
+        event_type TEXT NOT NULL,
+        aggregate_id TEXT NOT NULL,
+        aggregate_type TEXT NOT NULL,
+        list_id TEXT,
+        occurred_at INTEGER NOT NULL,
+        client_id TEXT NOT NULL,
+        payload TEXT NOT NULL
+      )
+    `)
   })
+
+  async function insertDomainEvent(eventId: string, listId: string | null) {
+    await db.runAsync(
+      `INSERT INTO domain_events (event_id, event_type, aggregate_id, aggregate_type, list_id, occurred_at, client_id, payload)
+       VALUES (?, 'ingredient.created', 'ing-1', 'ingredient', ?, 1000, 'client-1', '{}')`,
+      eventId,
+      listId
+    )
+  }
 
   describe("enqueue", () => {
     it("inserts a pending row", async () => {
@@ -82,6 +104,31 @@ describe("OutboxRepository", () => {
 
       const result = await repo.getPending(1)
       expect(result.getValue()!.length).toBe(1)
+    })
+
+    it("keyset-paginates via `after` past a page already seen", async () => {
+      await repo.enqueue(db, "evt-1", "agg-1", 1000)
+      await repo.enqueue(db, "evt-2", "agg-1", 1000)
+      await repo.enqueue(db, "evt-3", "agg-1", 2000)
+
+      const firstPage = await repo.getPending(2)
+      expect(firstPage.getValue()!.map((r) => r.event_id)).toEqual([
+        "evt-1",
+        "evt-2",
+      ])
+
+      const lastOfFirstPage = firstPage.getValue()!.at(-1)!.event_id
+      const secondPage = await repo.getPending(2, lastOfFirstPage)
+      expect(secondPage.getValue()!.map((r) => r.event_id)).toEqual(["evt-3"])
+    })
+
+    it("returns an empty page when `after` no longer exists (raced by a cancel)", async () => {
+      await repo.enqueue(db, "evt-1", "agg-1", 1000)
+
+      const result = await repo.getPending(50, "already-removed")
+
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toEqual([])
     })
   })
 
@@ -139,21 +186,32 @@ describe("OutboxRepository", () => {
     })
   })
 
-  describe("cancelForAggregate", () => {
-    it("removes only pending rows for the aggregate", async () => {
-      await repo.enqueue(db, "evt-1", "agg-1", 1000)
-      await repo.enqueue(db, "evt-2", "agg-1", 2000)
-      await repo.enqueue(db, "evt-3", "agg-2", 3000)
+  describe("cancelForList", () => {
+    it("removes only pending rows for events belonging to the list, ingredient rows included", async () => {
+      // evt-1/evt-2 belong to list-1 (via domain_events.list_id); evt-3
+      // belongs to a different list entirely.
+      await insertDomainEvent("evt-1", "list-1")
+      await insertDomainEvent("evt-2", "list-1")
+      await insertDomainEvent("evt-3", "list-2")
+
+      await repo.enqueue(db, "evt-1", "ing-1", 1000)
+      await repo.enqueue(db, "evt-2", "ing-2", 2000)
+      await repo.enqueue(db, "evt-3", "ing-3", 3000)
       await repo.markSynced("evt-2")
 
-      await repo.cancelForAggregate("agg-1")
+      await repo.cancelForList("list-1")
 
       const all = await db.getAllAsync<{ event_id: string }>(
         `SELECT event_id FROM event_outbox ORDER BY event_id`
       )
-      // evt-1 (pending, agg-1) removed; evt-2 (synced, agg-1) kept;
-      // evt-3 (pending, agg-2) untouched.
+      // evt-1 (pending, list-1) removed; evt-2 (synced, list-1) kept;
+      // evt-3 (pending, list-2) untouched.
       expect(all.map((r) => r.event_id)).toEqual(["evt-2", "evt-3"])
+    })
+
+    it("does nothing when the list has no outbox rows", async () => {
+      const result = await repo.cancelForList("no-such-list")
+      expect(result.success).toBe(true)
     })
   })
 })

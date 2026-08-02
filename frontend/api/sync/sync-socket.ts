@@ -12,8 +12,9 @@ const PONG_TIMEOUT_MS = 10_000
 const INITIAL_BACKOFF_MS = 1_000
 const MAX_BACKOFF_MS = 60_000
 
-export type AckHandler = (eventId: string) => void
+export type AckHandler = (eventId: string, seq: number) => void
 export type ConnectedHandler = () => void
+export type ListEventHandler = (listId: string, seq: number) => void
 
 /**
  * React Native's WebSocket constructor does accept a third argument at
@@ -58,12 +59,48 @@ export class SyncSocket {
   private backoffMs = INITIAL_BACKOFF_MS
   private stopped = true
   private connectedWithToken: string | null = null
+  // The most recent list ids passed to subscribe(), resent on every
+  // (re)connect from onopen - see sendSubscribe.
+  private subscribedListIds: string[] = []
+  // Distinct from subscribedListIds.length === 0: subscribe() hasn't been
+  // called yet vs. it was called with an empty list (e.g. every list's
+  // sync got turned off). Only the latter should actually notify the
+  // server - sending an unprompted empty subscribe on every connect before
+  // the provider even knows the sync-enabled list set is just noise.
+  private hasSubscribed = false
 
   constructor(
     private readonly onAck: AckHandler,
     private readonly onConnected: ConnectedHandler,
+    private readonly onListEvent: ListEventHandler,
     private readonly createSocket: CreateSocket = defaultCreateSocket
   ) {}
+
+  /**
+   * Tells the server which lists we care about, so it knows who to notify
+   * (via a {"type":"event"} message) when a new event lands for one of
+   * them. Replaces rather than adds to the previous subscription - the
+   * caller is expected to pass the full current set each time (e.g. the
+   * sync-enabled list ids), not a delta.
+   */
+  subscribe(listIds: string[]): void {
+    this.subscribedListIds = listIds
+    this.hasSubscribed = true
+    this.sendSubscribe()
+  }
+
+  private sendSubscribe(): void {
+    if (!this.socket || !this.hasSubscribed) {
+      return
+    }
+    try {
+      this.socket.send(
+        JSON.stringify({ type: "subscribe", list_ids: this.subscribedListIds })
+      )
+    } catch (error) {
+      logger.warn("Failed to send subscribe", error)
+    }
+  }
 
   async connect(): Promise<void> {
     if (this.socket) {
@@ -97,6 +134,11 @@ export class SyncSocket {
     socket.onopen = () => {
       this.backoffMs = INITIAL_BACKOFF_MS
       this.startPing()
+      // Resent before onConnected() fires, so a reconnect (dropped
+      // connection, token refresh, ...) never leaves the server without
+      // this connection's subscriptions - the server has no memory of
+      // what a client_id was subscribed to on a prior connection.
+      this.sendSubscribe()
       this.onConnected()
     }
 
@@ -160,7 +202,12 @@ export class SyncSocket {
     if (!parsed || typeof parsed !== "object") {
       return
     }
-    const message = parsed as { type?: unknown; event_id?: unknown }
+    const message = parsed as {
+      type?: unknown
+      event_id?: unknown
+      list_id?: unknown
+      seq?: unknown
+    }
 
     if (message.type === "pong") {
       if (this.pongTimeout) {
@@ -170,8 +217,21 @@ export class SyncSocket {
       return
     }
 
-    if (message.type === "ack" && typeof message.event_id === "string") {
-      this.onAck(message.event_id)
+    if (
+      message.type === "ack" &&
+      typeof message.event_id === "string" &&
+      typeof message.seq === "number"
+    ) {
+      this.onAck(message.event_id, message.seq)
+      return
+    }
+
+    if (
+      message.type === "event" &&
+      typeof message.list_id === "string" &&
+      typeof message.seq === "number"
+    ) {
+      this.onListEvent(message.list_id, message.seq)
     }
   }
 

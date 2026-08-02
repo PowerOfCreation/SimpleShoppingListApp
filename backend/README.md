@@ -7,29 +7,57 @@ Go REST API backend for the offline-first shopping list app (frontend:
 
 ## Run locally (dev)
 
-```bash
-docker compose up -d postgres
+Auth is **mandatory** — the API refuses to start without a reachable
+Keycloak. `KEYCLOAK_ISSUER`/`KEYCLOAK_CLIENT_ID` point at the same hosted
+Keycloak the frontend uses (`sso.ops.light-dev-solutions.de`); it's never run
+locally, so this needs network access to it.
 
-DATABASE_URL="host=localhost user=postgres password=postgres dbname=todos port=5432 sslmode=disable" go run ./cmd/api
-```
+1. Start Postgres:
+   ```bash
+   docker compose up -d postgres
+   ```
+2. Start the API — pick one:
+   - **`air`** (hot reload): reads `DATABASE_URL`/`KEYCLOAK_ISSUER`/`KEYCLOAK_CLIENT_ID`
+     from the checked-in `.env` automatically.
+     ```bash
+     air
+     ```
+   - **`go run`** directly — same vars from `.env`, exported manually:
+     ```bash
+     export $(grep -v '^#' .env | xargs)
+     go run ./cmd/api
+     ```
+   - **`docker compose up api`**: same config, baked into `docker-compose.yml`.
+     ```bash
+     docker compose up -d
+     ```
 
-The backend + Postgres are only started locally for development. In
-production they are deployed differently (managed outside this repo); the
-target is configured via the `DATABASE_URL` env var. Keycloak is **not** used
-or started here — it is hosted in K8s and shared by dev and prod, and the
-backend does not yet validate JWTs (user scoping is deferred; any client can
-currently write/read events).
+Postgres and the API are only run locally for development; in production
+they're deployed elsewhere, targeting `DATABASE_URL`.
+
+The backend does not yet **scope** data to a user — any valid token can
+read/write any known list id; see `frontend/docs/sync-design-decisions.md`.
 
 ## Sync API
 
-The frontend pushes offline mutations to the backend; ack + reconcile round out
-the (WIP) sync mechanism:
+Sync is bidirectional: the frontend pushes offline mutations *and* pulls a
+list's full history back (including changes from other devices); ack +
+reconcile + a live WebSocket nudge mean neither direction has to poll.
+`/api/v1/events` and every `/api/v1/sync/*` route (including the WebSocket
+upgrade) require a bearer token — see [Run locally](#run-locally-dev).
+
+Not yet built: user-scoping (any valid token can read/write any known list
+id) and a "restore my lists after reinstall" endpoint — pull only ever
+fetches lists already known and sync-enabled locally. See
+`frontend/docs/sync-design-decisions.md`.
 
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/v1/events` | Accepts a batch of client events (202) for async processing |
-| POST | `/api/v1/sync/state` | Reconcile: reports which events the server durably has |
-| GET | `/api/v1/sync/ws` | WebSocket; pushes per-event `ack`s to the client (no polling) |
+| POST | `/api/v1/sync/state` | Reconcile: reports which events the server durably has, per list |
+| POST | `/api/v1/sync/head` | Reports each requested list's current pull cursor (seq + latest event id) |
+| GET | `/api/v1/sync/events` | Pull: one page of a list's event history since a given seq |
+| GET | `/api/v1/sync/ws` | WebSocket; pushes per-event `ack`s and, to clients subscribed to a list (`{"type":"subscribe","list_ids":[...]}`), a `{"type":"event"}` notification when that list gets a new event |
 
 ## Updating the dev database schema
 

@@ -15,6 +15,7 @@ import (
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/services"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
 )
 
 // fakeEventRepo/fakeAckPublisher mirror the ones in
@@ -29,24 +30,37 @@ func newFakeEventRepo() *fakeEventRepo {
 	return &fakeEventRepo{stored: map[uuid.UUID]bool{}, processed: map[uuid.UUID]bool{}}
 }
 
-func (f *fakeEventRepo) Insert(ctx context.Context, event *repositories.StoredEvent) (bool, error) {
+func (f *fakeEventRepo) Insert(ctx context.Context, event *repositories.StoredEvent) (bool, int64, *uuid.UUID, error) {
 	if f.stored[event.EventID] {
-		return f.processed[event.EventID], nil
+		return f.processed[event.EventID], 1, nil, nil
 	}
 	f.stored[event.EventID] = true
-	return false, nil
+	return false, 0, nil, nil
 }
 
-func (f *fakeEventRepo) MarkProcessed(ctx context.Context, eventID uuid.UUID) error {
+func (f *fakeEventRepo) MarkProcessed(ctx context.Context, eventID uuid.UUID) (int64, *uuid.UUID, error) {
 	f.processed[eventID] = true
-	return nil
+	return 1, nil, nil
 }
 
 func (f *fakeEventRepo) FindUnprocessed(ctx context.Context) ([]*repositories.StoredEvent, error) {
 	return nil, nil
 }
 
-func (f *fakeEventRepo) FindKnownEventIDs(ctx context.Context, aggregateIDs []uuid.UUID) ([]uuid.UUID, error) {
+func (f *fakeEventRepo) FindKnownEventIDsByList(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error) {
+	return nil, nil
+}
+
+func (f *fakeEventRepo) FindListHeads(ctx context.Context, listIDs []uuid.UUID) ([]*repositories.ListHead, error) {
+	return nil, nil
+}
+
+func (f *fakeEventRepo) FindEventsSince(
+	ctx context.Context,
+	listID uuid.UUID,
+	sinceSeq int64,
+	limit int32,
+) ([]*repositories.StoredEvent, error) {
 	return nil, nil
 }
 
@@ -54,9 +68,11 @@ type fakeAckPublisher struct {
 	acked map[uuid.UUID]bool
 }
 
-func (f *fakeAckPublisher) PublishAck(clientID string, eventID uuid.UUID) {
+func (f *fakeAckPublisher) PublishAck(clientID string, eventID uuid.UUID, seq int64) {
 	f.acked[eventID] = true
 }
+
+func (f *fakeAckPublisher) PublishListEvent(listID uuid.UUID, seq int64) {}
 
 func TestEventController_SyncEvents_QueuesEventsAndReturns202(t *testing.T) {
 	repo := newFakeEventRepo()
@@ -70,7 +86,7 @@ func TestEventController_SyncEvents_QueuesEventsAndReturns202(t *testing.T) {
 	defer ingestor.Stop()
 
 	e := echo.New()
-	NewEventController(e, ingestor)
+	NewEventController(e, ingestor, middleware.Passthrough)
 
 	eventID := uuid.New()
 	aggregateID := uuid.New()
@@ -110,7 +126,7 @@ func TestEventController_SyncEvents_MalformedBodyReturns400(t *testing.T) {
 	defer ingestor.Stop()
 
 	e := echo.New()
-	NewEventController(e, ingestor)
+	NewEventController(e, ingestor, middleware.Passthrough)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`{not valid json`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -133,7 +149,7 @@ func TestEventController_SyncEvents_EmptyBatchReturns202WithZeroQueued(t *testin
 	defer ingestor.Stop()
 
 	e := echo.New()
-	NewEventController(e, ingestor)
+	NewEventController(e, ingestor, middleware.Passthrough)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`[]`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)

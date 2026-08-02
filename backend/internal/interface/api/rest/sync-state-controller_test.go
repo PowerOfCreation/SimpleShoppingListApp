@@ -13,21 +13,22 @@ import (
 	"github.com/stretchr/testify/assert"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
 )
 
 // stubEventRepository implements repositories.EventRepository, but only
-// FindKnownEventIDs is exercised by SyncStateController - the others panic
-// if ever called, so a test would fail loudly instead of silently doing
-// the wrong thing.
+// FindKnownEventIDsByList is exercised by SyncStateController - the others
+// panic if ever called, so a test would fail loudly instead of silently
+// doing the wrong thing.
 type stubEventRepository struct {
-	findKnownEventIDs func(ctx context.Context, aggregateIDs []uuid.UUID) ([]uuid.UUID, error)
+	findKnownEventIDsByList func(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error)
 }
 
-func (s *stubEventRepository) Insert(ctx context.Context, event *repositories.StoredEvent) (bool, error) {
+func (s *stubEventRepository) Insert(ctx context.Context, event *repositories.StoredEvent) (bool, int64, *uuid.UUID, error) {
 	panic("Insert not used by SyncStateController")
 }
 
-func (s *stubEventRepository) MarkProcessed(ctx context.Context, eventID uuid.UUID) error {
+func (s *stubEventRepository) MarkProcessed(ctx context.Context, eventID uuid.UUID) (int64, *uuid.UUID, error) {
 	panic("MarkProcessed not used by SyncStateController")
 }
 
@@ -35,32 +36,45 @@ func (s *stubEventRepository) FindUnprocessed(ctx context.Context) ([]*repositor
 	panic("FindUnprocessed not used by SyncStateController")
 }
 
-func (s *stubEventRepository) FindKnownEventIDs(
-	ctx context.Context,
-	aggregateIDs []uuid.UUID,
-) ([]uuid.UUID, error) {
-	if s.findKnownEventIDs == nil {
-		return nil, nil
-	}
-	return s.findKnownEventIDs(ctx, aggregateIDs)
+func (s *stubEventRepository) FindListHeads(ctx context.Context, listIDs []uuid.UUID) ([]*repositories.ListHead, error) {
+	panic("FindListHeads not used by SyncStateController")
 }
 
-func TestSyncStateController_ReturnsKnownEventIDsForRequestedAggregates(t *testing.T) {
-	knownAggregate := uuid.New()
+func (s *stubEventRepository) FindEventsSince(
+	ctx context.Context,
+	listID uuid.UUID,
+	sinceSeq int64,
+	limit int32,
+) ([]*repositories.StoredEvent, error) {
+	panic("FindEventsSince not used by SyncStateController")
+}
+
+func (s *stubEventRepository) FindKnownEventIDsByList(
+	ctx context.Context,
+	listIDs []uuid.UUID,
+) ([]uuid.UUID, error) {
+	if s.findKnownEventIDsByList == nil {
+		return nil, nil
+	}
+	return s.findKnownEventIDsByList(ctx, listIDs)
+}
+
+func TestSyncStateController_ReturnsKnownEventIDsForRequestedLists(t *testing.T) {
+	knownList := uuid.New()
 	knownEvent := uuid.New()
-	unknownAggregate := uuid.New()
+	unknownList := uuid.New()
 
 	repo := &stubEventRepository{
-		findKnownEventIDs: func(ctx context.Context, aggregateIDs []uuid.UUID) ([]uuid.UUID, error) {
-			assert.ElementsMatch(t, []uuid.UUID{knownAggregate, unknownAggregate}, aggregateIDs)
+		findKnownEventIDsByList: func(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error) {
+			assert.ElementsMatch(t, []uuid.UUID{knownList, unknownList}, listIDs)
 			return []uuid.UUID{knownEvent}, nil
 		},
 	}
 
 	e := echo.New()
-	NewSyncStateController(e, repo)
+	NewSyncStateController(e, repo, middleware.Passthrough)
 
-	body := fmt.Sprintf(`{"aggregate_ids":["%s","%s"]}`, knownAggregate, unknownAggregate)
+	body := fmt.Sprintf(`{"list_ids":["%s","%s"]}`, knownList, unknownList)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/state", strings.NewReader(body))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()
@@ -74,7 +88,7 @@ func TestSyncStateController_ReturnsKnownEventIDsForRequestedAggregates(t *testi
 func TestSyncStateController_MalformedBodyReturns400(t *testing.T) {
 	repo := &stubEventRepository{}
 	e := echo.New()
-	NewSyncStateController(e, repo)
+	NewSyncStateController(e, repo, middleware.Passthrough)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/state", strings.NewReader(`{not valid`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -85,16 +99,16 @@ func TestSyncStateController_MalformedBodyReturns400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
-func TestSyncStateController_TooManyAggregateIDsReturns400(t *testing.T) {
+func TestSyncStateController_TooManyListIDsReturns400(t *testing.T) {
 	repo := &stubEventRepository{}
 	e := echo.New()
-	NewSyncStateController(e, repo)
+	NewSyncStateController(e, repo, middleware.Passthrough)
 
-	ids := make([]string, maxSyncStateAggregateIDs+1)
+	ids := make([]string, maxSyncListIDs+1)
 	for i := range ids {
 		ids[i] = fmt.Sprintf(`"%s"`, uuid.New())
 	}
-	body := fmt.Sprintf(`{"aggregate_ids":[%s]}`, strings.Join(ids, ","))
+	body := fmt.Sprintf(`{"list_ids":[%s]}`, strings.Join(ids, ","))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/state", strings.NewReader(body))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -107,14 +121,14 @@ func TestSyncStateController_TooManyAggregateIDsReturns400(t *testing.T) {
 
 func TestSyncStateController_RepositoryErrorReturns500(t *testing.T) {
 	repo := &stubEventRepository{
-		findKnownEventIDs: func(ctx context.Context, aggregateIDs []uuid.UUID) ([]uuid.UUID, error) {
+		findKnownEventIDsByList: func(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error) {
 			return nil, assert.AnError
 		},
 	}
 	e := echo.New()
-	NewSyncStateController(e, repo)
+	NewSyncStateController(e, repo, middleware.Passthrough)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/state", strings.NewReader(`{"aggregate_ids":[]}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/state", strings.NewReader(`{"list_ids":[]}`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()
 
@@ -123,16 +137,16 @@ func TestSyncStateController_RepositoryErrorReturns500(t *testing.T) {
 	assert.Equal(t, http.StatusInternalServerError, rec.Code)
 }
 
-func TestSyncStateController_EmptyAggregateIDsReturnsEmptyList(t *testing.T) {
+func TestSyncStateController_EmptyListIDsReturnsEmptyList(t *testing.T) {
 	repo := &stubEventRepository{
-		findKnownEventIDs: func(ctx context.Context, aggregateIDs []uuid.UUID) ([]uuid.UUID, error) {
+		findKnownEventIDsByList: func(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error) {
 			return nil, nil
 		},
 	}
 	e := echo.New()
-	NewSyncStateController(e, repo)
+	NewSyncStateController(e, repo, middleware.Passthrough)
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/state", strings.NewReader(`{"aggregate_ids":[]}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/state", strings.NewReader(`{"list_ids":[]}`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()
 

@@ -60,10 +60,48 @@ export class OutboxRepository extends BaseRepository {
     )
   }
 
+  /**
+   * Returns up to `limit` pending rows, oldest first. Pass `after` (the
+   * event_id of the last row from a previous page) to keyset-paginate
+   * through everything pending instead of only ever seeing the same first
+   * page - the sync engine's drain loop uses this to send an unbounded
+   * backlog a bounded batch at a time (see sync-engine.ts).
+   *
+   * The keyset itself is (created_at, rowid), matching this table's index
+   * and the ORDER BY below - rowid rather than event_id because event_id is
+   * a random uuid and wouldn't preserve insertion order for two rows that
+   * share a created_at (created_at is the *event's* occurred_at, not the
+   * enqueue time, so same-millisecond ties happen for events emitted back
+   * to back). Looked up via a row-value subquery (`(created_at, rowid) >
+   * (SELECT ...)`, supported since SQLite 3.15) rather than accepting a raw
+   * rowid parameter, so OutboxRow's public shape never has to expose rowid
+   * at all.
+   *
+   * If `after`'s row no longer exists (e.g. cancelForList raced the drain
+   * loop and removed it), the subquery returns no row and the comparison
+   * is NULL for every candidate - this page comes back empty rather than
+   * resuming from the wrong place. Harmless: the next unrelated trigger
+   * calls getPending() from the start again.
+   */
   async getPending(
-    limit: number = 50
+    limit: number = 50,
+    after?: string
   ): Promise<Result<OutboxRow[], DbQueryError>> {
     return this._executeQuery(async () => {
+      if (after) {
+        return this.db.getAllAsync<OutboxRow>(
+          `SELECT event_id, aggregate_id, status, attempts, last_attempt_at, created_at
+           FROM event_outbox
+           WHERE status = 'pending'
+             AND (created_at, rowid) > (
+               SELECT created_at, rowid FROM event_outbox WHERE event_id = ?
+             )
+           ORDER BY created_at ASC, rowid ASC
+           LIMIT ?`,
+          after,
+          limit
+        )
+      }
       return this.db.getAllAsync<OutboxRow>(
         `SELECT event_id, aggregate_id, status, attempts, last_attempt_at, created_at
          FROM event_outbox
@@ -78,7 +116,7 @@ export class OutboxRepository extends BaseRepository {
   /**
    * Marks a row as synced. A no-op (not an error) when the row is already
    * gone: an ack can race a toggle-sync-off that already deleted the
-   * pending row via cancelForAggregate, and that must not surface as a
+   * pending row via cancelForList, and that must not surface as a
    * failure.
    */
   async markSynced(eventId: string): Promise<Result<void, DbQueryError>> {
@@ -123,18 +161,25 @@ export class OutboxRepository extends BaseRepository {
   }
 
   /**
-   * Cancels any still-pending outbox rows for an aggregate. Used when sync
-   * is turned off for a list: the server's existing copy (if any) is left
-   * alone, only the local intent to send more is cleared.
+   * Cancels every still-pending outbox row belonging to a list - its own
+   * todo_list.* rows (aggregate_id = listId) as well as every ingredient.*
+   * row for ingredients in that list. Used when sync is turned off for a
+   * list: the server's existing copy (if any) is left alone, only the
+   * local intent to send more is cleared.
+   *
+   * Joins through domain_events.list_id rather than a denormalized list_id
+   * on event_outbox itself - every outbox row is always backed by a
+   * domain_events row (see EventRepository.appendAll/enqueueExistingForSync),
+   * so there's nothing a second copy of the column would buy beyond a join.
    */
-  async cancelForAggregate(
-    aggregateId: string
-  ): Promise<Result<void, DbQueryError>> {
+  async cancelForList(listId: string): Promise<Result<void, DbQueryError>> {
     return this._executeTransaction(async () => {
       await this.db.runAsync(
-        `DELETE FROM event_outbox WHERE aggregate_id = ? AND status = 'pending'`,
-        aggregateId
+        `DELETE FROM event_outbox
+         WHERE status = 'pending'
+           AND event_id IN (SELECT event_id FROM domain_events WHERE list_id = ?)`,
+        listId
       )
-    }, "cancelForAggregate")
+    }, "cancelForList")
   }
 }

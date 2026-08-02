@@ -55,13 +55,13 @@ describe("ShoppingListService", () => {
       appendWithProjection: jest.fn(),
       appendAll: jest.fn().mockResolvedValue(Result.ok(undefined)),
       enqueueExistingForSync: jest.fn().mockResolvedValue(Result.ok(undefined)),
-      getByAggregateId: jest.fn(),
+      getByListId: jest.fn(),
       getByAggregateType: jest.fn(),
       getAll: jest.fn(),
     } as unknown as jest.Mocked<EventRepository>
 
     mockOutboxRepository = {
-      cancelForAggregate: jest.fn().mockResolvedValue(Result.ok(undefined)),
+      cancelForList: jest.fn().mockResolvedValue(Result.ok(undefined)),
     } as unknown as jest.Mocked<OutboxRepository>
 
     mockProjection = {
@@ -152,14 +152,16 @@ describe("ShoppingListService", () => {
       event_type: EventTypes.TODO_LIST_CREATED,
       aggregate_id: "list-1",
       aggregate_type: "todo_list",
+      list_id: "list-1",
       occurred_at: 1000,
       client_id: "test-device",
       payload: "{}",
+      seq: null,
       ...overrides,
     })
 
     it("enabling replays only syncable history into the outbox", async () => {
-      mockEventRepository.getByAggregateId.mockResolvedValue(
+      mockEventRepository.getByListId.mockResolvedValue(
         Result.ok([
           makeHistoryEvent({
             event_id: "e1",
@@ -191,8 +193,35 @@ describe("ShoppingListService", () => {
       ])
     })
 
+    it("enabling replays the list's ingredient.* history too, not just todo_list.*", async () => {
+      mockEventRepository.getByListId.mockResolvedValue(
+        Result.ok([
+          makeHistoryEvent({
+            event_id: "e1",
+            event_type: EventTypes.TODO_LIST_CREATED,
+          }),
+          makeHistoryEvent({
+            event_id: "e2",
+            event_type: EventTypes.INGREDIENT_CREATED,
+            aggregate_id: "ing-1",
+            aggregate_type: "ingredient",
+          }),
+        ])
+      )
+
+      await service.setSyncEnabled("list-1", true)
+
+      const [replayed] =
+        mockEventRepository.enqueueExistingForSync.mock.calls[0]
+      expect(replayed.map((e: DomainEventRow) => e.event_id)).toEqual([
+        "e1",
+        "e2",
+      ])
+      expect(mockEventRepository.getByListId).toHaveBeenCalledWith("list-1")
+    })
+
     it("enabling appends and enqueues a todo_list.sync_enabled event", async () => {
-      mockEventRepository.getByAggregateId.mockResolvedValue(Result.ok([]))
+      mockEventRepository.getByListId.mockResolvedValue(Result.ok([]))
 
       await service.setSyncEnabled("list-1", true)
 
@@ -203,14 +232,12 @@ describe("ShoppingListService", () => {
       expect(entries[0].enqueueForSync).toBe(true)
     })
 
-    it("disabling cancels pending outbox rows but re-queues the sync_disabled event", async () => {
+    it("disabling cancels pending outbox rows for the whole list but re-queues the sync_disabled event", async () => {
       const result = await service.setSyncEnabled("list-1", false)
 
       expect(result.success).toBe(true)
-      expect(mockOutboxRepository.cancelForAggregate).toHaveBeenCalledWith(
-        "list-1"
-      )
-      expect(mockEventRepository.getByAggregateId).not.toHaveBeenCalled()
+      expect(mockOutboxRepository.cancelForList).toHaveBeenCalledWith("list-1")
+      expect(mockEventRepository.getByListId).not.toHaveBeenCalled()
 
       const [entries] = mockEventRepository.appendAll.mock.calls[0]
       expect(entries[0].event.event_type).toBe(
@@ -218,7 +245,7 @@ describe("ShoppingListService", () => {
       )
       expect(entries[0].enqueueForSync).toBe(true)
 
-      // cancelForAggregate wipes the pending sync_disabled row, so it is
+      // cancelForList wipes the pending sync_disabled row, so it is
       // re-queued afterwards to keep the backend informed.
       expect(mockEventRepository.enqueueExistingForSync).toHaveBeenCalledTimes(
         1

@@ -3,6 +3,13 @@
 ## Project Description
 ShoList is a mobile application built with React Native and Expo that helps users create and manage shopping lists. The app allows users to add ingredients, mark them as complete, edit ingredient names, and provides a clean, intuitive user interface.
 
+> **Note:** this document predates the event-sourced data layer (`domain_events` +
+> per-aggregate projections, see `/database`) and the optional backend sync
+> (`/api/sync`) described in `../../AGENTS.md` and [sync-design-decisions.md](sync-design-decisions.md).
+> Treat the sections below as historical background on the overall app shape
+> (layering, `Result` pattern, `BaseRepository`), not as an accurate description
+> of `ingredient-service.tsx`'s current internals.
+
 ## Technology Stack
 
 ### Core Technologies
