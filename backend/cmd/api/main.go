@@ -11,6 +11,7 @@ import (
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/infrastructure/realtime"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/rest"
+	appmigrations "github.com/powerofcreation/simpleshoppinglistapp/migrations"
 )
 
 func main() {
@@ -26,6 +27,11 @@ func main() {
 		log.Fatalf("Failed to connect to database: %v", err)
 	}
 	defer pool.Close()
+
+	// Apply pending schema migrations before anything touches the DB.
+	if err := postgres2.Migrate(ctx, pool, appmigrations.FS); err != nil {
+		log.Fatalf("Failed to apply migrations: %v", err)
+	}
 
 	queries := postgres2.NewQueries(pool)
 
