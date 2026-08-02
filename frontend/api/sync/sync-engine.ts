@@ -287,9 +287,18 @@ export class SyncEngine {
 
   private async pullListToHead(listId: string, headSeq: number): Promise<void> {
     const cursorResult = await this.cursorRepository.get(listId)
-    const cursorSeq = cursorResult.success
-      ? (cursorResult.getValue()?.last_seen_seq ?? 0)
-      : 0
+    if (!cursorResult.success) {
+      // A real local DB error, not "never pulled before" (that's a
+      // success with a null value, treated as seq 0 below) - don't mask it
+      // as an empty cursor, which would force an unnecessary full pull.
+      // Skip this list; the next trigger retries.
+      logger.error(
+        `Failed to read pull cursor for list ${listId}`,
+        cursorResult.getError()
+      )
+      return
+    }
+    const cursorSeq = cursorResult.getValue()?.last_seen_seq ?? 0
 
     if (headSeq < cursorSeq) {
       // The server's head is behind what we last saw - it lost data (e.g.

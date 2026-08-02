@@ -513,6 +513,25 @@ describe("SyncEngine", () => {
       expect(client.getEventsSince).not.toHaveBeenCalled()
     })
 
+    it("skips a list (but still flushes), without treating it as an empty cursor, when reading the local cursor fails", async () => {
+      cursor.get.mockResolvedValue(
+        Result.fail(
+          new DbQueryError("disk full", "get", "SyncCursorRepository")
+        )
+      )
+      client.getListHeads.mockResolvedValue(
+        Result.ok([{ listId: "list-1", seq: 5, eventId: "e5" }])
+      )
+
+      await engine.pull(["list-1"])
+
+      // A real read failure must not be treated as "never pulled" (seq 0),
+      // which would force an unnecessary full pull or a false clamp.
+      expect(client.getEventsSince).not.toHaveBeenCalled()
+      expect(cursor.set).not.toHaveBeenCalled()
+      expect(outbox.getPending).toHaveBeenCalled()
+    })
+
     it("skips a list id the server's head response omitted, without crashing", async () => {
       client.getListHeads.mockResolvedValue(Result.ok([]))
 

@@ -104,15 +104,15 @@ export type FetchLike = typeof fetch
 export class SyncClient {
   constructor(private readonly fetchImpl: FetchLike = fetch) {}
 
-  async sendEvents(events: DomainEventRow[]): Promise<Result<void, SyncError>> {
-    if (events.length === 0) {
-      return Result.ok(undefined)
-    }
-
+  /**
+   * Resolves a bearer token, distinguishing "couldn't even ask" (e.g.
+   * refresh failed - worth retrying) from "not signed in" (callers are
+   * expected to gate on being signed in already, so this is a defensive
+   * fallback, not worth retrying on its own).
+   */
+  private async getAuthToken(): Promise<Result<string, SyncError>> {
     const tokenResult = await getValidAccessToken()
     if (!tokenResult.success) {
-      // Couldn't even ask for a token (e.g. refresh failed) - worth
-      // retrying later, the outbox row stays pending either way.
       return Result.fail(
         new SyncError(
           "Could not obtain an access token",
@@ -121,48 +121,77 @@ export class SyncClient {
         )
       )
     }
-
     const token = tokenResult.getValue()
     if (!token) {
-      // Not signed in. Callers are expected to gate flushing on being
-      // signed in already; this is a defensive fallback, not the normal
-      // path, so it isn't worth retrying on its own.
       return Result.fail(new SyncError("Not signed in", false))
     }
+    return Result.ok(token)
+  }
 
+  /**
+   * Runs one request under REQUEST_TIMEOUT_MS, mapping an abort/network
+   * failure to a retryable SyncError. Does not interpret the response
+   * (status checking and body parsing differ per endpoint) - callers get
+   * the raw Response back on success.
+   */
+  private async fetchWithTimeout(
+    url: string,
+    init: RequestInit,
+    networkErrorMessage: string
+  ): Promise<Result<Response, SyncError>> {
     const controller = new AbortController()
     const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-
     try {
-      const response = await this.fetchImpl(syncConfig.eventsUrl, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
-        },
-        body: JSON.stringify(events.map(toWireEvent)),
+      const response = await this.fetchImpl(url, {
+        ...init,
         signal: controller.signal,
       })
-
-      if (response.status === 401) {
-        return Result.fail(new SyncError("Unauthorized", false))
-      }
-
-      if (!response.ok) {
-        return Result.fail(
-          new SyncError(`Unexpected response status ${response.status}`, true)
-        )
-      }
-
-      return Result.ok(undefined)
+      return Result.ok(response)
     } catch (error) {
-      logger.warn("Failed to send events", error)
-      return Result.fail(
-        new SyncError("Network error while sending events", true, error)
-      )
+      logger.warn(networkErrorMessage, error)
+      return Result.fail(new SyncError(networkErrorMessage, true, error))
     } finally {
       clearTimeout(timeout)
     }
+  }
+
+  async sendEvents(events: DomainEventRow[]): Promise<Result<void, SyncError>> {
+    if (events.length === 0) {
+      return Result.ok(undefined)
+    }
+
+    const tokenResult = await this.getAuthToken()
+    if (!tokenResult.success) {
+      return Result.fail(tokenResult.getError())
+    }
+
+    const responseResult = await this.fetchWithTimeout(
+      syncConfig.eventsUrl,
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${tokenResult.getValue()}`,
+        },
+        body: JSON.stringify(events.map(toWireEvent)),
+      },
+      "Network error while sending events"
+    )
+    if (!responseResult.success) {
+      return Result.fail(responseResult.getError())
+    }
+    const response = responseResult.getValue()!
+
+    if (response.status === 401) {
+      return Result.fail(new SyncError("Unauthorized", false))
+    }
+    if (!response.ok) {
+      return Result.fail(
+        new SyncError(`Unexpected response status ${response.status}`, true)
+      )
+    }
+
+    return Result.ok(undefined)
   }
 
   /**
@@ -181,42 +210,36 @@ export class SyncClient {
       return Result.ok([])
     }
 
-    const tokenResult = await getValidAccessToken()
-    if (!tokenResult.success || !tokenResult.getValue()) {
-      return Result.fail(new SyncError("Not signed in", false))
+    const tokenResult = await this.getAuthToken()
+    if (!tokenResult.success) {
+      return Result.fail(tokenResult.getError())
     }
-    const token = tokenResult.getValue()
 
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-
-    try {
-      const response = await this.fetchImpl(syncConfig.syncStateUrl, {
+    const responseResult = await this.fetchWithTimeout(
+      syncConfig.syncStateUrl,
+      {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${tokenResult.getValue()}`,
         },
         body: JSON.stringify({ list_ids: listIds }),
-        signal: controller.signal,
-      })
-
-      if (!response.ok) {
-        return Result.fail(
-          new SyncError(`Unexpected response status ${response.status}`, true)
-        )
-      }
-
-      const data = (await response.json()) as { known_event_ids?: string[] }
-      return Result.ok(data.known_event_ids ?? [])
-    } catch (error) {
-      logger.warn("Failed to reconcile with the server", error)
-      return Result.fail(
-        new SyncError("Network error while reconciling", true, error)
-      )
-    } finally {
-      clearTimeout(timeout)
+      },
+      "Network error while reconciling"
+    )
+    if (!responseResult.success) {
+      return Result.fail(responseResult.getError())
     }
+    const response = responseResult.getValue()!
+
+    if (!response.ok) {
+      return Result.fail(
+        new SyncError(`Unexpected response status ${response.status}`, true)
+      )
+    }
+
+    const data = (await response.json()) as { known_event_ids?: string[] }
+    return Result.ok(data.known_event_ids ?? [])
   }
 
   /**
@@ -232,49 +255,43 @@ export class SyncClient {
       return Result.ok([])
     }
 
-    const tokenResult = await getValidAccessToken()
-    if (!tokenResult.success || !tokenResult.getValue()) {
-      return Result.fail(new SyncError("Not signed in", false))
+    const tokenResult = await this.getAuthToken()
+    if (!tokenResult.success) {
+      return Result.fail(tokenResult.getError())
     }
-    const token = tokenResult.getValue()
 
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-
-    try {
-      const response = await this.fetchImpl(syncConfig.syncHeadUrl, {
+    const responseResult = await this.fetchWithTimeout(
+      syncConfig.syncHeadUrl,
+      {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${token}`,
+          Authorization: `Bearer ${tokenResult.getValue()}`,
         },
         body: JSON.stringify({ list_ids: listIds }),
-        signal: controller.signal,
-      })
-
-      if (!response.ok) {
-        return Result.fail(
-          new SyncError(`Unexpected response status ${response.status}`, true)
-        )
-      }
-
-      const data = (await response.json()) as {
-        heads?: { list_id: string; seq: number; event_id: string | null }[]
-      }
-      const heads = (data.heads ?? []).map((h) => ({
-        listId: h.list_id,
-        seq: h.seq,
-        eventId: h.event_id,
-      }))
-      return Result.ok(heads)
-    } catch (error) {
-      logger.warn("Failed to fetch list heads", error)
-      return Result.fail(
-        new SyncError("Network error while fetching list heads", true, error)
-      )
-    } finally {
-      clearTimeout(timeout)
+      },
+      "Network error while fetching list heads"
+    )
+    if (!responseResult.success) {
+      return Result.fail(responseResult.getError())
     }
+    const response = responseResult.getValue()!
+
+    if (!response.ok) {
+      return Result.fail(
+        new SyncError(`Unexpected response status ${response.status}`, true)
+      )
+    }
+
+    const data = (await response.json()) as {
+      heads?: { list_id: string; seq: number; event_id: string | null }[]
+    }
+    const heads = (data.heads ?? []).map((h) => ({
+      listId: h.list_id,
+      seq: h.seq,
+      eventId: h.event_id,
+    }))
+    return Result.ok(heads)
   }
 
   /**
@@ -288,46 +305,40 @@ export class SyncClient {
     sinceSeq: number,
     limit = 200
   ): Promise<Result<EventsPage, SyncError>> {
-    const tokenResult = await getValidAccessToken()
-    if (!tokenResult.success || !tokenResult.getValue()) {
-      return Result.fail(new SyncError("Not signed in", false))
+    const tokenResult = await this.getAuthToken()
+    if (!tokenResult.success) {
+      return Result.fail(tokenResult.getError())
     }
-    const token = tokenResult.getValue()
 
-    const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-
-    try {
-      const url = `${syncConfig.syncEventsUrl}?list_id=${encodeURIComponent(listId)}&since_seq=${sinceSeq}&limit=${limit}`
-      const response = await this.fetchImpl(url, {
+    const url = `${syncConfig.syncEventsUrl}?list_id=${encodeURIComponent(listId)}&since_seq=${sinceSeq}&limit=${limit}`
+    const responseResult = await this.fetchWithTimeout(
+      url,
+      {
         method: "GET",
-        headers: { Authorization: `Bearer ${token}` },
-        signal: controller.signal,
-      })
-
-      if (!response.ok) {
-        return Result.fail(
-          new SyncError(`Unexpected response status ${response.status}`, true)
-        )
-      }
-
-      const data = (await response.json()) as {
-        events?: WireEventFromServer[]
-        next_seq: number
-        has_more: boolean
-      }
-      return Result.ok({
-        events: (data.events ?? []).map(fromWireEvent),
-        nextSeq: data.next_seq,
-        hasMore: data.has_more,
-      })
-    } catch (error) {
-      logger.warn("Failed to pull events", error)
-      return Result.fail(
-        new SyncError("Network error while pulling events", true, error)
-      )
-    } finally {
-      clearTimeout(timeout)
+        headers: { Authorization: `Bearer ${tokenResult.getValue()}` },
+      },
+      "Network error while pulling events"
+    )
+    if (!responseResult.success) {
+      return Result.fail(responseResult.getError())
     }
+    const response = responseResult.getValue()!
+
+    if (!response.ok) {
+      return Result.fail(
+        new SyncError(`Unexpected response status ${response.status}`, true)
+      )
+    }
+
+    const data = (await response.json()) as {
+      events?: WireEventFromServer[]
+      next_seq: number
+      has_more: boolean
+    }
+    return Result.ok({
+      events: (data.events ?? []).map(fromWireEvent),
+      nextSeq: data.next_seq,
+      hasMore: data.has_more,
+    })
   }
 }

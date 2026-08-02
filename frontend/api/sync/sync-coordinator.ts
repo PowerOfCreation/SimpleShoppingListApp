@@ -37,6 +37,7 @@ export class SyncCoordinator {
     string,
     ReturnType<typeof setTimeout>
   >()
+  private running = false
   private unsubscribeOutbox?: () => void
   private unsubscribeSyncLists?: () => void
   private appStateSubscription?: NativeEventSubscription
@@ -128,8 +129,17 @@ export class SyncCoordinator {
     this.socket.subscribe(idsResult.getValue()!)
   }
 
-  /** Wires every trigger and connects the socket. Call once per signed-in, sync-configured session. */
+  /**
+   * Wires every trigger and connects the socket. Idempotent - a second
+   * call while already running is a no-op rather than double-registering
+   * listeners/intervals. Call once per signed-in, sync-configured session.
+   */
   start(): void {
+    if (this.running) {
+      return
+    }
+    this.running = true
+
     // subscribeNow before connect(): the socket sends whatever
     // subscription it has as soon as it opens (see SyncSocket.connect's
     // onopen), so the list ids need to already be set before that races
@@ -195,8 +205,9 @@ export class SyncCoordinator {
     }, RECONCILE_SAFETY_INTERVAL_MS)
   }
 
-  /** Tears down every trigger and disconnects the socket. Safe to call even if start() never ran. */
+  /** Tears down every trigger and disconnects the socket. Safe to call even if start() never ran, or more than once. */
   stop(): void {
+    this.running = false
     this.unsubscribeOutbox?.()
     this.unsubscribeSyncLists?.()
     this.appStateSubscription?.remove()

@@ -122,6 +122,26 @@ describe("SyncCoordinator", () => {
     expect(flushMock).toHaveBeenCalledTimes(1)
   })
 
+  it("is idempotent: a second start() while already running does not double-register triggers", async () => {
+    jest.useFakeTimers()
+    try {
+      const coordinator = buildCoordinator()
+
+      coordinator.start()
+      coordinator.start()
+      await Promise.resolve()
+
+      expect(socketConnectMock).toHaveBeenCalledTimes(1)
+      expect(AppState.addEventListener).toHaveBeenCalledTimes(1)
+
+      flushMock.mockClear()
+      notifyOutboxChanged()
+      expect(flushMock).toHaveBeenCalledTimes(1)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
   it("wires the socket's ack messages to engine.handleAck", () => {
     buildCoordinator().start()
 
@@ -251,5 +271,17 @@ describe("SyncCoordinator", () => {
 
   it("stop() is safe to call without a prior start()", () => {
     expect(() => buildCoordinator().stop()).not.toThrow()
+  })
+
+  it("re-arms on start() after stop()", async () => {
+    const coordinator = buildCoordinator()
+    coordinator.start()
+    coordinator.stop()
+    socketConnectMock.mockClear()
+
+    coordinator.start()
+    await Promise.resolve()
+
+    expect(socketConnectMock).toHaveBeenCalledTimes(1)
   })
 })

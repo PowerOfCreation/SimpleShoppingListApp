@@ -156,6 +156,20 @@ describe("SyncClient", () => {
       expect(result.getValue()).toEqual([])
       expect(fetchMock).not.toHaveBeenCalled()
     })
+
+    it("treats a missing/unrefreshable token as retryable, without fetching", async () => {
+      mockGetValidAccessToken.mockResolvedValue(
+        Result.fail(new Error("refresh failed"))
+      )
+      const fetchMock = jest.fn()
+      const client = new SyncClient(fetchMock)
+
+      const result = await client.getKnownEventIds(["list-1"])
+
+      expect(result.success).toBe(false)
+      expect(result.getError().retryable).toBe(true)
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
   })
 
   describe("getListHeads", () => {
@@ -218,6 +232,20 @@ describe("SyncClient", () => {
 
       expect(result.success).toBe(false)
       expect(result.getError().retryable).toBe(false)
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it("treats a missing/unrefreshable token as retryable, without fetching", async () => {
+      mockGetValidAccessToken.mockResolvedValue(
+        Result.fail(new Error("refresh failed"))
+      )
+      const fetchMock = jest.fn()
+      const client = new SyncClient(fetchMock)
+
+      const result = await client.getListHeads(["list-1"])
+
+      expect(result.success).toBe(false)
+      expect(result.getError().retryable).toBe(true)
       expect(fetchMock).not.toHaveBeenCalled()
     })
   })
@@ -305,6 +333,20 @@ describe("SyncClient", () => {
 
       expect(result.success).toBe(false)
       expect(result.getError().retryable).toBe(false)
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    it("treats a missing/unrefreshable token as retryable, without fetching", async () => {
+      mockGetValidAccessToken.mockResolvedValue(
+        Result.fail(new Error("refresh failed"))
+      )
+      const fetchMock = jest.fn()
+      const client = new SyncClient(fetchMock)
+
+      const result = await client.getEventsSince("list-1", 0)
+
+      expect(result.success).toBe(false)
+      expect(result.getError().retryable).toBe(true)
       expect(fetchMock).not.toHaveBeenCalled()
     })
   })
