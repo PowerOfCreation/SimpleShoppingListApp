@@ -25,6 +25,7 @@ services:
       # locally). Required - the API refuses to start without it.
       KEYCLOAK_ISSUER: "https://sso.ops.light-dev-solutions.de/realms/user-apps"
       KEYCLOAK_CLIENT_ID: "shopping-list"
+      LOG_LEVEL: "info"
     depends_on:
       postgres:
         condition: service_healthy

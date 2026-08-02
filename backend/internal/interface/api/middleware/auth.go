@@ -3,7 +3,7 @@ package middleware
 import (
 	"context"
 	"fmt"
-	"log"
+	"log/slog"
 	"net/http"
 	"os"
 	"strings"
@@ -35,7 +35,7 @@ func Passthrough(next echo.HandlerFunc) echo.HandlerFunc {
 //
 // Does not scope data to a user yet (see sync-design-decisions.md): any
 // valid token can still read/write any known list id.
-func NewKeycloakAuth(ctx context.Context) (echo.MiddlewareFunc, error) {
+func NewKeycloakAuth(ctx context.Context, logger *slog.Logger) (echo.MiddlewareFunc, error) {
 	issuer := os.Getenv(envKeycloakIssuer)
 	clientID := os.Getenv(envKeycloakClientID)
 
@@ -49,12 +49,13 @@ func NewKeycloakAuth(ctx context.Context) (echo.MiddlewareFunc, error) {
 	}
 
 	verifier := provider.Verifier(&oidc.Config{SkipClientIDCheck: true})
-	log.Printf("auth: verifying bearer tokens against issuer %s (client %s)", issuer, clientID)
+	logger.Info("auth configured", "issuer", issuer, "client_id", clientID)
 
 	mw := func(next echo.HandlerFunc) echo.HandlerFunc {
 		return func(c echo.Context) error {
 			token, ok := bearerToken(c.Request())
 			if !ok {
+				RequestScopedLogger(logger, c).Warn("rejected request", "reason", "missing bearer token")
 				return c.JSON(http.StatusUnauthorized, map[string]string{
 					"error": "missing bearer token",
 				})
@@ -62,6 +63,7 @@ func NewKeycloakAuth(ctx context.Context) (echo.MiddlewareFunc, error) {
 
 			idToken, err := verifier.Verify(c.Request().Context(), token)
 			if err != nil {
+				RequestScopedLogger(logger, c).Warn("rejected request", "reason", "invalid token", "error", err)
 				return c.JSON(http.StatusUnauthorized, map[string]string{
 					"error": "invalid token",
 				})
@@ -70,7 +72,14 @@ func NewKeycloakAuth(ctx context.Context) (echo.MiddlewareFunc, error) {
 			var claims struct {
 				AuthorizedParty string `json:"azp"`
 			}
-			if err := idToken.Claims(&claims); err != nil || claims.AuthorizedParty != clientID {
+			if err := idToken.Claims(&claims); err != nil {
+				RequestScopedLogger(logger, c).Warn("rejected request", "reason", "failed to parse claims", "error", err)
+				return c.JSON(http.StatusUnauthorized, map[string]string{
+					"error": "invalid token",
+				})
+			}
+			if claims.AuthorizedParty != clientID {
+				RequestScopedLogger(logger, c).Warn("rejected request", "reason", "azp mismatch", "azp", claims.AuthorizedParty)
 				return c.JSON(http.StatusUnauthorized, map[string]string{
 					"error": "invalid token",
 				})

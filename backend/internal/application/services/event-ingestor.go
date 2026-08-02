@@ -2,7 +2,7 @@ package services
 
 import (
 	"context"
-	"log"
+	"log/slog"
 	"sync"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/interfaces"
@@ -38,6 +38,7 @@ type realtimePublisher interface {
 // simply queued behind the first, which will have finished (successfully
 // or not) by the time the worker gets to it.
 type EventIngestor struct {
+	logger     *slog.Logger
 	eventRepo  repositories.EventRepository
 	dispatcher *EventDispatcher
 	publisher  realtimePublisher
@@ -47,11 +48,13 @@ type EventIngestor struct {
 }
 
 func NewEventIngestor(
+	logger *slog.Logger,
 	eventRepo repositories.EventRepository,
 	dispatcher *EventDispatcher,
 	publisher realtimePublisher,
 ) *EventIngestor {
 	return &EventIngestor{
+		logger:     logger,
 		eventRepo:  eventRepo,
 		dispatcher: dispatcher,
 		publisher:  publisher,
@@ -106,7 +109,7 @@ func (ing *EventIngestor) Stop() {
 func (ing *EventIngestor) sweepUnprocessed(ctx context.Context) {
 	unprocessed, err := ing.eventRepo.FindUnprocessed(ctx)
 	if err != nil {
-		log.Printf("event-ingestor: failed to sweep unprocessed events: %v", err)
+		ing.logger.Error("failed to sweep unprocessed events", "error", err)
 		return
 	}
 	for _, event := range unprocessed {
@@ -117,7 +120,7 @@ func (ing *EventIngestor) sweepUnprocessed(ctx context.Context) {
 func (ing *EventIngestor) process(ctx context.Context, event *repositories.StoredEvent) {
 	alreadyProcessed, seq, _, err := ing.eventRepo.Insert(ctx, event)
 	if err != nil {
-		log.Printf("event-ingestor: failed to insert event %s: %v", event.EventID, err)
+		ing.logger.Error("failed to insert event", "event_id", event.EventID, "error", err)
 		return
 	}
 	if alreadyProcessed {
@@ -142,15 +145,15 @@ func (ing *EventIngestor) dispatchAndAck(ctx context.Context, event *repositorie
 	// received", so it's still marked processed and acked. Only handled
 	// types that error should stay unprocessed for a retry.
 	if err := ing.dispatcher.Dispatch(ctx, event.EventType, event.AggregateID, event.Payload); err != nil {
-		log.Printf(
-			"event-ingestor: failed to dispatch event %s (%s): %v",
-			event.EventID, event.EventType, err,
+		ing.logger.Error(
+			"failed to dispatch event",
+			"event_id", event.EventID, "event_type", event.EventType, "error", err,
 		)
 		return
 	}
 	seq, listID, err := ing.eventRepo.MarkProcessed(ctx, event.EventID)
 	if err != nil {
-		log.Printf("event-ingestor: failed to mark event %s processed: %v", event.EventID, err)
+		ing.logger.Error("failed to mark event processed", "event_id", event.EventID, "error", err)
 		return
 	}
 	ing.publisher.PublishAck(event.ClientID, event.EventID, seq)

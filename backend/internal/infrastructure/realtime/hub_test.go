@@ -1,6 +1,7 @@
 package realtime
 
 import (
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -12,6 +13,10 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func testLogger() *slog.Logger {
+	return slog.New(slog.DiscardHandler)
+}
 
 // startTestServer wires the hub behind a plain net/http (not Echo) upgrade
 // handler - the hub's contract doesn't depend on Echo, and this keeps the
@@ -43,7 +48,7 @@ func dial(t *testing.T, server *httptest.Server, clientID string) *websocket.Con
 }
 
 func TestHub_PublishAck_DeliversToConnectedClient(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(testLogger())
 	server := startTestServer(t, hub)
 	conn := dial(t, server, "client-1")
 
@@ -63,7 +68,7 @@ func TestHub_PublishAck_DeliversToConnectedClient(t *testing.T) {
 }
 
 func TestHub_PublishAck_NoConnectedClientIsANoOp(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(testLogger())
 
 	assert.NotPanics(t, func() {
 		hub.PublishAck("nobody-home", uuid.New(), 1)
@@ -71,7 +76,7 @@ func TestHub_PublishAck_NoConnectedClientIsANoOp(t *testing.T) {
 }
 
 func TestHub_PublishAck_FansOutToEveryConnectionOfTheSameClient(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(testLogger())
 	server := startTestServer(t, hub)
 	connA := dial(t, server, "client-1")
 	connB := dial(t, server, "client-1")
@@ -92,7 +97,7 @@ func TestHub_PublishAck_FansOutToEveryConnectionOfTheSameClient(t *testing.T) {
 }
 
 func TestHub_PingIsAnsweredWithPong(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(testLogger())
 	server := startTestServer(t, hub)
 	conn := dial(t, server, "client-1")
 
@@ -112,7 +117,7 @@ func TestHub_PingIsAnsweredWithPong(t *testing.T) {
 // re-registered - would wipe out the new connection too, and acks would
 // go nowhere until the next reconnect.
 func TestHub_ReconnectDoesNotLoseTheNewConnection(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(testLogger())
 
 	oldConn := newConnection(&websocket.Conn{})
 	hub.register("client-1", oldConn)
@@ -130,7 +135,7 @@ func TestHub_ReconnectDoesNotLoseTheNewConnection(t *testing.T) {
 }
 
 func TestHub_UnregisterRemovesTheClientEntryOnceEmpty(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(testLogger())
 	conn := newConnection(&websocket.Conn{})
 	hub.register("client-1", conn)
 
@@ -143,7 +148,7 @@ func TestHub_UnregisterRemovesTheClientEntryOnceEmpty(t *testing.T) {
 }
 
 func TestHub_PublishListEvent_DeliversToASubscriber(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(testLogger())
 	server := startTestServer(t, hub)
 	conn := dial(t, server, "client-1")
 	listID := uuid.New()
@@ -167,7 +172,7 @@ func TestHub_PublishListEvent_DeliversToASubscriber(t *testing.T) {
 }
 
 func TestHub_PublishListEvent_NoSubscriberIsANoOp(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(testLogger())
 
 	assert.NotPanics(t, func() {
 		hub.PublishListEvent(uuid.New(), 1)
@@ -175,7 +180,7 @@ func TestHub_PublishListEvent_NoSubscriberIsANoOp(t *testing.T) {
 }
 
 func TestHub_PublishListEvent_DoesNotReachAConnectionSubscribedToAnotherList(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(testLogger())
 	server := startTestServer(t, hub)
 	subscribed := dial(t, server, "client-1")
 	other := dial(t, server, "client-2")
@@ -209,7 +214,7 @@ func TestHub_PublishListEvent_DoesNotReachAConnectionSubscribedToAnotherList(t *
 }
 
 func TestHub_Subscribe_ReplacesRatherThanAccumulatesPreviousSubscriptions(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(testLogger())
 	conn := newConnection(&websocket.Conn{})
 	listA := uuid.New()
 	listB := uuid.New()
@@ -222,7 +227,7 @@ func TestHub_Subscribe_ReplacesRatherThanAccumulatesPreviousSubscriptions(t *tes
 }
 
 func TestHub_Unregister_RemovesTheConnectionsSubscriptions(t *testing.T) {
-	hub := NewHub()
+	hub := NewHub(testLogger())
 	conn := newConnection(&websocket.Conn{})
 	listID := uuid.New()
 	hub.register("client-1", conn)

@@ -1,19 +1,22 @@
 package rest
 
 import (
+	"log/slog"
 	"net/http"
 
 	"github.com/labstack/echo/v4"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/services"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/rest/dto/request"
 )
 
 type EventController struct {
+	logger   *slog.Logger
 	ingestor *services.EventIngestor
 }
 
-func NewEventController(e *echo.Echo, ingestor *services.EventIngestor, authMW echo.MiddlewareFunc) *EventController {
-	controller := &EventController{ingestor: ingestor}
+func NewEventController(e *echo.Echo, logger *slog.Logger, ingestor *services.EventIngestor, authMW echo.MiddlewareFunc) *EventController {
+	controller := &EventController{logger: logger, ingestor: ingestor}
 	e.POST("/api/v1/events", controller.SyncEvents, authMW)
 	return controller
 }
@@ -38,6 +41,7 @@ func (ec *EventController) SyncEvents(c echo.Context) error {
 	ctx := c.Request().Context()
 	for _, event := range events {
 		if err := ec.ingestor.Enqueue(ctx, event.ToStoredEvent()); err != nil {
+			middleware.RequestScopedLogger(ec.logger, c).Error("failed to queue event", "event_id", event.EventID, "error", err)
 			return c.JSON(http.StatusInternalServerError, map[string]string{
 				"error": "Failed to queue event",
 			})

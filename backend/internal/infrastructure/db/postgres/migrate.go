@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
-	"log"
+	"log/slog"
 	"sort"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -33,7 +33,7 @@ const advisoryLockKey = int64(-8876109641015196089)
 // schema_migrations, or it is rolled back entirely and not recorded.
 // Already-applied versions are skipped, so Migrate is safe to run on every
 // startup.
-func Migrate(ctx context.Context, pool *pgxpool.Pool, sqlFS fs.FS) error {
+func Migrate(ctx context.Context, logger *slog.Logger, pool *pgxpool.Pool, sqlFS fs.FS) error {
 	// One dedicated connection for the whole run so the advisory lock and
 	// the migrations live on the same session.
 	conn, err := pool.Acquire(ctx)
@@ -74,11 +74,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, sqlFS fs.FS) error {
 		appliedCount++
 	}
 
-	if appliedCount == 0 {
-		log.Printf("migrate: schema up to date (%d migrations applied)", len(names))
-	} else {
-		log.Printf("migrate: applied %d migration(s)", appliedCount)
-	}
+	logger.Info("migrations applied", "applied_count", appliedCount, "total_count", len(names))
 	return nil
 }
 

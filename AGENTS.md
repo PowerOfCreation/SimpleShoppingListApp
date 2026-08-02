@@ -46,6 +46,7 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
 - **sqlc workflow:** edit `sql/queries/*.sql`, run `sqlc generate`, implement in `postgres/`. Never edit `internal/infrastructure/db/sqlc/` manually.
 - **Events:** `EventDispatcher` routes by `event_type` string; unknown types silently ignored (forward compat).
 - **Testing:** real Postgres via testcontainers (`testhelpers.SetupTestDB(t)`), no DB mocking; Docker must be running.
+- **Logging:** structured JSON via `log/slog` (`internal/infrastructure/logging`), stdout, level via `LOG_LEVEL`. Logger is passed by constructor DI, never a global — every service/controller that logs takes a `*slog.Logger` param. No `log.Printf`/`fmt.Print*`.
 
 ## Architecture notes
 

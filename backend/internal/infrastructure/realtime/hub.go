@@ -1,7 +1,7 @@
 package realtime
 
 import (
-	"log"
+	"log/slog"
 	"sync"
 	"time"
 
@@ -49,6 +49,7 @@ func (c *connection) writeJSON(v any) error {
 // alone would delete the new connection instead of the dead one. List
 // subscriptions follow the same by-pointer discipline for the same reason.
 type Hub struct {
+	logger  *slog.Logger
 	mu      sync.RWMutex
 	clients map[string]map[*connection]struct{}
 	// subscriptions maps list_id -> the connections subscribed to it.
@@ -59,8 +60,9 @@ type Hub struct {
 	subscribedLists map[*connection]map[uuid.UUID]struct{}
 }
 
-func NewHub() *Hub {
+func NewHub(logger *slog.Logger) *Hub {
 	return &Hub{
+		logger:          logger,
 		clients:         make(map[string]map[*connection]struct{}),
 		subscriptions:   make(map[uuid.UUID]map[*connection]struct{}),
 		subscribedLists: make(map[*connection]map[uuid.UUID]struct{}),
@@ -151,7 +153,9 @@ func (h *Hub) PublishAck(clientID string, eventID uuid.UUID, seq int64) {
 	msg := map[string]any{"type": "ack", "event_id": eventID.String(), "seq": seq}
 	for _, conn := range h.connectionsFor(clientID) {
 		if err := conn.writeJSON(msg); err != nil {
-			log.Printf("realtime: failed to send ack to client %s: %v", clientID, err)
+			// Warn, not Error: a client that disconnected mid-send is
+			// expected, not a server fault.
+			h.logger.Warn("failed to send ack", "client_id", clientID, "event_id", eventID, "error", err)
 		}
 	}
 }
@@ -164,7 +168,7 @@ func (h *Hub) PublishListEvent(listID uuid.UUID, seq int64) {
 	msg := map[string]any{"type": "event", "list_id": listID.String(), "seq": seq}
 	for _, conn := range h.subscribersFor(listID) {
 		if err := conn.writeJSON(msg); err != nil {
-			log.Printf("realtime: failed to send list event for %s: %v", listID, err)
+			h.logger.Warn("failed to send list event", "list_id", listID, "seq", seq, "error", err)
 		}
 	}
 }
@@ -176,15 +180,20 @@ func (h *Hub) PublishListEvent(listID uuid.UUID, seq int64) {
 func (h *Hub) Serve(clientID string, ws *websocket.Conn) {
 	conn := newConnection(ws)
 	h.register(clientID, conn)
+	h.logger.Debug("connection registered", "client_id", clientID)
 	defer func() {
 		h.unregister(clientID, conn)
 		_ = ws.Close()
+		h.logger.Debug("connection closed", "client_id", clientID)
 	}()
 
 	_ = ws.SetReadDeadline(time.Now().Add(readDeadline))
 	for {
 		var msg map[string]any
 		if err := ws.ReadJSON(&msg); err != nil {
+			// Debug, not Warn/Error: a client going away (app backgrounded,
+			// network drop) is the normal way this loop ends.
+			h.logger.Debug("read loop ended", "client_id", clientID, "error", err)
 			return
 		}
 		_ = ws.SetReadDeadline(time.Now().Add(readDeadline))
@@ -192,10 +201,13 @@ func (h *Hub) Serve(clientID string, ws *websocket.Conn) {
 		switch msg["type"] {
 		case "ping":
 			if err := conn.writeJSON(map[string]string{"type": "pong"}); err != nil {
+				h.logger.Debug("failed to send pong", "client_id", clientID, "error", err)
 				return
 			}
 		case "subscribe":
-			h.subscribe(conn, parseListIDs(msg["list_ids"]))
+			listIDs := parseListIDs(msg["list_ids"])
+			h.subscribe(conn, listIDs)
+			h.logger.Debug("subscribed", "client_id", clientID, "list_count", len(listIDs))
 		}
 	}
 }

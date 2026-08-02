@@ -1,12 +1,14 @@
 package rest
 
 import (
+	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/rest/dto/mapper"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/rest/dto/request"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/rest/dto/response"
@@ -18,15 +20,17 @@ const (
 )
 
 type SyncPullController struct {
+	logger    *slog.Logger
 	eventRepo repositories.EventRepository
 }
 
 func NewSyncPullController(
 	e *echo.Echo,
+	logger *slog.Logger,
 	eventRepo repositories.EventRepository,
 	authMW echo.MiddlewareFunc,
 ) *SyncPullController {
-	controller := &SyncPullController{eventRepo: eventRepo}
+	controller := &SyncPullController{logger: logger, eventRepo: eventRepo}
 	e.POST("/api/v1/sync/head", controller.GetHead, authMW)
 	e.GET("/api/v1/sync/events", controller.GetEvents, authMW)
 	return controller
@@ -56,6 +60,7 @@ func (spc *SyncPullController) GetHead(c echo.Context) error {
 
 	heads, err := spc.eventRepo.FindListHeads(c.Request().Context(), req.ListIDs)
 	if err != nil {
+		middleware.RequestScopedLogger(spc.logger, c).Error("failed to look up list heads", "list_ids", req.ListIDs, "error", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to look up list heads",
 		})
@@ -121,6 +126,9 @@ func (spc *SyncPullController) GetEvents(c echo.Context) error {
 
 	events, err := spc.eventRepo.FindEventsSince(c.Request().Context(), listID, sinceSeq, limit)
 	if err != nil {
+		middleware.RequestScopedLogger(spc.logger, c).Error(
+			"failed to load events", "list_id", listID, "since_seq", sinceSeq, "error", err,
+		)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to load events",
 		})

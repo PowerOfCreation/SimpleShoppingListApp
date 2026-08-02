@@ -77,7 +77,7 @@ func TestSyncPullController_GetHead_EveryRequestedListIDAppearsInTheResponse(t *
 	}
 
 	e := echo.New()
-	NewSyncPullController(e, repo, middleware.Passthrough)
+	NewSyncPullController(e, testLogger(), repo, middleware.Passthrough)
 
 	body := fmt.Sprintf(`{"list_ids":["%s","%s"]}`, knownList, unknownList)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/head", strings.NewReader(body))
@@ -96,7 +96,7 @@ func TestSyncPullController_GetHead_EveryRequestedListIDAppearsInTheResponse(t *
 func TestSyncPullController_GetHead_MalformedBodyReturns400(t *testing.T) {
 	repo := &stubPullEventRepository{}
 	e := echo.New()
-	NewSyncPullController(e, repo, middleware.Passthrough)
+	NewSyncPullController(e, testLogger(), repo, middleware.Passthrough)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/head", strings.NewReader(`{not valid`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -110,7 +110,7 @@ func TestSyncPullController_GetHead_MalformedBodyReturns400(t *testing.T) {
 func TestSyncPullController_GetHead_TooManyListIDsReturns400(t *testing.T) {
 	repo := &stubPullEventRepository{}
 	e := echo.New()
-	NewSyncPullController(e, repo, middleware.Passthrough)
+	NewSyncPullController(e, testLogger(), repo, middleware.Passthrough)
 
 	ids := make([]string, maxSyncListIDs+1)
 	for i := range ids {
@@ -134,7 +134,7 @@ func TestSyncPullController_GetHead_RepositoryErrorReturns500(t *testing.T) {
 		},
 	}
 	e := echo.New()
-	NewSyncPullController(e, repo, middleware.Passthrough)
+	NewSyncPullController(e, testLogger(), repo, middleware.Passthrough)
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/head", strings.NewReader(`{"list_ids":[]}`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -148,7 +148,7 @@ func TestSyncPullController_GetHead_RepositoryErrorReturns500(t *testing.T) {
 func TestSyncPullController_GetEvents_MissingListIDReturns400(t *testing.T) {
 	repo := &stubPullEventRepository{}
 	e := echo.New()
-	NewSyncPullController(e, repo, middleware.Passthrough)
+	NewSyncPullController(e, testLogger(), repo, middleware.Passthrough)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/events", nil)
 	rec := httptest.NewRecorder()
@@ -161,7 +161,7 @@ func TestSyncPullController_GetEvents_MissingListIDReturns400(t *testing.T) {
 func TestSyncPullController_GetEvents_InvalidListIDReturns400(t *testing.T) {
 	repo := &stubPullEventRepository{}
 	e := echo.New()
-	NewSyncPullController(e, repo, middleware.Passthrough)
+	NewSyncPullController(e, testLogger(), repo, middleware.Passthrough)
 
 	req := httptest.NewRequest(http.MethodGet, "/api/v1/sync/events?list_id=not-a-uuid", nil)
 	rec := httptest.NewRecorder()
@@ -174,7 +174,7 @@ func TestSyncPullController_GetEvents_InvalidListIDReturns400(t *testing.T) {
 func TestSyncPullController_GetEvents_InvalidSinceSeqReturns400(t *testing.T) {
 	repo := &stubPullEventRepository{}
 	e := echo.New()
-	NewSyncPullController(e, repo, middleware.Passthrough)
+	NewSyncPullController(e, testLogger(), repo, middleware.Passthrough)
 
 	listID := uuid.New()
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/sync/events?list_id=%s&since_seq=not-a-number", listID), nil)
@@ -188,7 +188,7 @@ func TestSyncPullController_GetEvents_InvalidSinceSeqReturns400(t *testing.T) {
 func TestSyncPullController_GetEvents_InvalidLimitReturns400(t *testing.T) {
 	repo := &stubPullEventRepository{}
 	e := echo.New()
-	NewSyncPullController(e, repo, middleware.Passthrough)
+	NewSyncPullController(e, testLogger(), repo, middleware.Passthrough)
 
 	listID := uuid.New()
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/sync/events?list_id=%s&limit=0", listID), nil)
@@ -223,7 +223,7 @@ func TestSyncPullController_GetEvents_HasMoreWhenPageIsFull(t *testing.T) {
 	}
 
 	e := echo.New()
-	NewSyncPullController(e, repo, middleware.Passthrough)
+	NewSyncPullController(e, testLogger(), repo, middleware.Passthrough)
 
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/sync/events?list_id=%s&limit=1", listID), nil)
 	rec := httptest.NewRecorder()
@@ -254,7 +254,7 @@ func TestSyncPullController_GetEvents_NoMoreWhenPageIsShort(t *testing.T) {
 	}
 
 	e := echo.New()
-	NewSyncPullController(e, repo, middleware.Passthrough)
+	NewSyncPullController(e, testLogger(), repo, middleware.Passthrough)
 
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/sync/events?list_id=%s", listID), nil)
 	rec := httptest.NewRecorder()
@@ -277,7 +277,7 @@ func TestSyncPullController_GetEvents_ClampsLimitAboveTheMax(t *testing.T) {
 	}
 
 	e := echo.New()
-	NewSyncPullController(e, repo, middleware.Passthrough)
+	NewSyncPullController(e, testLogger(), repo, middleware.Passthrough)
 
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/sync/events?list_id=%s&limit=10000", listID), nil)
 	rec := httptest.NewRecorder()
@@ -296,7 +296,7 @@ func TestSyncPullController_GetEvents_RepositoryErrorReturns500(t *testing.T) {
 	}
 
 	e := echo.New()
-	NewSyncPullController(e, repo, middleware.Passthrough)
+	NewSyncPullController(e, testLogger(), repo, middleware.Passthrough)
 
 	req := httptest.NewRequest(http.MethodGet, fmt.Sprintf("/api/v1/sync/events?list_id=%s", uuid.New()), nil)
 	rec := httptest.NewRecorder()
