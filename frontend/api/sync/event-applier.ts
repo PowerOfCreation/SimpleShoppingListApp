@@ -13,21 +13,15 @@ import { notifyListDataChanged } from "@/api/sync/sync-events"
 const logger = createLogger("EventApplier")
 
 /**
- * Applies one page of pulled events to local state, atomically: insert the
- * new event rows, rebuild the affected list's projection from its full
- * merged history, and advance the pull cursor - all in a single
- * transaction, so a crash partway through can never leave the cursor
- * ahead of what the projection actually reflects. Also handles the ack
- * side of the same problem (rebuildForAck): our own pushed event getting a
- * seq can reshuffle replay order too, just without a cursor to advance.
+ * Applies one page of pulled events atomically: insert the new event rows,
+ * rebuild the affected list's projections from full merged history, and
+ * advance the pull cursor - all in one transaction, so a crash partway
+ * through can't leave the cursor ahead of the projection. rebuildForAck
+ * handles the same reshuffle for our own acked pushes, minus the cursor.
  *
- * This intentionally does not extend BaseRepository: it orchestrates
- * several collaborators (event log, two projections, the cursor) around
- * hand-managed transactions rather than owning a single table, and
- * BaseRepository's _executeTransaction goes through runExclusive itself -
- * nesting that here would deadlock (the inner call would wait on the
- * queue slot the outer call is still occupying). Every collaborator method
- * called from inside a transaction here is therefore one that takes an
+ * Doesn't extend BaseRepository: its _executeTransaction goes through
+ * runExclusive itself, and nesting that here would deadlock. Every
+ * collaborator called inside a transaction here therefore takes an
  * explicit `db` handle and opens no transaction of its own (insertRemote,
  * rebuildForList, setWithin) - see write-lock.ts.
  */
@@ -95,11 +89,8 @@ export class EventApplier {
 
   /**
    * Rebuilds one list's projections after one of our own pushed events got
-   * its server seq (see SyncEngine.handleAck) - that event just moved from
-   * the unconfirmed tail into the confirmed order, which can reshuffle
-   * replay order the same way a pull would. Unlike apply(), there's no
-   * cursor to advance and no new rows to insert; the event was already
-   * here.
+   * its seq (see SyncEngine.handleAck) - same reshuffle as apply(), but no
+   * cursor to advance and nothing new to insert.
    */
   async rebuildForAck(listId: string): Promise<Result<void, DbQueryError>> {
     try {

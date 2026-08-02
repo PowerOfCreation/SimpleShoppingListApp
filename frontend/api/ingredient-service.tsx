@@ -1,3 +1,4 @@
+import { SQLiteDatabase } from "expo-sqlite"
 import { Ingredient } from "@/types/Ingredient"
 import "react-native-get-random-values"
 import { v4 as uuidv4 } from "uuid"
@@ -45,6 +46,29 @@ export class IngredientService {
       : false
   }
 
+  /**
+   * Appends one event (with its projection), enqueueing it for sync if the
+   * list has sync enabled - the resolveSyncEnabled -> appendAll ->
+   * notifyOutboxChanged sequence shared by every ingredient mutation.
+   */
+  private async appendEvent(
+    listId: string,
+    event: DomainEventRow,
+    project: (db: SQLiteDatabase) => Promise<void>
+  ): Promise<Result<void, DbQueryError>> {
+    const syncEnabled = await this.resolveSyncEnabled(listId)
+    const result = await this.eventRepository.appendAll([
+      { event, project, enqueueForSync: syncEnabled },
+    ])
+    if (!result.success) {
+      return result
+    }
+    if (syncEnabled) {
+      notifyOutboxChanged()
+    }
+    return Result.ok(undefined)
+  }
+
   async GetIngredients(
     listId: string
   ): Promise<Result<Ingredient[], DbQueryError>> {
@@ -86,7 +110,6 @@ export class IngredientService {
     try {
       const now = Date.now()
       const ingredientId = uuidv4()
-      const syncEnabled = await this.resolveSyncEnabled(listId)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_CREATED,
@@ -99,21 +122,13 @@ export class IngredientService {
         seq: null,
       }
 
-      const result = await this.eventRepository.appendAll([
-        {
-          event,
-          project: (db) => this.projection.handleCreated(db, event),
-          enqueueForSync: syncEnabled,
-        },
-      ])
+      const result = await this.appendEvent(listId, event, (db) =>
+        this.projection.handleCreated(db, event)
+      )
 
       if (!result.success) {
         logger.error("Error adding ingredient", result.getError())
         return Result.fail(result.getError())
-      }
-
-      if (syncEnabled) {
-        notifyOutboxChanged()
       }
 
       const newIngredient: Ingredient = {
@@ -148,7 +163,6 @@ export class IngredientService {
     try {
       const now = Date.now()
       const completedAt = completed ? now : null
-      const syncEnabled = await this.resolveSyncEnabled(listId)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_UPDATED,
@@ -161,13 +175,9 @@ export class IngredientService {
         seq: null,
       }
 
-      const result = await this.eventRepository.appendAll([
-        {
-          event,
-          project: (db) => this.projection.handleUpdated(db, event),
-          enqueueForSync: syncEnabled,
-        },
-      ])
+      const result = await this.appendEvent(listId, event, (db) =>
+        this.projection.handleUpdated(db, event)
+      )
 
       if (!result.success) {
         logger.error(
@@ -175,10 +185,6 @@ export class IngredientService {
           result.getError()
         )
         return result
-      }
-
-      if (syncEnabled) {
-        notifyOutboxChanged()
       }
 
       const index = this.ingredients.findIndex((ing) => ing.id === id)
@@ -217,7 +223,6 @@ export class IngredientService {
 
     try {
       const now = Date.now()
-      const syncEnabled = await this.resolveSyncEnabled(listId)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_UPDATED,
@@ -230,13 +235,9 @@ export class IngredientService {
         seq: null,
       }
 
-      const result = await this.eventRepository.appendAll([
-        {
-          event,
-          project: (db) => this.projection.handleUpdated(db, event),
-          enqueueForSync: syncEnabled,
-        },
-      ])
+      const result = await this.appendEvent(listId, event, (db) =>
+        this.projection.handleUpdated(db, event)
+      )
 
       if (!result.success) {
         logger.error(
@@ -244,10 +245,6 @@ export class IngredientService {
           result.getError()
         )
         return result
-      }
-
-      if (syncEnabled) {
-        notifyOutboxChanged()
       }
 
       const index = this.ingredients.findIndex((ing) => ing.id === id)
@@ -282,7 +279,6 @@ export class IngredientService {
 
     try {
       const now = Date.now()
-      const syncEnabled = await this.resolveSyncEnabled(listId)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_PRIORITY_SET,
@@ -295,13 +291,9 @@ export class IngredientService {
         seq: null,
       }
 
-      const result = await this.eventRepository.appendAll([
-        {
-          event,
-          project: (db) => this.projection.handlePrioritySet(db, event),
-          enqueueForSync: syncEnabled,
-        },
-      ])
+      const result = await this.appendEvent(listId, event, (db) =>
+        this.projection.handlePrioritySet(db, event)
+      )
 
       if (!result.success) {
         logger.error(
@@ -309,10 +301,6 @@ export class IngredientService {
           result.getError()
         )
         return result
-      }
-
-      if (syncEnabled) {
-        notifyOutboxChanged()
       }
 
       const index = this.ingredients.findIndex((ing) => ing.id === id)
@@ -341,7 +329,6 @@ export class IngredientService {
   ): Promise<Result<void, DbQueryError>> {
     try {
       const now = Date.now()
-      const syncEnabled = await this.resolveSyncEnabled(listId)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_PRIORITY_CLEARED,
@@ -354,13 +341,9 @@ export class IngredientService {
         seq: null,
       }
 
-      const result = await this.eventRepository.appendAll([
-        {
-          event,
-          project: (db) => this.projection.handlePriorityCleared(db, event),
-          enqueueForSync: syncEnabled,
-        },
-      ])
+      const result = await this.appendEvent(listId, event, (db) =>
+        this.projection.handlePriorityCleared(db, event)
+      )
 
       if (!result.success) {
         logger.error(
@@ -368,10 +351,6 @@ export class IngredientService {
           result.getError()
         )
         return result
-      }
-
-      if (syncEnabled) {
-        notifyOutboxChanged()
       }
 
       const index = this.ingredients.findIndex((ing) => ing.id === id)
@@ -399,7 +378,6 @@ export class IngredientService {
     listId: string
   ): Promise<Result<void, DbQueryError>> {
     try {
-      const syncEnabled = await this.resolveSyncEnabled(listId)
       const event: DomainEventRow = {
         event_id: uuidv4(),
         event_type: EventTypes.INGREDIENT_DELETED,
@@ -412,21 +390,13 @@ export class IngredientService {
         seq: null,
       }
 
-      const result = await this.eventRepository.appendAll([
-        {
-          event,
-          project: (db) => this.projection.handleDeleted(db, event),
-          enqueueForSync: syncEnabled,
-        },
-      ])
+      const result = await this.appendEvent(listId, event, (db) =>
+        this.projection.handleDeleted(db, event)
+      )
 
       if (!result.success) {
         logger.error(`Error deleting ingredient ${id}`, result.getError())
         return result
-      }
-
-      if (syncEnabled) {
-        notifyOutboxChanged()
       }
 
       const index = this.ingredients.findIndex((ing) => ing.id === id)

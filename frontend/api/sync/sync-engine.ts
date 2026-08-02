@@ -10,10 +10,8 @@ const logger = createLogger("SyncEngine")
 
 const DEFAULT_BATCH_LIMIT = 50
 const DEFAULT_PULL_PAGE_LIMIT = 200
-// Mirrors the backend's maxSyncListIDs cap on /api/v1/sync/state - nobody
-// realistically has this many synced lists, but the cap is enforced
-// server-side regardless, so chunk defensively rather than ever risk a
-// rejected reconcile call.
+// Mirrors the backend's maxSyncListIDs cap on /api/v1/sync/state; chunk
+// defensively rather than risk a rejected reconcile call.
 const MAX_RECONCILE_LIST_IDS = 200
 
 function chunk<T>(items: T[], size: number): T[][] {
@@ -24,23 +22,16 @@ function chunk<T>(items: T[], size: number): T[][] {
   return chunks
 }
 
-// Caps how many pages a single flush() call will drain before yielding,
-// so an unusually large backlog (e.g. hours offline with sync on) can't
-// starve the rest of the app on one call - the next trigger (outbox
-// change, foreground, safety interval, ack) continues where this left off.
-// 20 batches * 50 events/batch = 1000 events per flush() call.
+// Safety valve so one flush() call can't be starved by an unbounded
+// backlog; the next trigger continues the drain. See flush()'s doc comment
+// and sync-design-decisions.md.
 export const MAX_DRAIN_BATCHES = 20
 
 /**
  * Orchestrates getting outbox rows to the server and reconciling local
- * belief with server reality.
- *
- * Deliberately does not persist an in-flight/"sent" status anywhere - see
- * outbox-repository.ts for why. A row only ever moves out of "pending" via
- * handleAck (a WebSocket ack, meaning the server actually committed it) or
- * via reconcile confirming the server already has it. A successful POST by
- * itself proves nothing beyond "the server accepted the batch to process
- * later", so flush() never marks anything synced.
+ * belief with server reality. Never marks a row synced on POST alone -
+ * only handleAck (a WebSocket ack) or reconcile confirms it landed. See
+ * sync-design-decisions.md ("Kein persistierter 'sent'-Zustand").
  */
 export class SyncEngine {
   private readonly inFlight = new Set<string>()
@@ -57,19 +48,12 @@ export class SyncEngine {
   ) {}
 
   /**
-   * Drains the outbox a page at a time (via getPending's keyset
-   * pagination), not just one page - the previous behaviour of sending a
-   * single 50-row page per call meant a large backlog (e.g. hours offline
-   * with a big list synced) only shrank by one page per unrelated trigger
-   * (foreground, outbox change, safety interval), and a naive `while
-   * (pending.length > 0)` loop can't terminate here since rows only leave
-   * "pending" via an ack or reconcile, never as a side effect of sending -
-   * the keyset cursor (not row status) is what proves progress.
-   *
-   * Stops when a short page proves the backlog is drained, when sending
-   * fails (no point hammering a network/server that just rejected us - the
-   * next trigger picks up from here), or after MAX_DRAIN_BATCHES pages as a
-   * safety valve.
+   * Drains the outbox via getPending's keyset pagination, not a naive
+   * `while (pending.length > 0)` loop - rows never leave "pending" as a
+   * side effect of sending, only via ack/reconcile, so the keyset cursor
+   * (not row status) is what proves progress. Stops on a short page, a
+   * send failure, or after MAX_DRAIN_BATCHES pages. See
+   * sync-design-decisions.md.
    */
   async flush(): Promise<void> {
     if (this.flushing) {
@@ -98,9 +82,8 @@ export class SyncEngine {
         if (page.length === 0) {
           return
         }
-        // Advance the cursor from the full page, independent of the
-        // inFlight filter below, so pagination can't stall on a row that
-        // happens to already be in flight.
+        // Advance from the full page, not the inFlight-filtered one below,
+        // so pagination can't stall on a row already in flight.
         after = page[page.length - 1].event_id
 
         const pending = page.filter((row) => !this.inFlight.has(row.event_id))
@@ -152,11 +135,10 @@ export class SyncEngine {
   }
 
   /**
-   * The server confirmed (via WebSocket) that this event actually
-   * committed, at position `seq`. Besides marking the outbox row synced,
-   * that seq moves the event from the unconfirmed local tail into the
-   * confirmed replay order (see byServerSeqThenLocal) - skipped for a
-   * resent ack, which finds the event already positioned.
+   * The server confirmed (via WebSocket) that this event committed, at
+   * position `seq`. Marks the outbox row synced and, for a first-time ack,
+   * records the seq and rebuilds the affected list (byServerSeqThenLocal).
+   * See sync-design-decisions.md ("Ack trägt seq mit").
    */
   async handleAck(eventId: string, seq: number): Promise<void> {
     const result = await this.outboxRepository.markSynced(eventId)
@@ -201,19 +183,11 @@ export class SyncEngine {
   }
 
   /**
-   * Self-heal: for the given (sync-enabled) list ids, compares the
-   * syncable events we have locally against what the server reports it
-   * durably holds. Anything missing from the server is queued (or
-   * re-queued, if the local outbox already thought it was synced) and
-   * flushed immediately - this is what recovers from a lost ack, an app
-   * kill between send and ack, or the server losing data it had
-   * previously acked.
-   *
-   * Keyed by list_id, not aggregate_id: aggregate_id is the ingredient id
-   * for ingredient.* events, so a client would otherwise have to enumerate
-   * every ingredient id in a list instead of the one list_id it already
-   * has (see /api/v1/sync/state's clean break to list_ids and
-   * sync-design-decisions.md).
+   * Self-heal: compares the syncable events we hold locally for these
+   * (sync-enabled) lists against what the server durably holds, re-queues
+   * anything missing, and flushes - recovers from a lost ack, an app kill
+   * between send and ack, or the server losing previously-acked data.
+   * Keyed by list_id, not aggregate_id - see sync-design-decisions.md.
    */
   async reconcile(listIds: string[]): Promise<void> {
     if (listIds.length === 0) {
@@ -271,13 +245,9 @@ export class SyncEngine {
   }
 
   /**
-   * The pull decision point: for each sync-enabled list, compares the
-   * server's head (fetched in one batched request) against our locally
-   * stored cursor, and pulls whatever's missing. Always finishes with a
-   * flush() - pull runs first so local state reflects remote before
-   * anything new goes out, but a list that's already caught up on pull
-   * still needs its pending outbox rows (new local writes, or another
-   * list's toggle-sync-on replay) pushed.
+   * For each sync-enabled list, compares the server's head against our
+   * local cursor and pulls whatever's missing, then flushes - pull runs
+   * first so local state reflects remote before anything new goes out.
    */
   async pull(listIds: string[]): Promise<void> {
     if (listIds.length === 0) {

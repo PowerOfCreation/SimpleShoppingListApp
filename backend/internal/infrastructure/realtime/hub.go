@@ -38,24 +38,16 @@ func (c *connection) writeJSON(v any) error {
 }
 
 // Hub fans out acks (by client_id) and list-event notifications (by
-// list_id, via subscribe) to connections.
+// list_id, via subscribe) to connections. Not user-scoped (no
+// auth/user-scoping exists yet) - same trust boundary as the REST
+// endpoints, not a new one. See sync-design-decisions.md.
 //
-// Deliberately not scoped by user (no auth/user-scoping exists yet - see
-// the sync design doc): every ack is only ever meaningful to a client that
-// already knows the event_id it's for, so broadcasting within a client_id
-// is safe, and subscribing to a list_id requires already knowing that
-// list's UUID - the same (missing) trust boundary as the REST endpoints,
-// not a new one. Once user-scoping lands, both become user-scoped too.
-//
-// Client registration is keyed by client_id -> set of connections (not a
-// single connection per client_id) and unregistration removes a specific
-// connection by pointer identity. That distinction matters on reconnect:
-// a client's old connection dying is detected only when its read loop's
-// blocking read finally errors out, which can happen *after* a new
-// connection for the same client_id has already registered. Deleting "the"
-// entry for that client_id at that point would delete the new connection
-// instead of the dead one. List subscriptions follow the same by-pointer
-// discipline for the same reason.
+// Client registration is keyed by client_id -> set of connections, and
+// unregistration removes a connection by pointer identity, not just by
+// client_id: a dying connection's cleanup can run *after* a new connection
+// for the same client_id has already registered, and keying by client_id
+// alone would delete the new connection instead of the dead one. List
+// subscriptions follow the same by-pointer discipline for the same reason.
 type Hub struct {
 	mu      sync.RWMutex
 	clients map[string]map[*connection]struct{}

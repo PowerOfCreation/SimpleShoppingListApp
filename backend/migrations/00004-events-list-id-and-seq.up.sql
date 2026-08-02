@@ -1,31 +1,17 @@
--- list_id groups every event (todo_list.* and ingredient.*) by the list it
--- belongs to, regardless of aggregate_id (which is the ingredient id for
--- ingredient.* events, not the list). Populated by the client going
--- forward; backfilled below for existing rows. Nullable: an event whose
--- list could not be resolved during backfill (or an older client that
--- doesn't send it yet) simply has no list_id and is never returned by the
--- list-scoped pull endpoints.
+-- Groups every event by the list it belongs to, regardless of
+-- aggregate_id (the ingredient id for ingredient.* events, not the list).
+-- Nullable: an unresolvable or pre-backfill row just has no list_id and is
+-- never returned by the list-scoped pull endpoints. Backfilled below; see
+-- sync-design-decisions.md.
 ALTER TABLE events ADD COLUMN list_id UUID;
 
--- seq is a monotonically increasing, gap-free-on-commit cursor used by the
--- pull endpoints (GET /api/v1/sync/events, POST /api/v1/sync/head) to know
--- "everything up to here". It is deliberately NOT a BIGSERIAL assigned at
--- INSERT time: sequence values are handed out at insert but only become
--- visible at commit, so two concurrent inserts can commit out of order and
--- a reader could observe seq=5 while seq=4 is still uncommitted - a classic
--- gap that would silently and permanently lose event 4 for any client that
--- had already advanced its cursor past 5.
---
--- Instead seq is assigned by MarkEventProcessed (see 00004 query changes),
--- which only ever runs from EventIngestor's single worker goroutine, in
--- strict FIFO order, as its own autocommit statement outside any longer
--- transaction. That makes assignment order == commit order == visibility
--- order, and doubles as "seq IS NOT NULL" meaning "durably processed" -
--- exactly the set pull should serve. This only holds with a single
--- ingestor writer; scaling the ingestor to multiple replicas requires
--- either a leader election / advisory lock around it, or serving pull only
--- up to a watermark below any in-flight seq. See
--- frontend/docs/sync-design-decisions.md.
+-- Monotonically increasing, gap-free-on-commit pull cursor. Deliberately
+-- NOT a BIGSERIAL assigned at INSERT - concurrent commits could become
+-- visible out of order and leave a gap. Assigned instead by
+-- MarkEventProcessed, which only ever runs from EventIngestor's single
+-- worker goroutine in strict FIFO order. Holds only with a single ingestor
+-- writer; see sync-design-decisions.md ("seq wird beim MarkProcessed
+-- vergeben").
 ALTER TABLE events ADD COLUMN seq BIGINT;
 
 CREATE SEQUENCE IF NOT EXISTS events_seq_seq;
