@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"log"
 	"sort"
 
 	"github.com/jackc/pgx/v5/pgxpool"
@@ -58,6 +59,7 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, sqlFS fs.FS) error {
 	}
 	sort.Strings(names)
 
+	var appliedCount int
 	for _, name := range names {
 		applied, err := migrationApplied(ctx, conn, name)
 		if err != nil {
@@ -69,6 +71,13 @@ func Migrate(ctx context.Context, pool *pgxpool.Pool, sqlFS fs.FS) error {
 		if err := applyMigration(ctx, conn, sqlFS, name); err != nil {
 			return err
 		}
+		appliedCount++
+	}
+
+	if appliedCount == 0 {
+		log.Printf("migrate: schema up to date (%d migrations applied)", len(names))
+	} else {
+		log.Printf("migrate: applied %d migration(s)", appliedCount)
 	}
 	return nil
 }
