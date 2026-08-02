@@ -5,6 +5,7 @@
     'config:best-practices',
     'helpers:pinGitHubActionDigestsToSemver',
   ],
+  prConcurrentLimit: 0,
   packageRules: [
     {
       matchUpdateTypes: [
