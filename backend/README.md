@@ -61,12 +61,22 @@ fetches lists already known and sync-enabled locally. See
 
 ## Updating the dev database schema
 
-`docker-entrypoint-initdb.d` scripts only run against an *empty* data
-directory. Postgres keeps its data in the named `postgres_data` volume, so
-adding or changing a mounted migration in `docker-compose.yml` has no effect
-on an already-initialized dev database - you need to drop the volume first:
+Migrations are embedded into the binary (`migrations/migrations.go`) and
+applied automatically by the API on every startup (see `Migrate` in
+`internal/infrastructure/db/postgres/migrate.go`): each `NNNNN-*.up.sql`
+file runs once, tracked in a `schema_migrations` table, idempotently and
+inside a transaction. Add a new `NNNNN-description.up.sql` file and it is
+picked up on the next start — no manual step needed.
+
+Existing dev databases were created before this runner existed and have no
+`schema_migrations` table, so their first run would try to re-apply
+everything. Bring a dev DB up to date once by reseeding it from scratch:
 
 ```
 docker compose down -v
 docker compose up -d postgres
+air
 ```
+
+Postgres keeps its data in the named `postgres_data` volume; `-v` deletes it
+so the next start starts empty and the runner applies the full schema.
