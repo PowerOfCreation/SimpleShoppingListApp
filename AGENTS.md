@@ -25,7 +25,7 @@ pnpm android:prod:apk
 
 ### expo-doctor
 
-- `expo-doctor` runs in CI (`.github/workflows/expo-doctor.yml`) **in offline mode** (`EXPO_OFFLINE=1`) inside `frontend/`. Runs on changes to `frontend/package.json` / `frontend/pnpm-lock.yaml`.
+- `expo-doctor` runs in CI (`.github/workflows/frontend-expo-doctor.yml`) **in offline mode** (`EXPO_OFFLINE=1`) inside `frontend/`. Runs on changes to `frontend/package.json` / `frontend/pnpm-lock.yaml`.
 
 ## Backend commands (`backend/`)
 
