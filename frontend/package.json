@@ -2,7 +2,7 @@
   "name": "sholist",
   "main": "expo-router/entry",
   "version": "1.0.0",
-  "packageManager": "pnpm@11.17.0",
+  "packageManager": "pnpm@11.19.0",
   "scripts": {
     "start": "APP_VARIANT=development expo start",
     "start:prod": "expo start",
