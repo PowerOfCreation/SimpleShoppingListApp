@@ -22,8 +22,7 @@ export type ContextMenuToggleOption = {
 }
 
 export type ContextMenuOption =
-  | ContextMenuActionOption
-  | ContextMenuToggleOption
+  ContextMenuActionOption | ContextMenuToggleOption
 
 export type ContextMenuProps = {
   visible: boolean
