@@ -42,7 +42,7 @@ jobs:
             exit 1
           fi
           APK_PATH="$PWD/maestro-smoke.apk"
-          pnpm dlx eas-cli@latest build \
+          pnpm dlx eas-cli@21.7.0 build \
             --platform android \
             --profile maestro-smoke \
             --local \
