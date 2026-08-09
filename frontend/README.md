@@ -138,6 +138,23 @@ a LAN-reachable host instead.
 pnpm test
 ```
 
+
+## Maestro smoke test (Android)
+
+A minimal CI smoke test runs on GitHub-hosted Android emulator runners and builds
+the test APK locally with EAS.
+
+Required setup for CI:
+
+- Add repository secret `EXPO_TOKEN` (Expo access token) so `eas build --local`
+  can run non-interactively in GitHub Actions.
+
+Run the smoke flow locally (with a booted Android emulator and app already installed):
+
+```bash
+maestro test .maestro/smoke.yml
+```
+
 ## Useful links
 
 - [Expo CNG (Continuous Native Generation)](https://docs.expo.dev/workflow/continuous-native-generation/)

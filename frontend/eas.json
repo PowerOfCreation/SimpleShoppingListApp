@@ -1,0 +1,10 @@
+{
+  "build": {
+    "maestro-smoke": {
+      "withoutCredentials": true,
+      "android": {
+        "buildType": "apk"
+      }
+    }
+  }
+}
