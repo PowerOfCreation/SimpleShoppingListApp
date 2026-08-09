@@ -65,6 +65,34 @@
       groupSlug: 'expo-sdk',
       rangeStrategy: 'replace',
     },
+    {
+      // aktiviert Updates der `go`-Direktive in go.mod (per Default deaktiviert)
+      matchDatasources: [
+        'golang-version',
+      ],
+      matchDepNames: [
+        'go',
+      ],
+      rangeStrategy: 'bump',
+    },
+    {
+      // Go-Version in backend/go.mod und im golang-Image in backend/Dockerfile gemeinsam anheben
+      matchDatasources: [
+        'golang-version',
+        'docker',
+      ],
+      matchDepNames: [
+        'go',
+        'golang',
+      ],
+      matchUpdateTypes: [
+        'major',
+        'minor',
+        'patch',
+      ],
+      groupName: 'go version',
+      groupSlug: 'go-version',
+    },
   ],
   customManagers: [
     {
