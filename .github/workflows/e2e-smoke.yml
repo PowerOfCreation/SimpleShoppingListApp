@@ -59,6 +59,7 @@ jobs:
           arch: x86_64
           script: |
             set -eux
+            export MAESTRO_CLI_NO_ANALYTICS=1
             maestro --version
             adb install -r "$APK_PATH"
             maestro test frontend/.maestro/smoke.yml
