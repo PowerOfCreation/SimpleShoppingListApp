@@ -33,7 +33,7 @@ jobs:
       - name: 🧱 Build Android APK locally (no Expo cloud)
         working-directory: ./frontend
         run: |
-          set -euxo pipefail
+          set -eux
           pnpm expo prebuild --platform android --clean --non-interactive
           cd android
           ./gradlew assembleRelease
@@ -58,7 +58,7 @@ jobs:
           api-level: 34
           arch: x86_64
           script: |
-            set -euxo pipefail
+            set -eux
             maestro --version
             adb install -r "$APK_PATH"
             maestro test frontend/.maestro/smoke.yml
