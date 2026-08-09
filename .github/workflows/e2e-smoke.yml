@@ -33,14 +33,8 @@ jobs:
 
       - name: 🧱 Build Android APK locally with EAS
         working-directory: ./frontend
-        env:
-          EXPO_TOKEN: ${{ secrets.EXPO_TOKEN }}
         run: |
           set -euxo pipefail
-          if [ -z "${EXPO_TOKEN:-}" ]; then
-            echo "::error::Missing EXPO_TOKEN repository secret."
-            exit 1
-          fi
           APK_PATH="$PWD/maestro-smoke.apk"
           pnpm dlx eas-cli@21.7.0 build \
             --platform android \
