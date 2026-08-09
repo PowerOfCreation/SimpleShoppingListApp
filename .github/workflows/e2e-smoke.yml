@@ -50,6 +50,11 @@ jobs:
           sudo udevadm control --reload-rules
           sudo udevadm trigger --name-match=kvm
 
+      - name: Install Maestro CLI
+        uses: remarkablemark/setup-maestro-cli@549c78a3c4046dfb9ec96de24f7417858c370ae3 # v1
+        with:
+          version: 2.8.0
+
       - name: 🤖 Run Maestro smoke flow on Android emulator
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
         with:
@@ -57,14 +62,6 @@ jobs:
           arch: x86_64
           script: |
             set -euxo pipefail
-            MAESTRO_VERSION="2.8.0"
-            MAESTRO_ZIP="maestro.zip"
-            MAESTRO_SHA256="b3e561161904fb391875ca5834d5b22cf0b01c052dd1b408ad83e30d8f8951b3"
-            curl -fL "https://github.com/mobile-dev-inc/maestro/releases/download/cli-${MAESTRO_VERSION}/maestro.zip" -o "$MAESTRO_ZIP"
-            echo "${MAESTRO_SHA256}  ${MAESTRO_ZIP}" | sha256sum --check --status
-            unzip -q "$MAESTRO_ZIP" -d "$HOME/.maestro"
-            rm -f "$MAESTRO_ZIP"
-            export PATH="$PATH:$HOME/.maestro/maestro/bin"
             maestro --version
             adb install -r "$APK_PATH"
             maestro test frontend/.maestro/smoke.yml
