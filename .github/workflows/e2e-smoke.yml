@@ -26,7 +26,6 @@ jobs:
         with:
           distribution: temurin
           java-version: "17"
-          cache: gradle
 
       - name: 📦 Setup Node and dependencies
         uses: ./.github/actions/setup-node-install
