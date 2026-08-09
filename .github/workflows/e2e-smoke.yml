@@ -62,11 +62,10 @@ jobs:
         with:
           api-level: 34
           arch: x86_64
-          working-directory: ./frontend
           script: |
             set -euxo pipefail
             curl -fsSL "https://get.maestro.mobile.dev" | bash
             export PATH="$PATH:$HOME/.maestro/bin"
             maestro --version
             adb install -r "$APK_PATH"
-            maestro test .maestro/smoke.yml
+            maestro test frontend/.maestro/smoke.yml
