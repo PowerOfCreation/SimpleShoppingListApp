@@ -1,0 +1,14 @@
+appId: de.lightdevsolutions.sholist
+---
+- launchApp:
+    clearState: true
+- extendedWaitUntil:
+    visible:
+      id: "add-button"
+    timeout: 30000
+- assertVisible:
+    id: "add-button"
+- tapOn:
+    id: "add-button"
+- assertVisible:
+    id: "create-list-button"
