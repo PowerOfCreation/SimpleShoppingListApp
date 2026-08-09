@@ -142,12 +142,9 @@ pnpm test
 ## Maestro smoke test (Android)
 
 A minimal CI smoke test runs on GitHub-hosted Android emulator runners and builds
-the test APK locally with EAS.
+the test APK locally with `expo prebuild` + Gradle.
 
-Required setup for CI:
-
-- Add repository secret `EXPO_TOKEN` (Expo access token) so `eas build --local`
-  can run non-interactively in GitHub Actions.
+No Expo token or Expo cloud build is required for this CI smoke test.
 
 Run the smoke flow locally (with a booted Android emulator and app already installed):
 

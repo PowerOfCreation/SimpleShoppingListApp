@@ -30,17 +30,14 @@ jobs:
       - name: 📦 Setup Node and dependencies
         uses: ./.github/actions/setup-node-install
 
-      - name: 🧱 Build Android APK locally with EAS
+      - name: 🧱 Build Android APK locally (no Expo cloud)
         working-directory: ./frontend
         run: |
           set -euxo pipefail
-          APK_PATH="$PWD/maestro-smoke.apk"
-          pnpm dlx eas-cli@21.7.0 build \
-            --platform android \
-            --profile maestro-smoke \
-            --local \
-            --non-interactive \
-            --output "$APK_PATH"
+          pnpm expo prebuild --platform android --clean --non-interactive
+          cd android
+          ./gradlew assembleRelease
+          APK_PATH="$PWD/app/build/outputs/apk/release/app-release.apk"
           test -f "$APK_PATH"
           echo "APK_PATH=$APK_PATH" >> "$GITHUB_ENV"
 
