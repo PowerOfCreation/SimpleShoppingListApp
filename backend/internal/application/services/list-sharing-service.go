@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"time"
 
@@ -36,15 +37,19 @@ func NewListSharingService(
 	}
 }
 
-// ensureMember bootstraps the caller as owner if the list has no members
-// yet (claim-on-first-invite, see list-member-repository.go), then requires
-// the caller to actually be a member - so anyone who already knows a list's
-// UUID can't invite/list-invites for a list someone else already claimed.
-func (s *ListSharingService) ensureMember(ctx context.Context, listID uuid.UUID, userID string, now time.Time) error {
+// claimOrRequireMember bootstraps the caller as owner if the list has no
+// members yet (claim-on-first-invite - the only place ownership is ever
+// claimed, so merely listing or revoking invites can't grant it), then
+// requires the caller to actually be a member.
+func (s *ListSharingService) claimOrRequireMember(ctx context.Context, listID uuid.UUID, userID string, now time.Time) error {
 	if _, err := s.members.ClaimOwnershipIfUnowned(ctx, listID, userID, now); err != nil {
 		return err
 	}
+	return s.requireMember(ctx, listID, userID)
+}
 
+// requireMember checks existing membership without claiming ownership.
+func (s *ListSharingService) requireMember(ctx context.Context, listID uuid.UUID, userID string) error {
 	member, err := s.members.FindByListAndUser(ctx, listID, userID)
 	if err != nil {
 		return err
@@ -66,19 +71,18 @@ func (s *ListSharingService) requireList(listID uuid.UUID) (*entities.ToDoList, 
 	return list, nil
 }
 
-func (s *ListSharingService) CreateInvite(cmd *command.CreateListInviteCommand) (*command.CreateListInviteCommandResult, error) {
+func (s *ListSharingService) CreateInvite(ctx context.Context, cmd *command.CreateListInviteCommand) (*command.CreateListInviteCommandResult, error) {
 	ttl, err := entities.ParseInviteTTL(cmd.TTLKey)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("%w: %s", interfaces.ErrInvalidInviteTTL, cmd.TTLKey)
 	}
 
 	if _, err := s.requireList(cmd.ListID); err != nil {
 		return nil, err
 	}
 
-	ctx := context.Background()
 	now := time.Now().UTC()
-	if err := s.ensureMember(ctx, cmd.ListID, cmd.UserID, now); err != nil {
+	if err := s.claimOrRequireMember(ctx, cmd.ListID, cmd.UserID, now); err != nil {
 		return nil, err
 	}
 
@@ -97,18 +101,18 @@ func (s *ListSharingService) CreateInvite(cmd *command.CreateListInviteCommand) 
 	}, nil
 }
 
-func (s *ListSharingService) FindActiveInvites(qry *query.GetListInvitesQuery) (*query.GetListInvitesQueryResult, error) {
+func (s *ListSharingService) FindActiveInvites(ctx context.Context, qry *query.GetListInvitesQuery) (*query.GetListInvitesQueryResult, error) {
 	if _, err := s.requireList(qry.ListID); err != nil {
 		return nil, err
 	}
 
-	ctx := context.Background()
-	now := time.Now().UTC()
-	if err := s.ensureMember(ctx, qry.ListID, qry.UserID, now); err != nil {
+	// Read-only: must not claim ownership of an unowned list just because
+	// someone asked to list its invites.
+	if err := s.requireMember(ctx, qry.ListID, qry.UserID); err != nil {
 		return nil, err
 	}
 
-	invites, err := s.invites.FindActiveByList(ctx, qry.ListID, now)
+	invites, err := s.invites.FindActiveByList(ctx, qry.ListID, time.Now().UTC())
 	if err != nil {
 		return nil, err
 	}
@@ -120,9 +124,7 @@ func (s *ListSharingService) FindActiveInvites(qry *query.GetListInvitesQuery) (
 	return result, nil
 }
 
-func (s *ListSharingService) RevokeInvite(cmd *command.RevokeListInviteCommand) (*command.RevokeListInviteCommandResult, error) {
-	ctx := context.Background()
-
+func (s *ListSharingService) RevokeInvite(ctx context.Context, cmd *command.RevokeListInviteCommand) (*command.RevokeListInviteCommandResult, error) {
 	invite, err := s.invites.FindByID(ctx, cmd.InviteID)
 	if err != nil {
 		return nil, err
@@ -148,9 +150,7 @@ func (s *ListSharingService) RevokeInvite(cmd *command.RevokeListInviteCommand) 
 	return &command.RevokeListInviteCommandResult{}, nil
 }
 
-func (s *ListSharingService) RedeemInvite(cmd *command.RedeemListInviteCommand) (*command.RedeemListInviteCommandResult, error) {
-	ctx := context.Background()
-
+func (s *ListSharingService) RedeemInvite(ctx context.Context, cmd *command.RedeemListInviteCommand) (*command.RedeemListInviteCommandResult, error) {
 	invite, err := s.invites.FindByTokenHash(ctx, entities.HashInviteToken(cmd.Token))
 	if err != nil {
 		return nil, err
