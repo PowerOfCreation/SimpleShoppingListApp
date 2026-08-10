@@ -2,8 +2,10 @@ package postgres
 
 import (
 	"context"
+	"errors"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/entities"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
@@ -40,6 +42,12 @@ func (repo *SqlcToDoListRepository) FindById(id uuid.UUID) (*entities.ToDoList, 
 
 	row, err := repo.queries.GetToDoListById(ctx, id)
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			// Not found (or soft-deleted - GetToDoListById filters
+			// deleted_at) is a nil result, not an error: callers
+			// distinguish "missing" from "query failed" by the nil check.
+			return nil, nil
+		}
 		return nil, err
 	}
 
