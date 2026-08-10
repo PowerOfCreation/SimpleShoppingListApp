@@ -268,7 +268,7 @@ func TestListSharingService_CreateInvite_TwoCallsProduceDifferentTokens(t *testi
 
 // --- FindActiveInvites ---
 
-func TestListSharingService_FindActiveInvites_ExcludesExpiredAndRevokedAndNeverIncludesAToken(t *testing.T) {
+func TestListSharingService_FindActiveInvites_ExcludesExpiredAndRevoked(t *testing.T) {
 	list := testList()
 	svc, invites, _ := newSharingTestService(list)
 
