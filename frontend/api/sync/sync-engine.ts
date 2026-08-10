@@ -36,6 +36,13 @@ export const MAX_DRAIN_BATCHES = 20
 export class SyncEngine {
   private readonly inFlight = new Set<string>()
   private flushing = false
+  // Serializes handleAck() end-to-end - see its doc comment for why two
+  // acks for the same list must never process concurrently. Deliberately a
+  // separate queue from write-lock.ts's runExclusive: handleAckOrdered's
+  // own steps (markSynced, markSeq, rebuildForAck) already funnel through
+  // that queue internally, and nesting the same queue inside itself here
+  // would deadlock (see EventApplier's class doc for the same hazard).
+  private ackQueue: Promise<void> = Promise.resolve()
 
   constructor(
     private readonly outboxRepository: OutboxRepository,
@@ -139,8 +146,28 @@ export class SyncEngine {
    * position `seq`. Marks the outbox row synced and, for a first-time ack,
    * records the seq and rebuilds the affected list (byServerSeqThenLocal).
    * See sync-design-decisions.md ("Ack trägt seq mit").
+   *
+   * Queued onto ackQueue rather than run directly: SyncSocket dispatches
+   * each "ack" message via a synchronous, unawaited callback, so two acks
+   * for the same list could otherwise finish processing in whichever order
+   * their own awaits happen to resolve, not necessarily arrival order -
+   * letting byServerSeqThenLocal sort a later-seq event before an
+   * earlier-seq one that's still locally unconfirmed (e.g. replaying
+   * todo_list.sync_enabled before todo_list.created no-ops the UPDATE, and
+   * the following handleCreated INSERT re-creates the row with the
+   * column's default). Queuing guarantees each ack's write+rebuild fully
+   * completes, in arrival order, before the next one starts.
    */
   async handleAck(eventId: string, seq: number): Promise<void> {
+    const run = this.ackQueue.then(() => this.handleAckOrdered(eventId, seq))
+    this.ackQueue = run.then(
+      () => undefined,
+      () => undefined
+    )
+    return run
+  }
+
+  private async handleAckOrdered(eventId: string, seq: number): Promise<void> {
     const result = await this.outboxRepository.markSynced(eventId)
     if (!result.success) {
       logger.error(
