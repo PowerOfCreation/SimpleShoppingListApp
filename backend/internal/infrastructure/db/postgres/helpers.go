@@ -21,6 +21,24 @@ func timeFromTimestamptz(ts pgtype.Timestamptz) time.Time {
 	return time.Time{}
 }
 
+// timestamptzFromTimePtr is the nullable counterpart to timestamptzFromTime,
+// for optional timestamps like list_invites.revoked_at.
+func timestamptzFromTimePtr(t *time.Time) pgtype.Timestamptz {
+	if t == nil {
+		return pgtype.Timestamptz{}
+	}
+	return timestamptzFromTime(*t)
+}
+
+// timePtrFromTimestamptz is the inverse of timestamptzFromTimePtr.
+func timePtrFromTimestamptz(ts pgtype.Timestamptz) *time.Time {
+	if !ts.Valid {
+		return nil
+	}
+	t := ts.Time
+	return &t
+}
+
 // pgtypeFromUUIDPtr converts a nullable domain uuid.UUID (nil = not
 // resolved / not sent by an older client) into pgx's nullable wire type.
 func pgtypeFromUUIDPtr(id *uuid.UUID) pgtype.UUID {

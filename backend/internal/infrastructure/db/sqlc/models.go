@@ -23,6 +23,24 @@ type Event struct {
 	Seq           pgtype.Int8        `db:"seq" json:"seq"`
 }
 
+type ListInvite struct {
+	ID        uuid.UUID          `db:"id" json:"id"`
+	ListID    uuid.UUID          `db:"list_id" json:"list_id"`
+	TokenHash string             `db:"token_hash" json:"token_hash"`
+	CreatedBy string             `db:"created_by" json:"created_by"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	ExpiresAt pgtype.Timestamptz `db:"expires_at" json:"expires_at"`
+	RevokedAt pgtype.Timestamptz `db:"revoked_at" json:"revoked_at"`
+}
+
+type ListMember struct {
+	ListID   uuid.UUID          `db:"list_id" json:"list_id"`
+	UserID   string             `db:"user_id" json:"user_id"`
+	Role     string             `db:"role" json:"role"`
+	JoinedAt pgtype.Timestamptz `db:"joined_at" json:"joined_at"`
+	InviteID pgtype.UUID        `db:"invite_id" json:"invite_id"`
+}
+
 type Todo struct {
 	ID          uuid.UUID          `db:"id" json:"id"`
 	Name        string             `db:"name" json:"name"`

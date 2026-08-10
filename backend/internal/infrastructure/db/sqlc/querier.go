@@ -11,10 +11,24 @@ import (
 )
 
 type Querier interface {
+	// Idempotent on (list_id, user_id) so redeeming an invite for a list you're
+	// already on (including the invite you just claimed ownership with) is a
+	// safe no-op rather than a primary key violation.
+	AddListMember(ctx context.Context, arg AddListMemberParams) error
+	// Adds the caller as owner only if listID has no members yet at all - the
+	// bootstrap for lists that predate this feature and never had an owner
+	// recorded anywhere. NOT EXISTS and the INSERT run as one statement so the
+	// common case doesn't need two round-trips. :one + zero rows (pgx.ErrNoRows)
+	// means the list already had members and nothing was written.
+	ClaimListOwnership(ctx context.Context, arg ClaimListOwnershipParams) (uuid.UUID, error)
 	CreateToDo(ctx context.Context, arg CreateToDoParams) (Todo, error)
 	CreateToDoList(ctx context.Context, arg CreateToDoListParams) (TodoList, error)
 	DeleteToDo(ctx context.Context, id uuid.UUID) error
 	DeleteToDoList(ctx context.Context, id uuid.UUID) error
+	// An invite is active if it hasn't been revoked and hasn't expired as of
+	// sqlc.arg(now) - the caller passes the current time rather than this query
+	// using NOW() so results are reproducible in tests.
+	GetActiveListInvites(ctx context.Context, arg GetActiveListInvitesParams) ([]ListInvite, error)
 	GetAllToDoLists(ctx context.Context) ([]GetAllToDoListsRow, error)
 	GetAllToDos(ctx context.Context) ([]GetAllToDosRow, error)
 	// Pull page: every event for one list with seq strictly greater than
@@ -34,6 +48,9 @@ type Querier interface {
 	// simply produce no row; the controller fills in the seq=0 head itself so
 	// every requested id still appears in the response.
 	GetListHeads(ctx context.Context, listIds []uuid.UUID) ([]GetListHeadsRow, error)
+	GetListInviteById(ctx context.Context, id uuid.UUID) (ListInvite, error)
+	GetListInviteByTokenHash(ctx context.Context, tokenHash string) (ListInvite, error)
+	GetListMember(ctx context.Context, arg GetListMemberParams) (ListMember, error)
 	GetToDoById(ctx context.Context, id uuid.UUID) (GetToDoByIdRow, error)
 	GetToDoListById(ctx context.Context, id uuid.UUID) (GetToDoListByIdRow, error)
 	GetUnprocessedEvents(ctx context.Context) ([]GetUnprocessedEventsRow, error)
@@ -43,6 +60,7 @@ type Querier interface {
 	// tell the two cases apart without a second round-trip; seq/list_id ride
 	// along so a duplicate delivery can still ack with the event's seq.
 	InsertEvent(ctx context.Context, arg InsertEventParams) (InsertEventRow, error)
+	InsertListInvite(ctx context.Context, arg InsertListInviteParams) error
 	// Assigns seq from the dedicated events_seq_seq sequence atomically with
 	// marking the row processed (see migration 00004 for why seq is assigned
 	// here rather than at insert). The `seq IS NULL` guard makes a second call
@@ -51,6 +69,11 @@ type Querier interface {
 	// was genuinely never marked before, so a zero-row result signals a bug,
 	// not a legitimate race (see EventIngestor's single-writer guarantee).
 	MarkEventProcessed(ctx context.Context, id uuid.UUID) (MarkEventProcessedRow, error)
+	// The `revoked_at IS NULL` guard makes revoking an already-revoked invite a
+	// true no-op (zero rows affected) rather than overwriting the original
+	// revocation time - ListSharingService treats both as success either way,
+	// but this keeps the first revocation timestamp authoritative.
+	RevokeListInvite(ctx context.Context, arg RevokeListInviteParams) error
 	UpdateToDo(ctx context.Context, arg UpdateToDoParams) error
 	UpdateToDoList(ctx context.Context, arg UpdateToDoListParams) error
 }
