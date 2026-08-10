@@ -42,8 +42,12 @@ func NewListSharingService(
 // claimed, so merely listing or revoking invites can't grant it), then
 // requires the caller to actually be a member.
 func (s *ListSharingService) claimOrRequireMember(ctx context.Context, listID uuid.UUID, userID string, now time.Time) error {
-	if _, err := s.members.ClaimOwnershipIfUnowned(ctx, listID, userID, now); err != nil {
+	claimed, err := s.members.ClaimOwnershipIfUnowned(ctx, listID, userID, now)
+	if err != nil {
 		return err
+	}
+	if claimed {
+		return nil
 	}
 	return s.requireMember(ctx, listID, userID)
 }
@@ -159,6 +163,29 @@ func (s *ListSharingService) RedeemInvite(ctx context.Context, cmd *command.Rede
 		return nil, interfaces.ErrInviteNotFound
 	}
 
+	// The list may have been deleted since this invite was created; a
+	// deleted list can't be joined.
+	list, err := s.requireList(invite.ListID)
+	if err != nil {
+		return nil, err
+	}
+
+	// Idempotency check comes before the revoked/expired check: a caller
+	// who already joined must be able to safely retry redeem (e.g. after a
+	// lost response) even if the token has since been revoked or expired -
+	// at that point it's only re-identifying them, not authorizing a new
+	// join. Revocation/expiry only ever blocks *new* joins.
+	if existing, err := s.members.FindByListAndUser(ctx, invite.ListID, cmd.UserID); err != nil {
+		return nil, err
+	} else if existing != nil {
+		return &command.RedeemListInviteCommandResult{
+			ListID:        invite.ListID,
+			ListName:      list.Name,
+			Role:          existing.Role,
+			AlreadyMember: true,
+		}, nil
+	}
+
 	now := time.Now().UTC()
 	if invite.RevokedAt != nil {
 		return nil, interfaces.ErrInviteRevoked
@@ -167,37 +194,19 @@ func (s *ListSharingService) RedeemInvite(ctx context.Context, cmd *command.Rede
 		return nil, interfaces.ErrInviteExpired
 	}
 
-	// The list may have been deleted since this invite was created; a
-	// deleted list can't be joined.
-	list, err := s.requireList(invite.ListID)
+	inviteID := invite.ID
+	member, err := entities.NewListMember(invite.ListID, cmd.UserID, entities.RoleMember, now, &inviteID)
 	if err != nil {
 		return nil, err
 	}
-
-	existing, err := s.members.FindByListAndUser(ctx, invite.ListID, cmd.UserID)
-	if err != nil {
+	if err := s.members.Add(ctx, member); err != nil {
 		return nil, err
-	}
-
-	role := entities.RoleMember
-	alreadyMember := existing != nil
-	if alreadyMember {
-		role = existing.Role
-	} else {
-		inviteID := invite.ID
-		member, err := entities.NewListMember(invite.ListID, cmd.UserID, entities.RoleMember, now, &inviteID)
-		if err != nil {
-			return nil, err
-		}
-		if err := s.members.Add(ctx, member); err != nil {
-			return nil, err
-		}
 	}
 
 	return &command.RedeemListInviteCommandResult{
 		ListID:        invite.ListID,
 		ListName:      list.Name,
-		Role:          role,
-		AlreadyMember: alreadyMember,
+		Role:          entities.RoleMember,
+		AlreadyMember: false,
 	}, nil
 }

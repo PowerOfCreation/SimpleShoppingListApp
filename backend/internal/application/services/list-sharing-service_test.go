@@ -463,6 +463,29 @@ func TestListSharingService_RedeemInvite_RedeemingTwiceIsIdempotentAndDoesNotDup
 	assert.Equal(t, 1, count)
 }
 
+func TestListSharingService_RedeemInvite_RetryAfterRevokeStillSucceedsForAnExistingMember(t *testing.T) {
+	list := testList()
+	svc, _, _ := newSharingTestService(list)
+
+	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
+	require.NoError(t, err)
+
+	first, err := svc.RedeemInvite(context.Background(), &command.RedeemListInviteCommand{Token: created.Token, UserID: "bob"})
+	require.NoError(t, err)
+	assert.False(t, first.AlreadyMember)
+
+	_, err = svc.RevokeInvite(context.Background(), &command.RevokeListInviteCommand{InviteID: created.Result.ID, UserID: "alice"})
+	require.NoError(t, err)
+
+	// Bob's client retries the same redeem call (e.g. a lost response) -
+	// this must succeed as a no-op, not fail with ErrInviteRevoked, since
+	// he already has the membership the token once granted.
+	retry, err := svc.RedeemInvite(context.Background(), &command.RedeemListInviteCommand{Token: created.Token, UserID: "bob"})
+	require.NoError(t, err)
+	assert.True(t, retry.AlreadyMember)
+	assert.Equal(t, entities.RoleMember, retry.Role)
+}
+
 func TestListSharingService_RedeemInvite_RevokingAnInviteDoesNotRemoveExistingMembers(t *testing.T) {
 	list := testList()
 	svc, _, members := newSharingTestService(list)
