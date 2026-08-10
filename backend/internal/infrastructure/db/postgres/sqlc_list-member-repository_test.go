@@ -5,7 +5,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -58,12 +57,20 @@ func TestSqlcListMemberRepository_Add_InsertsMemberWithInviteID(t *testing.T) {
 	testDB := testhelpers.SetupTestDB(t)
 	defer testDB.Close(t)
 	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
+	inviteRepo := NewSqlcListInviteRepository(NewQueries(testDB.Conn))
 	ctx := context.Background()
 	listID := createTestToDoList(t, testDB)
-	inviteID := uuid.New()
-	now := time.Now().UTC().Truncate(time.Millisecond)
 
-	member, err := entities.NewListMember(listID, "bob", entities.RoleMember, now, &inviteID)
+	// list_members.invite_id has an FK to list_invites(id), so the invite
+	// referenced here must actually exist.
+	ttl, err := entities.ParseInviteTTL("1h")
+	require.NoError(t, err)
+	invite, _, err := entities.NewListInvite(listID, "alice", ttl, time.Now().UTC())
+	require.NoError(t, err)
+	require.NoError(t, inviteRepo.Create(ctx, invite))
+
+	now := time.Now().UTC().Truncate(time.Millisecond)
+	member, err := entities.NewListMember(listID, "bob", entities.RoleMember, now, &invite.ID)
 	require.NoError(t, err)
 	require.NoError(t, repo.Add(ctx, member))
 
@@ -72,7 +79,7 @@ func TestSqlcListMemberRepository_Add_InsertsMemberWithInviteID(t *testing.T) {
 	require.NotNil(t, found)
 	assert.Equal(t, entities.RoleMember, found.Role)
 	require.NotNil(t, found.InviteID)
-	assert.Equal(t, inviteID, *found.InviteID)
+	assert.Equal(t, invite.ID, *found.InviteID)
 	assert.True(t, found.JoinedAt.Equal(now))
 }
 
