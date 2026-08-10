@@ -15,6 +15,8 @@ import (
 const (
 	envKeycloakIssuer   = "KEYCLOAK_ISSUER"
 	envKeycloakClientID = "KEYCLOAK_CLIENT_ID"
+
+	userIDContextKey = "user_id"
 )
 
 // Passthrough lets every request through unauthenticated. Only for tests
@@ -85,15 +87,29 @@ func NewKeycloakAuth(ctx context.Context, logger *slog.Logger) (echo.MiddlewareF
 				})
 			}
 
-			// Stashed for future user-scoping (see sync-design-decisions.md);
-			// no handler reads this yet.
-			c.Set("user_id", idToken.Subject)
+			// Stashed for user-scoping (see sync-design-decisions.md); read
+			// via UserIDFromContext by handlers that need the caller's
+			// identity (e.g. list-sharing-controller.go).
+			c.Set(userIDContextKey, idToken.Subject)
 
 			return next(c)
 		}
 	}
 
 	return mw, nil
+}
+
+// UserIDFromContext returns the caller's verified Keycloak subject, stashed
+// by NewKeycloakAuth. ok=false means the request never passed real auth
+// (e.g. middleware.Passthrough in tests) - handlers must reject rather than
+// fall back to an empty user, which would otherwise claim ownership of an
+// unowned list (see ListSharingService.claimOrRequireMember).
+func UserIDFromContext(c echo.Context) (string, bool) {
+	userID, ok := c.Get(userIDContextKey).(string)
+	if !ok || userID == "" {
+		return "", false
+	}
+	return userID, true
 }
 
 func bearerToken(r *http.Request) (string, bool) {

@@ -58,6 +58,25 @@ fetches lists already known and sync-enabled locally. See
 | POST | `/api/v1/sync/head` | Reports each requested list's current pull cursor (seq + latest event id) |
 | GET | `/api/v1/sync/events` | Pull: one page of a list's event history since a given seq |
 | GET | `/api/v1/sync/ws` | WebSocket; pushes per-event `ack`s and, to clients subscribed to a list (`{"type":"subscribe","list_ids":[...]}`), a `{"type":"event"}` notification when that list gets a new event |
+| POST | `/api/v1/todo-lists/:listId/invites` | Create a multi-use invite link with a TTL preset (`1h`\|`24h`\|`7d`\|`30d`); returns the plaintext token once |
+| GET | `/api/v1/todo-lists/:listId/invites` | List the caller's active (non-expired, non-revoked) invites for a list; never returns a token |
+| DELETE | `/api/v1/invites/:inviteId` | Revoke an invite; the creator or a list owner may call this |
+| POST | `/api/v1/invites/redeem` | Redeem a token, joining the list as `member`; idempotent if already a member |
+
+## List sharing
+
+Lists can be shared via invite links (`ListSharingService`,
+`internal/interface/api/rest/list-sharing-controller.go`): the creator picks
+a validity preset, gets back a one-time plaintext token, and only its
+sha256 hash is ever persisted (`list_invites.token_hash`). A list with no
+members yet auto-claims the first inviter as `owner`
+(claim-on-first-invite) — the bootstrap for lists that predate this
+feature, which otherwise have no owner recorded anywhere.
+
+**This only adds a membership model — it does not enforce it.**
+`/api/v1/events` and every `/api/v1/sync/*` route still accept any valid
+token for any known list id, same as before; membership isn't checked
+there yet. See `frontend/docs/sync-design-decisions.md`.
 
 ## Logging
 
