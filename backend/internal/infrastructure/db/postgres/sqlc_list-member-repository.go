@@ -3,6 +3,7 @@ package postgres
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -65,11 +66,20 @@ func (r *SqlcListMemberRepository) FindByListAndUser(
 		return nil, err
 	}
 
-	return &entities.ListMember{
-		ListID:   row.ListID,
-		UserID:   row.UserID,
-		Role:     entities.ListMemberRole(row.Role),
-		JoinedAt: timeFromTimestamptz(row.JoinedAt),
-		InviteID: uuidPtrFromPgtype(row.InviteID),
-	}, nil
+	// Goes through the validating constructor rather than a struct literal
+	// so a row that shouldn't exist (e.g. a role value the domain doesn't
+	// recognize, from a hand-edited row or a future buggy migration) is
+	// reported as an error instead of silently handed to callers as a
+	// ListMember they can't trust.
+	member, err := entities.NewListMember(
+		row.ListID,
+		row.UserID,
+		entities.ListMemberRole(row.Role),
+		timeFromTimestamptz(row.JoinedAt),
+		uuidPtrFromPgtype(row.InviteID),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("corrupt list_members row (list_id=%s, user_id=%s): %w", row.ListID, row.UserID, err)
+	}
+	return member, nil
 }

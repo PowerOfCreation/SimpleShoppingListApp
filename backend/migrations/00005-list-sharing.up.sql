@@ -25,7 +25,7 @@ CREATE INDEX idx_list_invites_list_active ON list_invites(list_id, expires_at) W
 CREATE TABLE list_members (
     list_id   UUID NOT NULL REFERENCES todo_lists(id),
     user_id   TEXT NOT NULL, -- Keycloak sub; server-set, never client-supplied
-    role      TEXT NOT NULL, -- 'owner' | 'member'
+    role      TEXT NOT NULL CHECK (role IN ('owner', 'member')),
     joined_at TIMESTAMP WITH TIME ZONE NOT NULL,
     -- NULL for the claim-on-first-invite owner (no invite was redeemed).
     -- References list_invites so a membership can never point at an
