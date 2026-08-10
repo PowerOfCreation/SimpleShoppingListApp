@@ -117,3 +117,28 @@ func TestSqlcListMemberRepository_FindByListAndUser_UnknownReturnsNilWithoutErro
 	require.NoError(t, err)
 	assert.Nil(t, found)
 }
+
+// TestSqlcListMemberRepository_FindByListAndUser_CorruptRoleReturnsError
+// guards the second, independent layer of defense against an invalid role:
+// even bypassing the DB's own CHECK constraint (simulating a hand-edited
+// row, replicated data from a schema without the constraint, or a future
+// migration that relaxes it incorrectly), the repository must refuse to
+// hand back a ListMember with a role the domain doesn't recognize instead
+// of silently propagating it - see entities.NewListMember.
+func TestSqlcListMemberRepository_FindByListAndUser_CorruptRoleReturnsError(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
+	ctx := context.Background()
+	listID := createTestToDoList(t, testDB)
+
+	_, err := testDB.Conn.Exec(ctx, "ALTER TABLE list_members DROP CONSTRAINT list_members_role_check")
+	require.NoError(t, err)
+	_, err = testDB.Conn.Exec(ctx,
+		"INSERT INTO list_members (list_id, user_id, role, joined_at) VALUES ($1, $2, $3, now())",
+		listID, "corrupt-user", "not-a-real-role")
+	require.NoError(t, err)
+
+	_, err = repo.FindByListAndUser(ctx, listID, "corrupt-user")
+	assert.Error(t, err)
+}
