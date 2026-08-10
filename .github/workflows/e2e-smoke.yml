@@ -48,7 +48,7 @@ jobs:
           sudo udevadm trigger --name-match=kvm
 
       - name: Install Maestro CLI
-        uses: remarkablemark/setup-maestro-cli@549c78a3c4046dfb9ec96de24f7417858c370ae3 # v1
+        uses: remarkablemark/setup-maestro-cli@549c78a3c4046dfb9ec96de24f7417858c370ae3 # v1.0.20
         with:
           version: 2.8.0
 
