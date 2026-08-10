@@ -391,6 +391,37 @@ func TestListSharingController_RedeemInvite_MissingUserIDReturns401(t *testing.T
 	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 }
 
+func TestListSharingController_RedeemInvite_EmptyTokenReturns400WithoutCallingService(t *testing.T) {
+	// An empty token must not reach the service - hashing "" and looking it
+	// up would surface as ErrInviteNotFound (404), conflating a missing
+	// request field with a genuinely unknown invite.
+	service := &stubListSharingService{}
+	e := echo.New()
+	NewListSharingController(e, testLogger(), service, withUserID("user-1"))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/invites/redeem", strings.NewReader(`{"token":""}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestListSharingController_RedeemInvite_MissingTokenFieldReturns400(t *testing.T) {
+	service := &stubListSharingService{}
+	e := echo.New()
+	NewListSharingController(e, testLogger(), service, withUserID("user-1"))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/invites/redeem", strings.NewReader(`{}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
 func TestListSharingController_RedeemInvite_MalformedBodyReturns400(t *testing.T) {
 	service := &stubListSharingService{}
 	e := echo.New()

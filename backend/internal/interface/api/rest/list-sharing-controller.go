@@ -129,6 +129,11 @@ func (lsc *ListSharingController) RedeemInvite(c echo.Context) error {
 			"error": "Failed to parse request body",
 		})
 	}
+	if req.Token == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "token must not be empty",
+		})
+	}
 
 	result, err := lsc.service.RedeemInvite(c.Request().Context(), &command.RedeemListInviteCommand{
 		Token:  req.Token,
