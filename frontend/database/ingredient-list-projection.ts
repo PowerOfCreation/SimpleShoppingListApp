@@ -45,26 +45,6 @@ export class IngredientListProjection {
     )
   }
 
-  async handleSyncEnabled(
-    db: SQLiteDatabase,
-    event: DomainEventRow
-  ): Promise<void> {
-    await db.runAsync(
-      `UPDATE ingredient_lists SET sync_enabled = 1 WHERE id = ?`,
-      event.aggregate_id
-    )
-  }
-
-  async handleSyncDisabled(
-    db: SQLiteDatabase,
-    event: DomainEventRow
-  ): Promise<void> {
-    await db.runAsync(
-      `UPDATE ingredient_lists SET sync_enabled = 0 WHERE id = ?`,
-      event.aggregate_id
-    )
-  }
-
   /**
    * List-scoped counterpart to rebuild(), used by EventApplier so a pull's
    * projection update and cursor advance commit in one transaction - see
@@ -91,12 +71,6 @@ export class IngredientListProjection {
         case EventTypes.TODO_LIST_DELETED:
           await this.handleDeleted(db, event)
           break
-        case EventTypes.TODO_LIST_SYNC_ENABLED:
-          await this.handleSyncEnabled(db, event)
-          break
-        case EventTypes.TODO_LIST_SYNC_DISABLED:
-          await this.handleSyncDisabled(db, event)
-          break
       }
     }
   }
@@ -115,17 +89,6 @@ export class IngredientListProjection {
             break
           case EventTypes.TODO_LIST_DELETED:
             await this.handleDeleted(this.db, event)
-            break
-          // Without these two cases, a rebuild would silently disable sync
-          // on every list: DELETE FROM ingredient_lists above wipes
-          // sync_enabled along with everything else, and handleCreated
-          // never sets it (it's always a follow-up event, not part of the
-          // create payload).
-          case EventTypes.TODO_LIST_SYNC_ENABLED:
-            await this.handleSyncEnabled(this.db, event)
-            break
-          case EventTypes.TODO_LIST_SYNC_DISABLED:
-            await this.handleSyncDisabled(this.db, event)
             break
         }
       }

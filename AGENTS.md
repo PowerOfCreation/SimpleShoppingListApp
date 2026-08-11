@@ -75,7 +75,12 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
   endpoint. Replay order is a rebase on the server's `seq` (confirmed prefix,
   server-authoritative) with our own unacked writes as a local tail
   (`byServerSeqThenLocal`), not wall-clock `occurred_at` — see
-  `frontend/docs/sync-design-decisions.md`.
+  `frontend/docs/sync-design-decisions.md`. Whether *this device* syncs a
+  list is a device-local setting (`list_sync_settings`, see
+  `list-sync-settings-repository.ts`), not a domain event and not a column on
+  the `ingredient_lists` projection — that projection rebuilds from the
+  event log on every pull/ack, and a rebuildable table is the wrong place for
+  a fact a rebuild must never be able to reset.
 - **Backend auth:** mandatory. Verifies Keycloak bearer tokens (see
   `backend/internal/interface/api/middleware`) on `/api/v1/events` and every
   `/api/v1/sync/*` route; the API refuses to start if

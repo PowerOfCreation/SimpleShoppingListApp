@@ -2,6 +2,7 @@ import { IngredientListRepository } from "@/database/ingredient-list-repository"
 import { EventRepository } from "@/database/event-repository"
 import { OutboxRepository } from "@/database/outbox-repository"
 import { IngredientListProjection } from "@/database/ingredient-list-projection"
+import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
 import { getDatabase } from "@/database/database"
 import { ShoppingListService } from "@/api/shopping-list-service"
 import * as SQLite from "expo-sqlite"
@@ -26,6 +27,12 @@ jest.mock("@/database/ingredient-list-projection")
 const MockIngredientListProjection =
   IngredientListProjection as jest.MockedClass<typeof IngredientListProjection>
 
+jest.mock("@/database/list-sync-settings-repository")
+const MockListSyncSettingsRepository =
+  ListSyncSettingsRepository as jest.MockedClass<
+    typeof ListSyncSettingsRepository
+  >
+
 jest.mock("@/database/database", () => ({
   getDatabase: jest.fn(),
 }))
@@ -40,6 +47,7 @@ describe("ShoppingListService", () => {
   let mockEventRepository: jest.Mocked<EventRepository>
   let mockOutboxRepository: jest.Mocked<OutboxRepository>
   let mockProjection: jest.Mocked<IngredientListProjection>
+  let mockListSyncSettingsRepository: jest.Mocked<ListSyncSettingsRepository>
 
   beforeEach(() => {
     jest.clearAllMocks()
@@ -68,15 +76,24 @@ describe("ShoppingListService", () => {
       handleCreated: jest.fn(),
       handleUpdated: jest.fn(),
       handleDeleted: jest.fn(),
-      handleSyncEnabled: jest.fn(),
-      handleSyncDisabled: jest.fn(),
       rebuild: jest.fn(),
     } as unknown as jest.Mocked<IngredientListProjection>
+
+    mockListSyncSettingsRepository = {
+      setEnabled: jest.fn().mockResolvedValue(Result.ok(undefined)),
+      setEnabledWithin: jest.fn().mockResolvedValue(undefined),
+      isEnabled: jest.fn(),
+      getEnabledIds: jest.fn(),
+      remove: jest.fn(),
+    } as unknown as jest.Mocked<ListSyncSettingsRepository>
 
     MockIngredientListRepository.mockImplementation(() => mockRepository)
     MockEventRepository.mockImplementation(() => mockEventRepository)
     MockOutboxRepository.mockImplementation(() => mockOutboxRepository)
     MockIngredientListProjection.mockImplementation(() => mockProjection)
+    MockListSyncSettingsRepository.mockImplementation(
+      () => mockListSyncSettingsRepository
+    )
 
     const mockDb = {} as SQLite.SQLiteDatabase
     ;(getDatabase as jest.Mock).mockReturnValue(mockDb)
@@ -97,43 +114,45 @@ describe("ShoppingListService", () => {
       expect(entries[0].enqueueForSync).toBeFalsy()
     })
 
-    it("with sync: appends todo_list.created (enqueued) and todo_list.sync_enabled (not enqueued)", async () => {
+    it("with sync: appends only todo_list.created, enqueued", async () => {
       const result = await service.createList("Rewe", true)
 
       expect(result.success).toBe(true)
       const [entries] = mockEventRepository.appendAll.mock.calls[0]
-      expect(entries).toHaveLength(2)
+      expect(entries).toHaveLength(1)
 
       expect(entries[0].event.event_type).toBe(EventTypes.TODO_LIST_CREATED)
       expect(entries[0].enqueueForSync).toBe(true)
-
-      // On creation the sync_enabled event stays local - todo_list.created
-      // already signals the list to the server. Sync state changes later go
-      // through setSyncEnabled, which does enqueue them.
-      expect(entries[1].event.event_type).toBe(
-        EventTypes.TODO_LIST_SYNC_ENABLED
-      )
-      expect(entries[1].enqueueForSync).toBeFalsy()
     })
 
-    it("both events share the same aggregate id", async () => {
+    it("runs the created projection, and writes the sync setting, through appendAll's project callback", async () => {
+      const dbStub = {} as SQLite.SQLiteDatabase
+
       await service.createList("Rewe", true)
 
       const [entries] = mockEventRepository.appendAll.mock.calls[0]
-      expect(entries[0].event.aggregate_id).toBe(entries[1].event.aggregate_id)
-    })
-
-    it("runs the created projection through appendAll's project callback", async () => {
-      await service.createList("Rewe")
-
-      const [entries] = mockEventRepository.appendAll.mock.calls[0]
-      const dbStub = {} as SQLite.SQLiteDatabase
       await entries[0].project?.(dbStub)
 
       expect(mockProjection.handleCreated).toHaveBeenCalledWith(
         dbStub,
         entries[0].event
       )
+      expect(
+        mockListSyncSettingsRepository.setEnabledWithin
+      ).toHaveBeenCalledWith(dbStub, entries[0].event.aggregate_id, true)
+    })
+
+    it("without sync, does not write a sync setting", async () => {
+      const dbStub = {} as SQLite.SQLiteDatabase
+
+      await service.createList("Rewe")
+
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      await entries[0].project?.(dbStub)
+
+      expect(
+        mockListSyncSettingsRepository.setEnabledWithin
+      ).not.toHaveBeenCalled()
     })
 
     it("rejects an empty name without touching the event repository", async () => {
@@ -160,6 +179,18 @@ describe("ShoppingListService", () => {
       ...overrides,
     })
 
+    it("enabling writes the setting before replaying history", async () => {
+      mockEventRepository.getByListId.mockResolvedValue(Result.ok([]))
+
+      const result = await service.setSyncEnabled("list-1", true)
+
+      expect(result.success).toBe(true)
+      expect(mockListSyncSettingsRepository.setEnabled).toHaveBeenCalledWith(
+        "list-1",
+        true
+      )
+    })
+
     it("enabling replays only syncable history into the outbox", async () => {
       mockEventRepository.getByListId.mockResolvedValue(
         Result.ok([
@@ -167,6 +198,9 @@ describe("ShoppingListService", () => {
             event_id: "e1",
             event_type: EventTypes.TODO_LIST_CREATED,
           }),
+          // A historical sync_enabled event from before this event type was
+          // retired (see types/DomainEvent.ts) - no longer syncable, must be
+          // filtered out like any other non-allowlisted type.
           makeHistoryEvent({
             event_id: "e2",
             event_type: EventTypes.TODO_LIST_SYNC_ENABLED,
@@ -188,7 +222,6 @@ describe("ShoppingListService", () => {
         mockEventRepository.enqueueExistingForSync.mock.calls[0]
       expect(replayed.map((e: DomainEventRow) => e.event_id)).toEqual([
         "e1",
-        "e2",
         "e3",
       ])
     })
@@ -220,40 +253,26 @@ describe("ShoppingListService", () => {
       expect(mockEventRepository.getByListId).toHaveBeenCalledWith("list-1")
     })
 
-    it("enabling appends and enqueues a todo_list.sync_enabled event", async () => {
+    it("enabling does not append any domain event - sync state is device-local now", async () => {
       mockEventRepository.getByListId.mockResolvedValue(Result.ok([]))
 
       await service.setSyncEnabled("list-1", true)
 
-      const [entries] = mockEventRepository.appendAll.mock.calls[0]
-      expect(entries[0].event.event_type).toBe(
-        EventTypes.TODO_LIST_SYNC_ENABLED
-      )
-      expect(entries[0].enqueueForSync).toBe(true)
+      expect(mockEventRepository.appendAll).not.toHaveBeenCalled()
     })
 
-    it("disabling cancels pending outbox rows for the whole list but re-queues the sync_disabled event", async () => {
+    it("disabling writes the setting and cancels pending outbox rows for the whole list", async () => {
       const result = await service.setSyncEnabled("list-1", false)
 
       expect(result.success).toBe(true)
+      expect(mockListSyncSettingsRepository.setEnabled).toHaveBeenCalledWith(
+        "list-1",
+        false
+      )
       expect(mockOutboxRepository.cancelForList).toHaveBeenCalledWith("list-1")
       expect(mockEventRepository.getByListId).not.toHaveBeenCalled()
-
-      const [entries] = mockEventRepository.appendAll.mock.calls[0]
-      expect(entries[0].event.event_type).toBe(
-        EventTypes.TODO_LIST_SYNC_DISABLED
-      )
-      expect(entries[0].enqueueForSync).toBe(true)
-
-      // cancelForList wipes the pending sync_disabled row, so it is
-      // re-queued afterwards to keep the backend informed.
-      expect(mockEventRepository.enqueueExistingForSync).toHaveBeenCalledTimes(
-        1
-      )
-      const [requeued] =
-        mockEventRepository.enqueueExistingForSync.mock.calls[0]
-      expect(requeued).toHaveLength(1)
-      expect(requeued[0].event_type).toBe(EventTypes.TODO_LIST_SYNC_DISABLED)
+      expect(mockEventRepository.appendAll).not.toHaveBeenCalled()
+      expect(mockEventRepository.enqueueExistingForSync).not.toHaveBeenCalled()
     })
   })
 })

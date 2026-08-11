@@ -22,15 +22,17 @@ describe("IngredientListRepository", () => {
     // Clear the tables before each test
     await db.execAsync(`DROP TABLE IF EXISTS ingredient_lists;`)
     await db.execAsync(`DROP TABLE IF EXISTS ingredients;`)
+    await db.execAsync(`DROP TABLE IF EXISTS list_sync_settings;`)
 
-    // Set up database schema for each test
+    // Set up database schema for each test. sync_enabled lives on
+    // list_sync_settings, not on ingredient_lists - see
+    // list-sync-settings-repository.ts.
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS ingredient_lists (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        sync_enabled INTEGER NOT NULL DEFAULT 0
+        updated_at INTEGER NOT NULL
       );
     `)
 
@@ -41,6 +43,14 @@ describe("IngredientListRepository", () => {
         completed INTEGER NOT NULL DEFAULT 0,
         list_id TEXT,
         created_at INTEGER NOT NULL,
+        updated_at INTEGER NOT NULL
+      );
+    `)
+
+    await db.execAsync(`
+      CREATE TABLE IF NOT EXISTS list_sync_settings (
+        list_id    TEXT PRIMARY KEY,
+        enabled    INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL
       );
     `)
@@ -66,6 +76,22 @@ describe("IngredientListRepository", () => {
       expect(lists[0].id).toBe("2") // Weekly Groceries (newest)
       expect(lists[1].id).toBe("1") // Shopping List
       expect(lists[2].id).toBe("3") // Party Supplies (oldest)
+    })
+
+    it("should join list_sync_settings for syncEnabled, defaulting to false when absent", async () => {
+      await db.execAsync(`
+        INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES
+        ('1', 'Synced', 1000, 1000),
+        ('2', 'Not synced', 2000, 2000);
+        INSERT INTO list_sync_settings (list_id, enabled, updated_at) VALUES
+        ('1', 1, 1000);
+      `)
+
+      const result = await repository.getAll()
+
+      const byId = new Map(result.getValue()!.map((l) => [l.id, l]))
+      expect(byId.get("1")?.syncEnabled).toBe(true)
+      expect(byId.get("2")?.syncEnabled).toBe(false)
     })
 
     it("should return empty array when no lists exist", async () => {
@@ -171,33 +197,6 @@ describe("IngredientListRepository", () => {
     })
   })
 
-  describe("getSyncEnabledIds", () => {
-    it("returns only ids of sync-enabled lists", async () => {
-      await db.execAsync(`
-        INSERT INTO ingredient_lists (id, name, created_at, updated_at, sync_enabled) VALUES
-        ('1', 'Synced', 1000, 1000, 1),
-        ('2', 'Not synced', 2000, 2000, 0),
-        ('3', 'Also synced', 3000, 3000, 1);
-      `)
-
-      const result = await repository.getSyncEnabledIds()
-
-      expect(result.success).toBe(true)
-      expect(result.getValue()!.sort()).toEqual(["1", "3"])
-    })
-
-    it("returns an empty array when nothing is sync-enabled", async () => {
-      await db.execAsync(`
-        INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES
-        ('1', 'List', 1000, 1000);
-      `)
-
-      const result = await repository.getSyncEnabledIds()
-
-      expect(result.getValue()).toEqual([])
-    })
-  })
-
   describe("getById", () => {
     it("should return an ingredient list by ID", async () => {
       // Insert test data
@@ -220,10 +219,12 @@ describe("IngredientListRepository", () => {
       })
     })
 
-    it("should surface sync_enabled = 1 as syncEnabled: true", async () => {
+    it("should surface a list_sync_settings row with enabled = 1 as syncEnabled: true", async () => {
       await db.execAsync(`
-        INSERT INTO ingredient_lists (id, name, created_at, updated_at, sync_enabled) VALUES
-        ('1', 'Synced List', 1000, 1000, 1);
+        INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES
+        ('1', 'Synced List', 1000, 1000);
+        INSERT INTO list_sync_settings (list_id, enabled, updated_at) VALUES
+        ('1', 1, 1000);
       `)
 
       const result = await repository.getById("1")

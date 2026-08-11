@@ -3,7 +3,7 @@ import { AppState } from "react-native"
 import { SyncCoordinator } from "../sync-coordinator"
 import { SyncEngine } from "@/api/sync/sync-engine"
 import { SyncSocket } from "@/api/sync/sync-socket"
-import { IngredientListRepository } from "@/database/ingredient-list-repository"
+import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
 import { Result } from "@/api/common/result"
 import { notifyOutboxChanged } from "@/api/sync/outbox-events"
 import { notifySyncListsChanged } from "@/api/sync/sync-events"
@@ -11,12 +11,14 @@ import { flushMicrotasks } from "../test-helpers"
 
 jest.mock("@/api/sync/sync-engine")
 jest.mock("@/api/sync/sync-socket")
-jest.mock("@/database/ingredient-list-repository")
+jest.mock("@/database/list-sync-settings-repository")
 
 const MockSyncEngine = SyncEngine as jest.MockedClass<typeof SyncEngine>
 const MockSyncSocket = SyncSocket as jest.MockedClass<typeof SyncSocket>
-const MockIngredientListRepository =
-  IngredientListRepository as jest.MockedClass<typeof IngredientListRepository>
+const MockListSyncSettingsRepository =
+  ListSyncSettingsRepository as jest.MockedClass<
+    typeof ListSyncSettingsRepository
+  >
 
 describe("SyncCoordinator", () => {
   let flushMock: jest.Mock
@@ -43,7 +45,7 @@ describe("SyncCoordinator", () => {
         {} as never,
         {} as never
       ),
-      new MockIngredientListRepository({} as never)
+      new MockListSyncSettingsRepository({} as never)
     )
     coordinators.push(coordinator)
     return coordinator
@@ -99,13 +101,13 @@ describe("SyncCoordinator", () => {
       } as unknown as SyncSocket
     })
 
-    MockIngredientListRepository.mockImplementation(
+    MockListSyncSettingsRepository.mockImplementation(
       () =>
         ({
-          getSyncEnabledIds: jest
+          getEnabledIds: jest
             .fn()
             .mockResolvedValue(Result.ok(["list-1", "list-2"])),
-        }) as unknown as IngredientListRepository
+        }) as unknown as ListSyncSettingsRepository
     )
   })
 

@@ -21,9 +21,11 @@ export class IngredientListRepository extends BaseRepository {
         updated_at: number
         sync_enabled: number
       }>(
-        `SELECT id, name, created_at, updated_at, sync_enabled
-         FROM ingredient_lists
-         ORDER BY created_at DESC`
+        `SELECT il.id, il.name, il.created_at, il.updated_at,
+                COALESCE(lss.enabled, 0) AS sync_enabled
+         FROM ingredient_lists il
+         LEFT JOIN list_sync_settings lss ON lss.list_id = il.id
+         ORDER BY il.created_at DESC`
       )
 
       return result.map((row) => ({
@@ -54,12 +56,13 @@ export class IngredientListRepository extends BaseRepository {
            il.name,
            il.created_at,
            il.updated_at,
-           il.sync_enabled,
+           COALESCE(lss.enabled, 0) AS sync_enabled,
            COUNT(i.id) as total_count,
            SUM(CASE WHEN i.completed = 1 THEN 1 ELSE 0 END) as completed_count
          FROM ingredient_lists il
          LEFT JOIN ingredients i ON il.id = i.list_id
-         GROUP BY il.id, il.name, il.created_at, il.updated_at, il.sync_enabled
+         LEFT JOIN list_sync_settings lss ON lss.list_id = il.id
+         GROUP BY il.id, il.name, il.created_at, il.updated_at, lss.enabled
          ORDER BY il.created_at DESC`
       )
 
@@ -75,20 +78,6 @@ export class IngredientListRepository extends BaseRepository {
     }, "getAllWithCounts")
   }
 
-  /**
-   * Ids of every sync-enabled list, for the reconcile pass - a focused
-   * query rather than getAllWithCounts()'s join, since reconcile has no
-   * use for ingredient counts.
-   */
-  async getSyncEnabledIds(): Promise<Result<string[], DbQueryError>> {
-    return this._executeQuery(async () => {
-      const result = await this.db.getAllAsync<{ id: string }>(
-        `SELECT id FROM ingredient_lists WHERE sync_enabled = 1`
-      )
-      return result.map((row) => row.id)
-    }, "getSyncEnabledIds")
-  }
-
   async getById(
     id: string
   ): Promise<Result<IngredientList | null, DbQueryError>> {
@@ -100,9 +89,11 @@ export class IngredientListRepository extends BaseRepository {
         updated_at: number
         sync_enabled: number
       }>(
-        `SELECT id, name, created_at, updated_at, sync_enabled
-         FROM ingredient_lists
-         WHERE id = ?`,
+        `SELECT il.id, il.name, il.created_at, il.updated_at,
+                COALESCE(lss.enabled, 0) AS sync_enabled
+         FROM ingredient_lists il
+         LEFT JOIN list_sync_settings lss ON lss.list_id = il.id
+         WHERE il.id = ?`,
         id
       )
 

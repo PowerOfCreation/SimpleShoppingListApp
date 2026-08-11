@@ -45,6 +45,7 @@ async function cleanupDatabase(db: ReturnType<typeof getDatabase>) {
   await db.execAsync(`DELETE FROM ingredient_lists;`)
   await db.execAsync(`DELETE FROM domain_events;`)
   await db.execAsync(`DELETE FROM event_outbox;`)
+  await db.execAsync(`DELETE FROM list_sync_settings;`)
 }
 
 describe("<NewShoppingList /> Component Tests", () => {
@@ -129,12 +130,18 @@ describe("<NewShoppingList /> Component Tests", () => {
 
       await waitFor(() => expect(router.replace).toHaveBeenCalledTimes(1))
 
-      const list = await db.getFirstAsync<{
-        name: string
-        sync_enabled: number
-      }>(`SELECT name, sync_enabled FROM ingredient_lists`)
+      const list = await db.getFirstAsync<{ id: string; name: string }>(
+        `SELECT id, name FROM ingredient_lists`
+      )
       expect(list?.name).toBe("Rewe")
-      expect(list?.sync_enabled).toBe(0)
+
+      const setting = await db.getFirstAsync<{ enabled: number }>(
+        `SELECT enabled FROM list_sync_settings WHERE list_id = ?`,
+        list!.id
+      )
+      // Sync was never toggled on, so there's no row at all - not a row
+      // with enabled = 0.
+      expect(setting).toBeNull()
 
       const outboxCount = await db.getFirstAsync<{ c: number }>(
         `SELECT COUNT(*) as c FROM event_outbox`
@@ -159,16 +166,21 @@ describe("<NewShoppingList /> Component Tests", () => {
 
       await waitFor(() => expect(router.replace).toHaveBeenCalledTimes(1))
 
-      const list = await db.getFirstAsync<{ sync_enabled: number }>(
-        `SELECT sync_enabled FROM ingredient_lists WHERE name = 'Ikea'`
+      const list = await db.getFirstAsync<{ id: string }>(
+        `SELECT id FROM ingredient_lists WHERE name = 'Ikea'`
       )
-      expect(list?.sync_enabled).toBe(1)
+      const setting = await db.getFirstAsync<{ enabled: number }>(
+        `SELECT enabled FROM list_sync_settings WHERE list_id = ?`,
+        list!.id
+      )
+      expect(setting?.enabled).toBe(1)
 
       const outboxCount = await db.getFirstAsync<{ c: number }>(
         `SELECT COUNT(*) as c FROM event_outbox`
       )
-      // Only todo_list.created is enqueued - todo_list.sync_enabled is
-      // local-only and never sent to the server.
+      // Only todo_list.created is enqueued - sync on/off is a device-local
+      // setting and never sent to the server (see
+      // list-sync-settings-repository.ts).
       expect(outboxCount?.c).toBe(1)
     })
 
