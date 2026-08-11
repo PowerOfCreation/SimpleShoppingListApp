@@ -5,6 +5,7 @@ import { IngredientListRepository } from "@/database/ingredient-list-repository"
 import { EventRepository, AppendEntry } from "@/database/event-repository"
 import { OutboxRepository } from "@/database/outbox-repository"
 import { IngredientListProjection } from "@/database/ingredient-list-projection"
+import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
 import { getDatabase } from "@/database/database"
 import { createLogger } from "@/api/common/logger"
 import { Result } from "@/api/common/result"
@@ -26,18 +27,22 @@ export class ShoppingListService {
   private eventRepository: EventRepository
   private outboxRepository: OutboxRepository
   private projection: IngredientListProjection
+  private listSyncSettingsRepository: ListSyncSettingsRepository
 
   constructor(
     repository?: IngredientListRepository,
     eventRepository?: EventRepository,
     projection?: IngredientListProjection,
-    outboxRepository?: OutboxRepository
+    outboxRepository?: OutboxRepository,
+    listSyncSettingsRepository?: ListSyncSettingsRepository
   ) {
     const db = getDatabase()
     this.repository = repository || new IngredientListRepository(db)
     this.eventRepository = eventRepository || new EventRepository(db)
     this.projection = projection || new IngredientListProjection(db)
     this.outboxRepository = outboxRepository || new OutboxRepository(db)
+    this.listSyncSettingsRepository =
+      listSyncSettingsRepository || new ListSyncSettingsRepository(db)
   }
 
   async createList(
@@ -68,33 +73,24 @@ export class ShoppingListService {
       const entries: AppendEntry[] = [
         {
           event: createdEvent,
-          project: (db) => this.projection.handleCreated(db, createdEvent),
+          project: async (db) => {
+            await this.projection.handleCreated(db, createdEvent)
+            // Written in the same transaction as the create, so a crash
+            // partway through can't leave the setting out of step with
+            // whether the list even exists - see list-sync-settings-repository.ts.
+            if (syncEnabled) {
+              await this.listSyncSettingsRepository.setEnabledWithin(
+                db,
+                listId,
+                true
+              )
+            }
+          },
           // Only enqueued when sync is on - creating a list without the
           // sync toggle must not send anything to the server.
           enqueueForSync: syncEnabled,
         },
       ]
-
-      if (syncEnabled) {
-        const syncEnabledEvent: DomainEventRow = {
-          event_id: uuidv4(),
-          event_type: EventTypes.TODO_LIST_SYNC_ENABLED,
-          aggregate_id: listId,
-          aggregate_type: AggregateTypes.TODO_LIST,
-          list_id: listId,
-          occurred_at: now,
-          client_id: getClientId(),
-          payload: JSON.stringify({}),
-          seq: null,
-        }
-        entries.push({
-          event: syncEnabledEvent,
-          project: (db) =>
-            this.projection.handleSyncEnabled(db, syncEnabledEvent),
-          // sync_enabled/disabled are a local decision - never sent to the
-          // backend, which has no notion of them (see SYNCABLE_EVENT_TYPES).
-        })
-      }
 
       const result = await this.eventRepository.appendAll(entries)
 
@@ -128,9 +124,10 @@ export class ShoppingListService {
   /**
    * Turns sync on or off for an existing list.
    *
-   * The toggle itself is stored as a domain event (`todo_list.sync_enabled` /
-   * `todo_list.sync_disabled`) and enqueued so the backend learns of the
-   * change (it has no handler for these yet and ignores them for now).
+   * The toggle itself is a device-local setting (list_sync_settings), not a
+   * domain event - see list-sync-settings-repository.ts. The backend never
+   * learns "sync was turned on/off" as its own fact; turning sync on simply
+   * starts pushing the list's existing content.
    *
    * Turning it on additionally replays the *list's* existing syncable
    * history into the outbox (in stable occurred_at+insertion order) - not
@@ -139,39 +136,26 @@ export class ShoppingListService {
    * its current name. Turning it off cancels every still-pending outbox row
    * for the list, ingredient rows included - the server's existing copy (if
    * any) is left alone; deleting it is a separate, explicit action.
+   *
+   * The setting write and the outbox change are two separate statements,
+   * not one transaction - a crash between them is not silently wrong: if
+   * enabling, the next reconcile pass finds the server still missing this
+   * list's syncable history (getByListId doesn't care whether
+   * enqueueExistingForSync already ran) and re-enqueues it; if disabling, at
+   * worst a few already-queued rows still go out once, which turning sync
+   * back on would have resent anyway.
    */
   async setSyncEnabled(
     listId: string,
     enabled: boolean
   ): Promise<Result<void, DbQueryError>> {
     try {
-      const now = Date.now()
-      const syncEvent: DomainEventRow = {
-        event_id: uuidv4(),
-        event_type: enabled
-          ? EventTypes.TODO_LIST_SYNC_ENABLED
-          : EventTypes.TODO_LIST_SYNC_DISABLED,
-        aggregate_id: listId,
-        aggregate_type: AggregateTypes.TODO_LIST,
-        list_id: listId,
-        occurred_at: now,
-        client_id: getClientId(),
-        payload: JSON.stringify({}),
-        seq: null,
-      }
-
-      const appendResult = await this.eventRepository.appendAll([
-        {
-          event: syncEvent,
-          project: (db) =>
-            enabled
-              ? this.projection.handleSyncEnabled(db, syncEvent)
-              : this.projection.handleSyncDisabled(db, syncEvent),
-          enqueueForSync: true,
-        },
-      ])
-      if (!appendResult.success) {
-        return Result.fail(appendResult.getError())
+      const settingResult = await this.listSyncSettingsRepository.setEnabled(
+        listId,
+        enabled
+      )
+      if (!settingResult.success) {
+        return settingResult
       }
 
       if (enabled) {
@@ -192,17 +176,6 @@ export class ShoppingListService {
         const cancelResult = await this.outboxRepository.cancelForList(listId)
         if (!cancelResult.success) {
           return Result.fail(cancelResult.getError())
-        }
-
-        // cancelForList removes every still-pending row for this list,
-        // ingredient rows included - including the sync_disabled event
-        // appended above - so re-queue that one event to make sure the
-        // backend still learns this list's sync was turned off.
-        const requeueResult = await this.eventRepository.enqueueExistingForSync(
-          [syncEvent]
-        )
-        if (!requeueResult.success) {
-          return Result.fail(requeueResult.getError())
         }
       }
 

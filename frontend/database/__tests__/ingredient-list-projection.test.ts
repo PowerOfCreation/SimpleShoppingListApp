@@ -31,49 +31,28 @@ describe("IngredientListProjection", () => {
     db = getDatabase()
     projection = new IngredientListProjection(db)
 
+    // No sync_enabled column here - that setting moved to
+    // list_sync_settings, a device-local table the projection never
+    // touches (see list-sync-settings-repository.ts).
     await db.execAsync(`DROP TABLE IF EXISTS ingredient_lists`)
     await db.execAsync(`
       CREATE TABLE ingredient_lists (
         id TEXT PRIMARY KEY,
         name TEXT NOT NULL,
         created_at INTEGER NOT NULL,
-        updated_at INTEGER NOT NULL,
-        sync_enabled INTEGER NOT NULL DEFAULT 0
+        updated_at INTEGER NOT NULL
       )
     `)
   })
 
-  async function getSyncEnabled(id: string): Promise<number | undefined> {
-    const row = await db.getFirstAsync<{ sync_enabled: number }>(
-      `SELECT sync_enabled FROM ingredient_lists WHERE id = ?`,
-      id
-    )
-    return row?.sync_enabled
-  }
-
   describe("handleCreated", () => {
-    it("inserts a list with sync_enabled defaulting to 0", async () => {
+    it("inserts a list", async () => {
       await projection.handleCreated(db, makeEvent())
 
-      expect(await getSyncEnabled("list-1")).toBe(0)
-    })
-  })
-
-  describe("handleSyncEnabled / handleSyncDisabled", () => {
-    it("flips sync_enabled to 1 and back to 0", async () => {
-      await projection.handleCreated(db, makeEvent())
-
-      await projection.handleSyncEnabled(
-        db,
-        makeEvent({ event_type: EventTypes.TODO_LIST_SYNC_ENABLED })
+      const row = await db.getFirstAsync<{ id: string }>(
+        `SELECT id FROM ingredient_lists WHERE id = 'list-1'`
       )
-      expect(await getSyncEnabled("list-1")).toBe(1)
-
-      await projection.handleSyncDisabled(
-        db,
-        makeEvent({ event_type: EventTypes.TODO_LIST_SYNC_DISABLED })
-      )
-      expect(await getSyncEnabled("list-1")).toBe(0)
+      expect(row).not.toBeNull()
     })
   })
 
@@ -99,51 +78,6 @@ describe("IngredientListProjection", () => {
       expect(row?.name).toBe("Lidl")
     })
 
-    it("preserves sync_enabled across a rebuild instead of silently disabling it", async () => {
-      // This is the regression a naive rebuild() introduces: DELETE FROM
-      // ingredient_lists wipes sync_enabled along with everything else, and
-      // handleCreated never sets it (it's always a follow-up event). If
-      // rebuild()'s switch doesn't also replay sync_enabled/sync_disabled
-      // events, every synced list comes back from a rebuild with sync
-      // silently turned off.
-      await projection.rebuild([
-        makeEvent({
-          event_id: "e1",
-          event_type: EventTypes.TODO_LIST_CREATED,
-          occurred_at: 1000,
-        }),
-        makeEvent({
-          event_id: "e2",
-          event_type: EventTypes.TODO_LIST_SYNC_ENABLED,
-          occurred_at: 1000,
-        }),
-      ])
-
-      expect(await getSyncEnabled("list-1")).toBe(1)
-    })
-
-    it("replays a later sync_disabled after sync_enabled", async () => {
-      await projection.rebuild([
-        makeEvent({
-          event_id: "e1",
-          event_type: EventTypes.TODO_LIST_CREATED,
-          occurred_at: 1000,
-        }),
-        makeEvent({
-          event_id: "e2",
-          event_type: EventTypes.TODO_LIST_SYNC_ENABLED,
-          occurred_at: 1000,
-        }),
-        makeEvent({
-          event_id: "e3",
-          event_type: EventTypes.TODO_LIST_SYNC_DISABLED,
-          occurred_at: 2000,
-        }),
-      ])
-
-      expect(await getSyncEnabled("list-1")).toBe(0)
-    })
-
     it("clears ingredient_lists before replaying", async () => {
       await db.runAsync(
         `INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES ('stale', 'Stale', 1, 1)`
@@ -153,6 +87,29 @@ describe("IngredientListProjection", () => {
 
       const rows = await db.getAllAsync(`SELECT * FROM ingredient_lists`)
       expect(rows.length).toBe(0)
+    })
+
+    it("ignores a sync_enabled/sync_disabled event still sitting in old history", async () => {
+      // Historical rows: these event types are no longer emitted (see
+      // types/DomainEvent.ts), but old ones may still exist in a device's
+      // domain_events. The projection must not choke on them.
+      await projection.rebuild([
+        makeEvent({
+          event_id: "e1",
+          event_type: EventTypes.TODO_LIST_CREATED,
+          occurred_at: 1000,
+        }),
+        makeEvent({
+          event_id: "e2",
+          event_type: EventTypes.TODO_LIST_SYNC_ENABLED,
+          occurred_at: 1000,
+        }),
+      ])
+
+      const row = await db.getFirstAsync<{ id: string }>(
+        `SELECT id FROM ingredient_lists WHERE id = 'list-1'`
+      )
+      expect(row).not.toBeNull()
     })
   })
 
@@ -170,23 +127,6 @@ describe("IngredientListProjection", () => {
         `SELECT id FROM ingredient_lists ORDER BY id`
       )
       expect(rows.map((r) => r.id)).toEqual(["list-1", "list-2"])
-    })
-
-    it("replays sync_enabled/sync_disabled so a rebuild doesn't silently disable sync", async () => {
-      await projection.rebuildForList(db, "list-1", [
-        makeEvent({
-          event_id: "e1",
-          event_type: EventTypes.TODO_LIST_CREATED,
-          occurred_at: 1000,
-        }),
-        makeEvent({
-          event_id: "e2",
-          event_type: EventTypes.TODO_LIST_SYNC_ENABLED,
-          occurred_at: 1000,
-        }),
-      ])
-
-      expect(await getSyncEnabled("list-1")).toBe(1)
     })
 
     it("leaves no row when the list's history ends in a delete", async () => {

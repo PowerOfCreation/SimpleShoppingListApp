@@ -74,12 +74,16 @@ describe("Data Migration", () => {
 
     it("should run migrations for legacy devices (currentVersion > DB_VERSION)", async () => {
       const getVersionMock = database.getDatabaseVersion as jest.Mock
-      getVersionMock.mockResolvedValue(Result.ok(7))
+      const futureVersion = database.DB_VERSION + 1
+      getVersionMock.mockResolvedValue(Result.ok(futureVersion))
 
       const result = await initializeAndMigrateDatabase(db)
 
       expect(result.success).toBe(true)
-      expect(migrations.executeMigrations).toHaveBeenCalledWith(db, 7)
+      expect(migrations.executeMigrations).toHaveBeenCalledWith(
+        db,
+        futureVersion
+      )
     })
 
     it("should handle version check failure", async () => {

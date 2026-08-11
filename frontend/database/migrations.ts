@@ -9,6 +9,7 @@ import { migrateToVersion3 } from "@/database/migrations/migration-3"
 import { migrateToVersion4 } from "@/database/migrations/migration-4"
 import { migrateToVersion5 } from "@/database/migrations/migration-5"
 import { migrateToVersion6 } from "@/database/migrations/migration-6"
+import { migrateToVersion7 } from "@/database/migrations/migration-7"
 
 const logger = createLogger("Migrations")
 
@@ -26,6 +27,7 @@ const MIGRATIONS: Migration[] = [
   { version: 4, migrate: migrateToVersion4 },
   { version: 5, migrate: migrateToVersion5 },
   { version: 6, migrate: migrateToVersion6 },
+  { version: 7, migrate: migrateToVersion7 },
 ]
 
 export async function executeMigrations(

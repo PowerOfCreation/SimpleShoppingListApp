@@ -1,6 +1,6 @@
 import { AppState, AppStateStatus, NativeEventSubscription } from "react-native"
 
-import { IngredientListRepository } from "@/database/ingredient-list-repository"
+import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
 import { SyncEngine } from "@/api/sync/sync-engine"
 import { SyncSocket } from "@/api/sync/sync-socket"
 import { onOutboxChanged } from "@/api/sync/outbox-events"
@@ -45,7 +45,7 @@ export class SyncCoordinator {
 
   constructor(
     private readonly engine: SyncEngine,
-    private readonly listRepository: IngredientListRepository
+    private readonly listSyncSettingsRepository: ListSyncSettingsRepository
   ) {
     this.socket = new SyncSocket(
       (eventId, seq) => {
@@ -94,7 +94,7 @@ export class SyncCoordinator {
   }
 
   private async reconcileNow(): Promise<void> {
-    const idsResult = await this.listRepository.getSyncEnabledIds()
+    const idsResult = await this.listSyncSettingsRepository.getEnabledIds()
     if (!idsResult.success) {
       logger.error(
         "Reconcile: failed to load sync-enabled list ids",
@@ -106,7 +106,7 @@ export class SyncCoordinator {
   }
 
   private async pullNow(): Promise<void> {
-    const idsResult = await this.listRepository.getSyncEnabledIds()
+    const idsResult = await this.listSyncSettingsRepository.getEnabledIds()
     if (!idsResult.success) {
       logger.error(
         "Pull: failed to load sync-enabled list ids",
@@ -118,7 +118,7 @@ export class SyncCoordinator {
   }
 
   private async subscribeNow(): Promise<void> {
-    const idsResult = await this.listRepository.getSyncEnabledIds()
+    const idsResult = await this.listSyncSettingsRepository.getEnabledIds()
     if (!idsResult.success) {
       logger.error(
         "Subscribe: failed to load sync-enabled list ids",
