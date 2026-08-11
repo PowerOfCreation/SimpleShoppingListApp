@@ -54,6 +54,22 @@ describe("IngredientListProjection", () => {
       )
       expect(row).not.toBeNull()
     })
+
+    it("upserts rather than throwing on a duplicate/echoed created event", async () => {
+      await projection.handleCreated(db, makeEvent())
+
+      await expect(
+        projection.handleCreated(
+          db,
+          makeEvent({ payload: JSON.stringify({ name: "Renamed" }) })
+        )
+      ).resolves.toBeUndefined()
+
+      const row = await db.getFirstAsync<{ name: string }>(
+        `SELECT name FROM ingredient_lists WHERE id = 'list-1'`
+      )
+      expect(row?.name).toBe("Renamed")
+    })
   })
 
   describe("rebuild", () => {
@@ -181,6 +197,39 @@ describe("IngredientListProjection", () => {
         `SELECT name FROM ingredient_lists WHERE id = 'list-1'`
       )
       expect(row?.name).toBe("Lidl")
+    })
+
+    it("warns (but doesn't throw) when the list has history but no todo_list.created among it", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation()
+
+      await expect(
+        projection.rebuildForList(db, "list-1", [
+          makeEvent({
+            event_id: "e1",
+            event_type: EventTypes.TODO_LIST_UPDATED,
+            payload: JSON.stringify({ name: "Lidl" }),
+          }),
+        ])
+      ).resolves.toBeUndefined()
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringContaining("no todo_list.created")
+      )
+      const row = await db.getFirstAsync(
+        `SELECT id FROM ingredient_lists WHERE id = 'list-1'`
+      )
+      expect(row).toBeNull()
+
+      warnSpy.mockRestore()
+    })
+
+    it("does not warn for a list with no history at all", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation()
+
+      await projection.rebuildForList(db, "list-1", [])
+
+      expect(warnSpy).not.toHaveBeenCalled()
+      warnSpy.mockRestore()
     })
   })
 })

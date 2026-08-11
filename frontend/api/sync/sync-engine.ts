@@ -157,11 +157,14 @@ export class SyncEngine {
   }
 
   /**
-   * Self-heal: compares the syncable events we hold locally for these
-   * (sync-enabled) lists against what the server durably holds, re-queues
-   * anything missing, and flushes - recovers from a lost ack, an app kill
-   * between send and ack, or the server losing previously-acked data.
-   * Keyed by list_id, not aggregate_id - see sync-design-decisions.md.
+   * Self-heal, both directions: compares the syncable events we hold
+   * locally for these (sync-enabled) lists against what the server durably
+   * holds. Server missing something we have → re-queue it (recovers from an
+   * app kill between send and ack, or the server losing previously-acked
+   * data). Server already has something we still show as locally
+   * unconfirmed → repairList() re-derives that list from scratch (recovers
+   * from local/server ordering drift, see repairList's doc comment). Keyed
+   * by list_id, not aggregate_id - see sync-design-decisions.md.
    */
   async reconcile(listIds: string[]): Promise<void> {
     if (listIds.length === 0) {
@@ -195,27 +198,61 @@ export class SyncEngine {
         )
         continue
       }
-
-      const missing = eventsResult
+      const syncable = eventsResult
         .getValue()!
-        .filter(
-          (event) =>
-            SYNCABLE_EVENT_TYPES.includes(event.event_type) &&
-            !known.has(event.event_id)
+        .filter((event) => SYNCABLE_EVENT_TYPES.includes(event.event_type))
+
+      const missing = syncable.filter((event) => !known.has(event.event_id))
+      if (missing.length > 0) {
+        // enqueueExistingForSync creates a fresh (pending) row for anything
+        // never queued before; resetToPending forces any existing row -
+        // even one already marked synced - back to pending. Together they
+        // cover both "never sent" and "server lost what it had acked".
+        await this.eventRepository.enqueueExistingForSync(missing)
+        await this.outboxRepository.resetToPending(
+          missing.map((event) => event.event_id)
         )
-      if (missing.length === 0) {
-        continue
       }
 
-      // enqueueExistingForSync creates a fresh (pending) row for anything
-      // never queued before; resetToPending forces any existing row - even
-      // one already marked synced - back to pending. Together they cover
-      // both "never sent" and "server lost what it had acked".
-      await this.eventRepository.enqueueExistingForSync(missing)
-      await this.outboxRepository.resetToPending(
-        missing.map((event) => event.event_id)
+      // The opposite direction: the server already has this event (it's in
+      // `known`), but we never recorded its seq. Under the single-writer
+      // invariant (see sync-design-decisions.md, "Genau ein Writer für
+      // seq") that can only mean our local ordering for this list has
+      // drifted from the server's - e.g. a pull page that skipped it under
+      // multiple backend replicas without a leader election (see the design
+      // doc's caveat on that). A normal incremental pull trusts the local
+      // cursor and won't revisit an event behind it on its own - repairList
+      // resets the cursor and re-derives the list from scratch.
+      const hasStaleOrdering = syncable.some(
+        (event) => event.seq === null && known.has(event.event_id)
       )
+      if (hasStaleOrdering) {
+        await this.repairList(listId)
+      }
     }
+  }
+
+  /**
+   * Full re-derivation of one list from the server: resets the pull cursor
+   * to 0 and re-pulls from scratch. insertRemote (seq's only writer, see
+   * EventRepository) fills in the seq for every event already held locally
+   * as an unconfirmed echo of our own push, and the pull's rebuild replays
+   * the list's complete, correctly-ordered history. Called by reconcile
+   * when it detects local/server drift a normal incremental pull can't
+   * self-correct (see reconcileBatch), and exposed directly for a
+   * user-triggered "re-sync from server" action - see
+   * sync-design-decisions.md ("Reparatur: voller Re-Pull").
+   */
+  async repairList(listId: string): Promise<void> {
+    const clearResult = await this.cursorRepository.clear(listId)
+    if (!clearResult.success) {
+      logger.error(
+        `Failed to clear pull cursor for list ${listId} before repair`,
+        clearResult.getError()
+      )
+      return
+    }
+    await this.pullList(listId)
   }
 
   /**
