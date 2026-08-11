@@ -30,7 +30,7 @@ describe("SyncCoordinator", () => {
   let socketDisconnectMock: jest.Mock
   let socketReconnectIfTokenChangedMock: jest.Mock
   let socketSubscribeMock: jest.Mock
-  let ackHandler: ((eventId: string, seq: number) => void) | undefined
+  let ackHandler: ((eventId: string) => void) | undefined
   let onConnectedHandler: (() => void) | undefined
   let listEventHandler: ((listId: string, seq: number) => void) | undefined
   let appStateRemoveMock: jest.Mock
@@ -147,9 +147,9 @@ describe("SyncCoordinator", () => {
     buildCoordinator().start()
 
     expect(ackHandler).toBeDefined()
-    ackHandler!("evt-123", 7)
+    ackHandler!("evt-123")
 
-    expect(handleAckMock).toHaveBeenCalledWith("evt-123", 7)
+    expect(handleAckMock).toHaveBeenCalledWith("evt-123")
   })
 
   it("pulls and reconciles sync-enabled lists when the socket (re)connects", async () => {

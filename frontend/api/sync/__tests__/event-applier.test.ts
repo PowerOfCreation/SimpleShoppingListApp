@@ -270,43 +270,4 @@ describe("EventApplier", () => {
     )
     expect(cursorRow).toBeNull()
   })
-
-  describe("rebuildForAck", () => {
-    it("rebuilds the list's projections from local state and notifies", async () => {
-      await eventRepository.append(makeEvent())
-      await eventRepository.append(makeIngredientCreated())
-
-      const result = await applier.rebuildForAck("list-1")
-
-      expect(result.success).toBe(true)
-      const ingredient = await db.getFirstAsync<{ name: string }>(
-        `SELECT name FROM ingredients WHERE id = 'ing-1'`
-      )
-      expect(ingredient?.name).toBe("Milk")
-      expect(notifyListDataChanged).toHaveBeenCalledWith("list-1")
-    })
-
-    it("does not touch the pull cursor", async () => {
-      await eventRepository.append(makeEvent())
-
-      await applier.rebuildForAck("list-1")
-
-      const cursorRow = await db.getFirstAsync(
-        `SELECT list_id FROM sync_cursors WHERE list_id = 'list-1'`
-      )
-      expect(cursorRow).toBeNull()
-    })
-
-    it("fails without notifying when the rebuild throws", async () => {
-      await eventRepository.append(makeEvent())
-      jest
-        .spyOn(listProjection, "rebuildForList")
-        .mockRejectedValueOnce(new Error("boom"))
-
-      const result = await applier.rebuildForAck("list-1")
-
-      expect(result.success).toBe(false)
-      expect(notifyListDataChanged).not.toHaveBeenCalled()
-    })
-  })
 })

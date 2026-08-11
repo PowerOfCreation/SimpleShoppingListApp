@@ -16,8 +16,10 @@ const logger = createLogger("EventApplier")
  * Applies one page of pulled events atomically: insert the new event rows,
  * rebuild the affected list's projections from full merged history, and
  * advance the pull cursor - all in one transaction, so a crash partway
- * through can't leave the cursor ahead of the projection. rebuildForAck
- * handles the same reshuffle for our own acked pushes, minus the cursor.
+ * through can't leave the cursor ahead of the projection. The only path
+ * that rebuilds a list's projection or writes `seq` - a WebSocket ack no
+ * longer does either (see sync-design-decisions.md, "Genau ein Writer für
+ * seq"); it only marks the outbox row synced.
  *
  * Doesn't extend BaseRepository: its _executeTransaction goes through
  * runExclusive itself, and nesting that here would deadlock. Every
@@ -80,31 +82,6 @@ export class EventApplier {
         new DbQueryError(
           `Failed to apply pulled events for list ${listId}`,
           "apply",
-          "EventApplier",
-          error
-        )
-      )
-    }
-  }
-
-  /**
-   * Rebuilds one list's projections after one of our own pushed events got
-   * its seq (see SyncEngine.handleAck) - same reshuffle as apply(), but no
-   * cursor to advance and nothing new to insert.
-   */
-  async rebuildForAck(listId: string): Promise<Result<void, DbQueryError>> {
-    try {
-      await runExclusive(() =>
-        this.db.withTransactionAsync(() => this.rebuildListProjections(listId))
-      )
-      notifyListDataChanged(listId)
-      return Result.ok(undefined)
-    } catch (error) {
-      logger.error(`Failed to rebuild list ${listId} after ack`, error)
-      return Result.fail(
-        new DbQueryError(
-          `Failed to rebuild list ${listId} after ack`,
-          "rebuildForAck",
           "EventApplier",
           error
         )

@@ -36,13 +36,6 @@ export const MAX_DRAIN_BATCHES = 20
 export class SyncEngine {
   private readonly inFlight = new Set<string>()
   private flushing = false
-  // Serializes handleAck() end-to-end - see its doc comment for why two
-  // acks for the same list must never process concurrently. Deliberately a
-  // separate queue from write-lock.ts's runExclusive: handleAckOrdered's
-  // own steps (markSynced, markSeq, rebuildForAck) already funnel through
-  // that queue internally, and nesting the same queue inside itself here
-  // would deadlock (see EventApplier's class doc for the same hazard).
-  private ackQueue: Promise<void> = Promise.resolve()
 
   constructor(
     private readonly outboxRepository: OutboxRepository,
@@ -142,70 +135,24 @@ export class SyncEngine {
   }
 
   /**
-   * The server confirmed (via WebSocket) that this event committed, at
-   * position `seq`. Marks the outbox row synced and, for a first-time ack,
-   * records the seq and rebuilds the affected list (byServerSeqThenLocal).
-   * See sync-design-decisions.md ("Ack trägt seq mit").
-   *
-   * Queued onto ackQueue rather than run directly: SyncSocket dispatches
-   * each "ack" message via a synchronous, unawaited callback, so two acks
-   * for the same list could otherwise finish processing in whichever order
-   * their own awaits happen to resolve, not necessarily arrival order -
-   * letting byServerSeqThenLocal sort a later-seq event before an
-   * earlier-seq one that's still locally unconfirmed (e.g. replaying
-   * todo_list.sync_enabled before todo_list.created no-ops the UPDATE, and
-   * the following handleCreated INSERT re-creates the row with the
-   * column's default). Queuing guarantees each ack's write+rebuild fully
-   * completes, in arrival order, before the next one starts.
+   * The server confirmed (via WebSocket) that this event committed. Marks
+   * the outbox row synced - that's all. `seq` has exactly one writer (the
+   * pull path, see EventRepository.insertRemote): the ack doesn't record
+   * it, so it never has to race pull for ordering. See
+   * sync-design-decisions.md ("Genau ein Writer für seq") for why a second,
+   * out-of-band writer here made "unconfirmed" ambiguous - it used to mean
+   * either "not yet sent" or "the server has this, we just lost the ack" -
+   * and made every ack a potential list rebuild, ordering-sensitive across
+   * concurrent acks. Losing an ack is now harmless: the event simply stays
+   * in the local unconfirmed tail until the next pull assigns it a seq.
    */
-  async handleAck(eventId: string, seq: number): Promise<void> {
-    const run = this.ackQueue.then(() => this.handleAckOrdered(eventId, seq))
-    this.ackQueue = run.then(
-      () => undefined,
-      () => undefined
-    )
-    return run
-  }
-
-  private async handleAckOrdered(eventId: string, seq: number): Promise<void> {
+  async handleAck(eventId: string): Promise<void> {
     const result = await this.outboxRepository.markSynced(eventId)
     if (!result.success) {
       logger.error(
         `Failed to mark event ${eventId} as synced`,
         result.getError()
       )
-    }
-
-    const eventsResult = await this.eventRepository.getByEventIds([eventId])
-    if (!eventsResult.success) {
-      logger.error(
-        `Failed to look up acked event ${eventId}`,
-        eventsResult.getError()
-      )
-      return
-    }
-    const event = eventsResult.getValue()![0]
-    if (!event || event.seq !== null) {
-      return
-    }
-
-    const seqResult = await this.eventRepository.markSeq(eventId, seq)
-    if (!seqResult.success) {
-      logger.error(
-        `Failed to record seq for event ${eventId}`,
-        seqResult.getError()
-      )
-      return
-    }
-
-    if (event.list_id) {
-      const rebuildResult = await this.eventApplier.rebuildForAck(event.list_id)
-      if (!rebuildResult.success) {
-        logger.error(
-          `Failed to rebuild list ${event.list_id} after ack`,
-          rebuildResult.getError()
-        )
-      }
     }
   }
 
