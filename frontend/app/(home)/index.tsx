@@ -14,11 +14,13 @@ import { ShoppingListEntry } from "@/components/ShoppingListEntry"
 import { shoppingListService } from "@/api/shopping-list-service"
 import { createLogger } from "@/api/common/logger"
 import { useAuth } from "@/api/auth/AuthProvider"
+import { useSyncEngine } from "@/api/sync/SyncProvider"
 
 const logger = createLogger("Index")
 
 export default function Index() {
   const { lists, isLoading, error, refetch, updateList } = useShoppingLists()
+  const syncEngine = useSyncEngine()
   const dividerColor = useThemeColor({}, "divider")
   const [isCheckingPreference, setIsCheckingPreference] = React.useState(true)
   const hasNavigatedRef = React.useRef(false)
@@ -104,6 +106,16 @@ export default function Index() {
     }
   }
 
+  const handleResync = async (id: string) => {
+    try {
+      await syncEngine.repairList(id)
+      // The repair pull may have changed this list's content/name locally.
+      await refetch()
+    } catch (err) {
+      logger.error("Error re-syncing list from server", err)
+    }
+  }
+
   const renderListItem = ({ item }: { item: ShoppingListOverview }) => {
     return (
       <ShoppingListEntry
@@ -118,6 +130,7 @@ export default function Index() {
         syncEnabled={item.syncEnabled}
         onToggleSync={(enabled) => handleToggleSync(item.id, enabled)}
         syncToggleDisabled={!isSignedIn}
+        onResync={() => handleResync(item.id)}
       />
     )
   }

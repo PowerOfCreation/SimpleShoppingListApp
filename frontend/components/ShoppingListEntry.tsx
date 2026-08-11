@@ -24,6 +24,7 @@ export type ShoppingListEntryProps = {
   syncEnabled?: boolean
   onToggleSync?: (enabled: boolean) => void
   syncToggleDisabled?: boolean
+  onResync?: () => void
 }
 
 export function ShoppingListEntry(props: ShoppingListEntryProps) {
@@ -108,6 +109,17 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
             disabled: props.syncToggleDisabled,
             onValueChange: (enabled) => props.onToggleSync?.(enabled),
           },
+          // Only meaningful once sync is actually on for this list - there's
+          // nothing to re-derive from the server otherwise.
+          ...(props.syncEnabled
+            ? [
+                {
+                  label: "Re-sync from server",
+                  testID: `shopping-list-context-resync-${props.id}`,
+                  onPress: () => props.onResync?.(),
+                },
+              ]
+            : []),
           {
             label: "Delete",
             testID: `shopping-list-context-delete-${props.id}`,
