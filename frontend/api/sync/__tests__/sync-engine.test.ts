@@ -76,7 +76,6 @@ describe("SyncEngine", () => {
       getByEventIds: jest.fn().mockResolvedValue(Result.ok([])),
       getByListId: jest.fn().mockResolvedValue(Result.ok([])),
       enqueueExistingForSync: jest.fn().mockResolvedValue(Result.ok(undefined)),
-      markSeq: jest.fn().mockResolvedValue(Result.ok(undefined)),
     } as unknown as jest.Mocked<EventRepository>
 
     cursor = {
@@ -93,7 +92,6 @@ describe("SyncEngine", () => {
 
     applier = {
       apply: jest.fn().mockResolvedValue(Result.ok({ applied: 0 })),
-      rebuildForAck: jest.fn().mockResolvedValue(Result.ok(undefined)),
     } as unknown as jest.Mocked<EventApplier>
 
     MockOutboxRepository.mockImplementation(() => outbox)
@@ -269,116 +267,30 @@ describe("SyncEngine", () => {
 
   describe("handleAck", () => {
     it("marks the acked event as synced", async () => {
-      await engine.handleAck("e1", 5)
+      await engine.handleAck("e1")
 
       expect(outbox.markSynced).toHaveBeenCalledWith("e1")
     })
 
-    it("records the seq and rebuilds the event's list when it was previously unconfirmed", async () => {
-      events.getByEventIds.mockResolvedValue(
-        Result.ok([makeEvent({ event_id: "e1", list_id: "list-1", seq: null })])
+    it("logs but does not throw when marking synced fails", async () => {
+      outbox.markSynced.mockResolvedValue(
+        Result.fail(new DbQueryError("boom", "markSynced", "EventOutbox"))
       )
 
-      await engine.handleAck("e1", 5)
-
-      expect(events.markSeq).toHaveBeenCalledWith("e1", 5)
-      expect(applier.rebuildForAck).toHaveBeenCalledWith("list-1")
+      await expect(engine.handleAck("e1")).resolves.toBeUndefined()
     })
 
-    it("does nothing beyond marking synced for a resent ack (event already has a seq)", async () => {
-      events.getByEventIds.mockResolvedValue(
-        Result.ok([makeEvent({ event_id: "e1", list_id: "list-1", seq: 5 })])
-      )
+    // seq has exactly one writer - the pull path (EventRepository.insertRemote)
+    // - so an ack no longer touches domain_events or triggers a rebuild.
+    // Acking events in any order can never affect replay order: the
+    // regression this queue-based test used to guard against (see #227,
+    // "serialize ack processing to preserve seq order") can no longer occur,
+    // because there's nothing left for a second, out-of-band writer to race.
+    it("never looks up the event or rebuilds anything, regardless of ack order", async () => {
+      await Promise.all([engine.handleAck("e1"), engine.handleAck("e2")])
 
-      await engine.handleAck("e1", 5)
-
-      expect(events.markSeq).not.toHaveBeenCalled()
-      expect(applier.rebuildForAck).not.toHaveBeenCalled()
-    })
-
-    it("does not rebuild when the acked event has no list_id", async () => {
-      events.getByEventIds.mockResolvedValue(
-        Result.ok([makeEvent({ event_id: "e1", list_id: null, seq: null })])
-      )
-
-      await engine.handleAck("e1", 5)
-
-      expect(events.markSeq).toHaveBeenCalledWith("e1", 5)
-      expect(applier.rebuildForAck).not.toHaveBeenCalled()
-    })
-
-    it("does nothing beyond marking synced when the acked event isn't found locally", async () => {
-      events.getByEventIds.mockResolvedValue(Result.ok([]))
-
-      await engine.handleAck("e1", 5)
-
-      expect(events.markSeq).not.toHaveBeenCalled()
-      expect(applier.rebuildForAck).not.toHaveBeenCalled()
-    })
-
-    it("processes acks for the same list one at a time, in call order, even if an earlier ack's own lookup resolves slower than a later ack's", async () => {
-      // Reproduces the bug this queue prevents: SyncSocket dispatches each
-      // "ack" message via a synchronous, unawaited callback, so without
-      // serialization a later-arriving ack whose dependencies happen to
-      // resolve faster could finish (and rebuild) before an
-      // earlier-arriving one - e.g. todo_list.sync_enabled's rebuild
-      // running while todo_list.created is still locally unconfirmed.
-      const callOrder: string[] = []
-
-      let resolveCreatedLookup: (
-        value: Result<DomainEventRow[], DbQueryError>
-      ) => void
-      const createdLookup = new Promise<Result<DomainEventRow[], DbQueryError>>(
-        (resolve) => {
-          resolveCreatedLookup = resolve
-        }
-      )
-
-      events.getByEventIds.mockImplementation(([eventId]: string[]) => {
-        if (eventId === "created-1") {
-          return createdLookup
-        }
-        return Promise.resolve(
-          Result.ok([
-            makeEvent({
-              event_id: "sync-enabled-1",
-              list_id: "list-1",
-              seq: null,
-            }),
-          ])
-        )
-      })
-      events.markSeq.mockImplementation((eventId: string) => {
-        callOrder.push(`markSeq:${eventId}`)
-        return Promise.resolve(Result.ok(undefined))
-      })
-      applier.rebuildForAck.mockImplementation((listId: string) => {
-        callOrder.push(`rebuild:${listId}`)
-        return Promise.resolve(Result.ok(undefined))
-      })
-
-      // Fired without awaiting the first, matching how SyncSocket actually
-      // dispatches two incoming ack messages.
-      const firstAck = engine.handleAck("created-1", 58)
-      const secondAck = engine.handleAck("sync-enabled-1", 59)
-
-      // Give the second ack every chance to race ahead before the first
-      // ack's blocked lookup is released.
-      await flushMicrotasks()
-      resolveCreatedLookup!(
-        Result.ok([
-          makeEvent({ event_id: "created-1", list_id: "list-1", seq: null }),
-        ])
-      )
-
-      await Promise.all([firstAck, secondAck])
-
-      expect(callOrder).toEqual([
-        "markSeq:created-1",
-        "rebuild:list-1",
-        "markSeq:sync-enabled-1",
-        "rebuild:list-1",
-      ])
+      expect(events.getByEventIds).not.toHaveBeenCalled()
+      expect(applier.apply).not.toHaveBeenCalled()
     })
   })
 

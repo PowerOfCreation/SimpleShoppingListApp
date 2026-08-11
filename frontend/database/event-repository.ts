@@ -164,6 +164,12 @@ export class EventRepository extends BaseRepository {
    * already-open transaction (see appendRemote below, or EventApplier,
    * which needs several such inserts plus a projection rebuild and a
    * cursor advance to commit together).
+   *
+   * The only writer of `seq` (see sync-design-decisions.md, "Genau ein
+   * Writer für seq") - a WebSocket ack no longer writes it. That makes
+   * `seq IS NULL` unambiguous ("not yet in the server prefix we've pulled
+   * up to") and a lost ack harmless: the next pull assigns the seq here
+   * regardless.
    */
   async insertRemote(event: DomainEventRow): Promise<number> {
     const result = await this.db.runAsync(
@@ -181,25 +187,6 @@ export class EventRepository extends BaseRepository {
       event.seq
     )
     return result.changes
-  }
-
-  /**
-   * Records the seq the server assigned an event we pushed, once its ack
-   * arrives - the event moves from the unconfirmed tail into the confirmed
-   * order at that point (see byServerSeqThenLocal). A no-op if the event
-   * already has a seq (a resent ack).
-   */
-  async markSeq(
-    eventId: string,
-    seq: number
-  ): Promise<Result<void, DbQueryError>> {
-    return this._executeTransaction(async () => {
-      await this.db.runAsync(
-        `UPDATE domain_events SET seq = ? WHERE event_id = ? AND seq IS NULL`,
-        seq,
-        eventId
-      )
-    }, "markSeq")
   }
 
   /**
