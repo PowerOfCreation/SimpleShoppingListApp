@@ -64,6 +64,7 @@ func run(logger *slog.Logger) error {
 		services.NewCreateToDoListEventHandler(toDoListService),
 		services.NewUpdateToDoListEventHandler(toDoListService),
 		services.NewDeleteToDoListEventHandler(toDoListService),
+		services.NewSyncDisabledEventHandler(toDoListService),
 	)
 
 	hub := realtime.NewHub(logger)

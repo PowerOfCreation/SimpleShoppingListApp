@@ -47,16 +47,21 @@ export const EventTypes = {
   TODO_LIST_CREATED: "todo_list.created",
   TODO_LIST_UPDATED: "todo_list.updated",
   TODO_LIST_DELETED: "todo_list.deleted",
-  // Historical: sync opt-in/out used to be modeled as its own domain event,
-  // enqueued to the backend like any other todo_list.* event. It's been
-  // replaced by a device-local setting (list-sync-settings-repository.ts) -
-  // whether *this device* syncs a list is not a fact the server should hold
-  // or that a projection rebuild should be able to reset (see
-  // sync-design-decisions.md). These constants stay only so old rows already
-  // in domain_events (and migration-7, which seeds list_sync_settings from
-  // them) can still be named; no code emits them anymore, and they're
-  // excluded from SYNCABLE_EVENT_TYPES below.
+  // Historical only: sync opt-in used to be modeled as its own domain
+  // event. It's been replaced by a device-local setting
+  // (list-sync-settings-repository.ts) - whether *this device* syncs a
+  // list is not a fact the server should hold or that a projection rebuild
+  // should be able to reset (see sync-design-decisions.md). This constant
+  // stays only so old rows already in domain_events (and migration-7,
+  // which seeds list_sync_settings from them) can still be named; nothing
+  // emits it anymore.
   TODO_LIST_SYNC_ENABLED: "todo_list.sync_enabled",
+  // Repurposed: no longer read into any local projection (the switch in
+  // ingredient-list-projection.ts has no case for it - a no-op replay,
+  // same as any other unhandled type), but ShoppingListService.setSyncEnabled
+  // emits it again as a one-way signal telling the backend to delete its
+  // copy of the list when the owner turns sync off - see
+  // sync-design-decisions.md ("Server-Löschung bei Sync-Aus").
   TODO_LIST_SYNC_DISABLED: "todo_list.sync_disabled",
   INGREDIENT_CREATED: "ingredient.created",
   INGREDIENT_UPDATED: "ingredient.updated",
@@ -75,9 +80,12 @@ export const AggregateTypes = {
  * explicit allowlist rather than a `todo_list.*`/`ingredient.*` prefix
  * match: a prefix match would silently send a newly added event type the
  * moment it's introduced without checking whether the backend can handle
- * it. `todo_list.sync_enabled`/`sync_disabled` are deliberately excluded -
- * they no longer exist as events at all (see the constants above); this
- * allowlist only decides what a *domain* event's content-sync path sends.
+ * it. `todo_list.sync_enabled` is deliberately excluded - it's purely
+ * historical (see the constant above). `todo_list.sync_disabled` IS
+ * included, but only ever reaches here via ShoppingListService's dedicated
+ * disable path, never via the general syncable-history replay (see
+ * enqueueExistingForSync callers) - it has no local projection effect, so
+ * it must never be picked up as if it were ordinary list content.
  *
  * The backend stores and relays every ingredient.* type without a
  * dedicated handler - a forward-compat no-op path - since list *content*
@@ -88,6 +96,7 @@ export const SYNCABLE_EVENT_TYPES: readonly string[] = [
   EventTypes.TODO_LIST_CREATED,
   EventTypes.TODO_LIST_UPDATED,
   EventTypes.TODO_LIST_DELETED,
+  EventTypes.TODO_LIST_SYNC_DISABLED,
   EventTypes.INGREDIENT_CREATED,
   EventTypes.INGREDIENT_UPDATED,
   EventTypes.INGREDIENT_DELETED,

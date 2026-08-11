@@ -126,24 +126,35 @@ export class ShoppingListService {
    *
    * The toggle itself is a device-local setting (list_sync_settings), not a
    * domain event - see list-sync-settings-repository.ts. The backend never
-   * learns "sync was turned on/off" as its own fact; turning sync on simply
-   * starts pushing the list's existing content.
+   * learns "sync was turned on" as its own fact; that simply starts pushing
+   * the list's existing content. Turning sync *off*, though, tells the
+   * backend to delete its copy: appends and enqueues a one-off
+   * todo_list.sync_disabled event - never applied to any local projection
+   * (see types/DomainEvent.ts), so it doesn't affect this device's own
+   * copy, but the backend's handler deletes the list on receipt. Delivered
+   * through the normal outbox/flush machinery, so it goes out even if
+   * currently offline.
    *
    * Turning it on additionally replays the *list's* existing syncable
    * history into the outbox (in stable occurred_at+insertion order) - not
    * just its own todo_list.* events but every ingredient.* event resolved
    * to this list_id too, so the server ends up with the full list, not just
-   * its current name. Turning it off cancels every still-pending outbox row
-   * for the list, ingredient rows included - the server's existing copy (if
-   * any) is left alone; deleting it is a separate, explicit action.
+   * its current name. Explicitly excludes todo_list.sync_disabled from that
+   * replay even though it's in SYNCABLE_EVENT_TYPES: a prior disable's
+   * event sitting in this list's own history must never be resent as part
+   * of a routine re-enable, or re-enabling would re-trigger the delete.
+   * Turning it off separately cancels every still-pending outbox row for
+   * the list, ingredient rows included, before enqueuing the new
+   * sync_disabled event - otherwise that cancel would immediately wipe the
+   * very row it just enqueued.
    *
    * The setting write and the outbox change are two separate statements,
    * not one transaction - a crash between them is not silently wrong: if
    * enabling, the next reconcile pass finds the server still missing this
    * list's syncable history (getByListId doesn't care whether
-   * enqueueExistingForSync already ran) and re-enqueues it; if disabling, at
-   * worst a few already-queued rows still go out once, which turning sync
-   * back on would have resent anyway.
+   * enqueueExistingForSync already ran) and re-enqueues it; if disabling,
+   * at worst the setting flips locally but the delete signal never went
+   * out - the same outcome as never having toggled it back on since.
    */
   async setSyncEnabled(
     listId: string,
@@ -165,7 +176,11 @@ export class ShoppingListService {
         }
         const syncableHistory = historyResult
           .getValue()!
-          .filter((event) => SYNCABLE_EVENT_TYPES.includes(event.event_type))
+          .filter(
+            (event) =>
+              SYNCABLE_EVENT_TYPES.includes(event.event_type) &&
+              event.event_type !== EventTypes.TODO_LIST_SYNC_DISABLED
+          )
 
         const enqueueResult =
           await this.eventRepository.enqueueExistingForSync(syncableHistory)
@@ -176,6 +191,24 @@ export class ShoppingListService {
         const cancelResult = await this.outboxRepository.cancelForList(listId)
         if (!cancelResult.success) {
           return Result.fail(cancelResult.getError())
+        }
+
+        const disabledEvent: DomainEventRow = {
+          event_id: uuidv4(),
+          event_type: EventTypes.TODO_LIST_SYNC_DISABLED,
+          aggregate_id: listId,
+          aggregate_type: AggregateTypes.TODO_LIST,
+          list_id: listId,
+          occurred_at: Date.now(),
+          client_id: getClientId(),
+          payload: JSON.stringify({}),
+          seq: null,
+        }
+        const appendResult = await this.eventRepository.appendAll([
+          { event: disabledEvent, enqueueForSync: true },
+        ])
+        if (!appendResult.success) {
+          return Result.fail(appendResult.getError())
         }
       }
 

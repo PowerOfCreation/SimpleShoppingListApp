@@ -262,7 +262,7 @@ describe("ShoppingListService", () => {
       expect(mockEventRepository.appendAll).not.toHaveBeenCalled()
     })
 
-    it("disabling writes the setting and cancels pending outbox rows for the whole list", async () => {
+    it("disabling writes the setting, cancels pending outbox rows, then appends and enqueues a sync_disabled event", async () => {
       const result = await service.setSyncEnabled("list-1", false)
 
       expect(result.success).toBe(true)
@@ -272,8 +272,47 @@ describe("ShoppingListService", () => {
       )
       expect(mockOutboxRepository.cancelForList).toHaveBeenCalledWith("list-1")
       expect(mockEventRepository.getByListId).not.toHaveBeenCalled()
-      expect(mockEventRepository.appendAll).not.toHaveBeenCalled()
       expect(mockEventRepository.enqueueExistingForSync).not.toHaveBeenCalled()
+
+      // cancelForList must run before this - otherwise it would wipe the
+      // outbox row this just enqueued.
+      const cancelOrder =
+        mockOutboxRepository.cancelForList.mock.invocationCallOrder[0]
+      const appendOrder =
+        mockEventRepository.appendAll.mock.invocationCallOrder[0]
+      expect(cancelOrder).toBeLessThan(appendOrder)
+
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      expect(entries).toHaveLength(1)
+      expect(entries[0].event.event_type).toBe(
+        EventTypes.TODO_LIST_SYNC_DISABLED
+      )
+      expect(entries[0].event.aggregate_id).toBe("list-1")
+      expect(entries[0].enqueueForSync).toBe(true)
+      expect(entries[0].project).toBeUndefined()
+    })
+
+    it("enabling excludes a prior disable's sync_disabled event from the replay, so re-enabling can't re-trigger the delete", async () => {
+      mockEventRepository.getByListId.mockResolvedValue(
+        Result.ok([
+          makeHistoryEvent({
+            event_id: "e1",
+            event_type: EventTypes.TODO_LIST_CREATED,
+            seq: 1,
+          }),
+          makeHistoryEvent({
+            event_id: "e2",
+            event_type: EventTypes.TODO_LIST_SYNC_DISABLED,
+            seq: 2,
+          }),
+        ])
+      )
+
+      await service.setSyncEnabled("list-1", true)
+
+      const [replayed] =
+        mockEventRepository.enqueueExistingForSync.mock.calls[0]
+      expect(replayed.map((e: DomainEventRow) => e.event_id)).toEqual(["e1"])
     })
   })
 
