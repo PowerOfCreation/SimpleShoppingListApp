@@ -172,6 +172,8 @@ func errorStatus(err error) (int, string) {
 		return http.StatusNotFound, "invite not found"
 	case errors.Is(err, interfaces.ErrNotAListMember):
 		return http.StatusForbidden, "caller is not a member of this list"
+	case errors.Is(err, interfaces.ErrNotListOwner):
+		return http.StatusForbidden, "caller is not the owner of this list"
 	case errors.Is(err, interfaces.ErrInviteNotRevocable):
 		return http.StatusForbidden, "caller may not revoke this invite"
 	case errors.Is(err, interfaces.ErrInviteExpired):

@@ -159,6 +159,7 @@ func TestListSharingController_CreateInvite_ErrorMapping(t *testing.T) {
 	}{
 		{"list not found", interfaces.ErrListNotFound, http.StatusNotFound},
 		{"not a member", interfaces.ErrNotAListMember, http.StatusForbidden},
+		{"member but not owner", interfaces.ErrNotListOwner, http.StatusForbidden},
 		{"invalid ttl wrapped with the offending key", fmt.Errorf("%w: bogus", interfaces.ErrInvalidInviteTTL), http.StatusBadRequest},
 		{"error text resembling ttl message but not the sentinel", errors.New("invalid invite ttl: bogus"), http.StatusInternalServerError},
 		{"unexpected", errors.New("boom"), http.StatusInternalServerError},
@@ -251,6 +252,7 @@ func TestListSharingController_GetInvites_ForbiddenAndNotFoundMapping(t *testing
 		wantStatus int
 	}{
 		{"not a member", interfaces.ErrNotAListMember, http.StatusForbidden},
+		{"member but not owner", interfaces.ErrNotListOwner, http.StatusForbidden},
 		{"list not found", interfaces.ErrListNotFound, http.StatusNotFound},
 	}
 	for _, tc := range cases {
