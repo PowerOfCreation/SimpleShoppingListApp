@@ -37,11 +37,12 @@ func NewListSharingService(
 	}
 }
 
-// claimOrRequireMember bootstraps the caller as owner if the list has no
+// claimOrRequireOwner bootstraps the caller as owner if the list has no
 // members yet (claim-on-first-invite - the only place ownership is ever
 // claimed, so merely listing or revoking invites can't grant it), then
-// requires the caller to actually be a member.
-func (s *ListSharingService) claimOrRequireMember(ctx context.Context, listID uuid.UUID, userID string, now time.Time) error {
+// requires the caller to actually be the owner - sharing (creating invites)
+// is an owner-only action, not something any member can do once joined.
+func (s *ListSharingService) claimOrRequireOwner(ctx context.Context, listID uuid.UUID, userID string, now time.Time) error {
 	claimed, err := s.members.ClaimOwnershipIfUnowned(ctx, listID, userID, now)
 	if err != nil {
 		return err
@@ -49,17 +50,23 @@ func (s *ListSharingService) claimOrRequireMember(ctx context.Context, listID uu
 	if claimed {
 		return nil
 	}
-	return s.requireMember(ctx, listID, userID)
+	return s.requireOwner(ctx, listID, userID)
 }
 
-// requireMember checks existing membership without claiming ownership.
-func (s *ListSharingService) requireMember(ctx context.Context, listID uuid.UUID, userID string) error {
+// requireOwner checks the caller is the list's owner without claiming
+// ownership. Distinguishes "not a member at all" from "a member, but not
+// the owner" since only the latter is really about the owner-only action
+// being attempted.
+func (s *ListSharingService) requireOwner(ctx context.Context, listID uuid.UUID, userID string) error {
 	member, err := s.members.FindByListAndUser(ctx, listID, userID)
 	if err != nil {
 		return err
 	}
 	if member == nil {
 		return interfaces.ErrNotAListMember
+	}
+	if member.Role != entities.RoleOwner {
+		return interfaces.ErrNotListOwner
 	}
 	return nil
 }
@@ -86,7 +93,7 @@ func (s *ListSharingService) CreateInvite(ctx context.Context, cmd *command.Crea
 	}
 
 	now := time.Now().UTC()
-	if err := s.claimOrRequireMember(ctx, cmd.ListID, cmd.UserID, now); err != nil {
+	if err := s.claimOrRequireOwner(ctx, cmd.ListID, cmd.UserID, now); err != nil {
 		return nil, err
 	}
 
@@ -112,7 +119,7 @@ func (s *ListSharingService) FindActiveInvites(ctx context.Context, qry *query.G
 
 	// Read-only: must not claim ownership of an unowned list just because
 	// someone asked to list its invites.
-	if err := s.requireMember(ctx, qry.ListID, qry.UserID); err != nil {
+	if err := s.requireOwner(ctx, qry.ListID, qry.UserID); err != nil {
 		return nil, err
 	}
 
@@ -137,14 +144,15 @@ func (s *ListSharingService) RevokeInvite(ctx context.Context, cmd *command.Revo
 		return nil, interfaces.ErrInviteNotFound
 	}
 
-	if invite.CreatedBy != cmd.UserID {
-		member, err := s.members.FindByListAndUser(ctx, invite.ListID, cmd.UserID)
-		if err != nil {
-			return nil, err
-		}
-		if member == nil || member.Role != entities.RoleOwner {
-			return nil, interfaces.ErrInviteNotRevocable
-		}
+	// Only the owner may revoke - and since CreateInvite is now itself
+	// owner-only, the creator and the owner are always the same caller, so
+	// there's no separate "or the creator" case to check anymore.
+	member, err := s.members.FindByListAndUser(ctx, invite.ListID, cmd.UserID)
+	if err != nil {
+		return nil, err
+	}
+	if member == nil || member.Role != entities.RoleOwner {
+		return nil, interfaces.ErrInviteNotRevocable
 	}
 
 	if err := s.invites.Revoke(ctx, cmd.InviteID, time.Now().UTC()); err != nil {

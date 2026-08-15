@@ -211,6 +211,20 @@ func TestListSharingService_CreateInvite_NonMemberOfAlreadyClaimedListIsRejected
 	assert.ErrorIs(t, err, interfaces.ErrNotAListMember)
 }
 
+func TestListSharingService_CreateInvite_MemberMayNotInviteOthers(t *testing.T) {
+	list := testList()
+	svc, _, _ := newSharingTestService(list)
+
+	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "24h"})
+	require.NoError(t, err)
+	_, err = svc.RedeemInvite(context.Background(), &command.RedeemListInviteCommand{Token: created.Token, UserID: "bob"})
+	require.NoError(t, err)
+
+	// bob joined as a plain member, not the owner - sharing is owner-only.
+	_, err = svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "bob", TTLKey: "24h"})
+	assert.ErrorIs(t, err, interfaces.ErrNotListOwner)
+}
+
 func TestListSharingService_CreateInvite_UnknownListReturnsNotFound(t *testing.T) {
 	svc, _, _ := newSharingTestService(testList())
 
@@ -303,6 +317,20 @@ func TestListSharingService_FindActiveInvites_DoesNotClaimOwnershipOfAnUnownedLi
 	assert.Nil(t, member)
 }
 
+func TestListSharingService_FindActiveInvites_MemberMayNotList(t *testing.T) {
+	list := testList()
+	svc, _, _ := newSharingTestService(list)
+
+	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
+	require.NoError(t, err)
+	_, err = svc.RedeemInvite(context.Background(), &command.RedeemListInviteCommand{Token: created.Token, UserID: "bob"})
+	require.NoError(t, err)
+
+	// bob is a member, not the owner - listing invites is owner-only.
+	_, err = svc.FindActiveInvites(context.Background(), &query.GetListInvitesQuery{ListID: list.Id, UserID: "bob"})
+	assert.ErrorIs(t, err, interfaces.ErrNotListOwner)
+}
+
 func mustTTL(t *testing.T, key string) entities.InviteTTL {
 	t.Helper()
 	ttl, err := entities.ParseInviteTTL(key)
@@ -327,27 +355,11 @@ func TestListSharingService_RevokeInvite_CreatorMayRevoke(t *testing.T) {
 	assert.NotNil(t, stored.RevokedAt)
 }
 
-func TestListSharingService_RevokeInvite_OwnerMayRevokeSomeoneElsesInvite(t *testing.T) {
-	list := testList()
-	svc, _, members := newSharingTestService(list)
-
-	// alice claims ownership as the first inviter, then bob joins as member.
-	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
-	require.NoError(t, err)
-	member, err := entities.NewListMember(list.Id, "bob", entities.RoleMember, time.Now().UTC(), nil)
-	require.NoError(t, err)
-	require.NoError(t, members.Add(context.Background(), member))
-
-	bobsInvite, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "bob", TTLKey: "1h"})
-	require.NoError(t, err)
-
-	// alice (owner) revokes bob's invite.
-	_, err = svc.RevokeInvite(context.Background(), &command.RevokeListInviteCommand{InviteID: bobsInvite.Result.ID, UserID: "alice"})
-	require.NoError(t, err)
-
-	// sanity: created (alice's own invite) still exists and untouched.
-	assert.NotEqual(t, created.Result.ID, bobsInvite.Result.ID)
-}
+// There used to be a test here for "the owner may revoke an invite someone
+// else created" - that scenario no longer exists now that CreateInvite is
+// itself owner-only (see TestListSharingService_CreateInvite_MemberMayNotInviteOthers):
+// the creator of any invite is always the owner, so RevokeInvite's
+// "creator OR owner" branch collapsed to "owner" (see the service).
 
 func TestListSharingService_RevokeInvite_UnrelatedMemberMayNotRevoke(t *testing.T) {
 	list := testList()

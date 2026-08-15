@@ -15,6 +15,7 @@ import (
 var (
 	ErrListNotFound       = errors.New("todo list not found")
 	ErrNotAListMember     = errors.New("caller is not a member of this list")
+	ErrNotListOwner       = errors.New("caller is not the owner of this list")
 	ErrInvalidInviteTTL   = errors.New("invalid invite ttl")
 	ErrInviteNotFound     = errors.New("invite not found")
 	ErrInviteExpired      = errors.New("invite has expired")
