@@ -315,6 +315,71 @@ describe("SyncEngine", () => {
       expect(events.markSeq).not.toHaveBeenCalled()
       expect(applier.rebuildForAck).not.toHaveBeenCalled()
     })
+
+    it("processes acks for the same list one at a time, in call order, even if an earlier ack's own lookup resolves slower than a later ack's", async () => {
+      // Reproduces the bug this queue prevents: SyncSocket dispatches each
+      // "ack" message via a synchronous, unawaited callback, so without
+      // serialization a later-arriving ack whose dependencies happen to
+      // resolve faster could finish (and rebuild) before an
+      // earlier-arriving one - e.g. todo_list.sync_enabled's rebuild
+      // running while todo_list.created is still locally unconfirmed.
+      const callOrder: string[] = []
+
+      let resolveCreatedLookup: (
+        value: Result<DomainEventRow[], DbQueryError>
+      ) => void
+      const createdLookup = new Promise<Result<DomainEventRow[], DbQueryError>>(
+        (resolve) => {
+          resolveCreatedLookup = resolve
+        }
+      )
+
+      events.getByEventIds.mockImplementation(([eventId]: string[]) => {
+        if (eventId === "created-1") {
+          return createdLookup
+        }
+        return Promise.resolve(
+          Result.ok([
+            makeEvent({
+              event_id: "sync-enabled-1",
+              list_id: "list-1",
+              seq: null,
+            }),
+          ])
+        )
+      })
+      events.markSeq.mockImplementation((eventId: string) => {
+        callOrder.push(`markSeq:${eventId}`)
+        return Promise.resolve(Result.ok(undefined))
+      })
+      applier.rebuildForAck.mockImplementation((listId: string) => {
+        callOrder.push(`rebuild:${listId}`)
+        return Promise.resolve(Result.ok(undefined))
+      })
+
+      // Fired without awaiting the first, matching how SyncSocket actually
+      // dispatches two incoming ack messages.
+      const firstAck = engine.handleAck("created-1", 58)
+      const secondAck = engine.handleAck("sync-enabled-1", 59)
+
+      // Give the second ack every chance to race ahead before the first
+      // ack's blocked lookup is released.
+      await flushMicrotasks()
+      resolveCreatedLookup!(
+        Result.ok([
+          makeEvent({ event_id: "created-1", list_id: "list-1", seq: null }),
+        ])
+      )
+
+      await Promise.all([firstAck, secondAck])
+
+      expect(callOrder).toEqual([
+        "markSeq:created-1",
+        "rebuild:list-1",
+        "markSeq:sync-enabled-1",
+        "rebuild:list-1",
+      ])
+    })
   })
 
   describe("reconcile", () => {
