@@ -4,7 +4,7 @@ import { useAuth } from "@/api/auth/AuthProvider"
 import { getDatabase } from "@/database/database"
 import { OutboxRepository } from "@/database/outbox-repository"
 import { EventRepository } from "@/database/event-repository"
-import { IngredientListRepository } from "@/database/ingredient-list-repository"
+import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
 import { IngredientProjection } from "@/database/ingredient-projection"
 import { IngredientListProjection } from "@/database/ingredient-list-projection"
 import { SyncCursorRepository } from "@/database/sync-cursor-repository"
@@ -46,7 +46,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       eventRepository,
       new IngredientProjection(db),
       new IngredientListProjection(db),
-      cursorRepository
+      cursorRepository,
+      new ListSyncSettingsRepository(db)
     )
     return new SyncEngine(
       new OutboxRepository(db),
@@ -59,7 +60,10 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
 
   const coordinator = useMemo(
     () =>
-      new SyncCoordinator(engine, new IngredientListRepository(getDatabase())),
+      new SyncCoordinator(
+        engine,
+        new ListSyncSettingsRepository(getDatabase())
+      ),
     [engine]
   )
 

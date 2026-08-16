@@ -47,12 +47,15 @@ export const EventTypes = {
   TODO_LIST_CREATED: "todo_list.created",
   TODO_LIST_UPDATED: "todo_list.updated",
   TODO_LIST_DELETED: "todo_list.deleted",
-  // Sync opt-in/out gets its own event rather than folding a flag into
-  // todo_list.updated, mirroring the existing
-  // ingredient.priority_set/priority_cleared pair. These are sent to the
-  // backend so it can associate lists with an account / be told sync was
-  // turned off, but the backend currently has no handler for them (see
-  // SYNCABLE_EVENT_TYPES below).
+  // Historical: sync opt-in/out used to be modeled as its own domain event,
+  // enqueued to the backend like any other todo_list.* event. It's been
+  // replaced by a device-local setting (list-sync-settings-repository.ts) -
+  // whether *this device* syncs a list is not a fact the server should hold
+  // or that a projection rebuild should be able to reset (see
+  // sync-design-decisions.md). These constants stay only so old rows already
+  // in domain_events (and migration-7, which seeds list_sync_settings from
+  // them) can still be named; no code emits them anymore, and they're
+  // excluded from SYNCABLE_EVENT_TYPES below.
   TODO_LIST_SYNC_ENABLED: "todo_list.sync_enabled",
   TODO_LIST_SYNC_DISABLED: "todo_list.sync_disabled",
   INGREDIENT_CREATED: "ingredient.created",
@@ -72,21 +75,19 @@ export const AggregateTypes = {
  * explicit allowlist rather than a `todo_list.*`/`ingredient.*` prefix
  * match: a prefix match would silently send a newly added event type the
  * moment it's introduced without checking whether the backend can handle
- * it. `todo_list.sync_enabled`/`sync_disabled` are deliberately included so
- * the backend learns about sync state changes; it currently ignores them
- * (forward compat), but a future prompt may give them real behaviour.
+ * it. `todo_list.sync_enabled`/`sync_disabled` are deliberately excluded -
+ * they no longer exist as events at all (see the constants above); this
+ * allowlist only decides what a *domain* event's content-sync path sends.
  *
  * The backend stores and relays every ingredient.* type without a
- * dedicated handler - same forward-compat no-op path as sync_enabled -
- * since list *content* sync only needs the event log to round-trip, not a
- * server-side ingredients projection (see sync-design-decisions.md).
+ * dedicated handler - a forward-compat no-op path - since list *content*
+ * sync only needs the event log to round-trip, not a server-side
+ * ingredients projection (see sync-design-decisions.md).
  */
 export const SYNCABLE_EVENT_TYPES: readonly string[] = [
   EventTypes.TODO_LIST_CREATED,
   EventTypes.TODO_LIST_UPDATED,
   EventTypes.TODO_LIST_DELETED,
-  EventTypes.TODO_LIST_SYNC_ENABLED,
-  EventTypes.TODO_LIST_SYNC_DISABLED,
   EventTypes.INGREDIENT_CREATED,
   EventTypes.INGREDIENT_UPDATED,
   EventTypes.INGREDIENT_DELETED,

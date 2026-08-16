@@ -2,13 +2,17 @@ import { SQLiteDatabase } from "expo-sqlite"
 import { EventRepository } from "@/database/event-repository"
 import { IngredientProjection } from "@/database/ingredient-projection"
 import { IngredientListProjection } from "@/database/ingredient-list-projection"
+import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
 import { SyncCursorRepository } from "@/database/sync-cursor-repository"
 import { runExclusive } from "@/database/write-lock"
 import { DbQueryError } from "@/api/common/error-types"
 import { Result } from "@/api/common/result"
-import { DomainEventRow } from "@/types/DomainEvent"
+import { DomainEventRow, EventTypes } from "@/types/DomainEvent"
 import { createLogger } from "@/api/common/logger"
-import { notifyListDataChanged } from "@/api/sync/sync-events"
+import {
+  notifyListDataChanged,
+  notifySyncListsChanged,
+} from "@/api/sync/sync-events"
 
 const logger = createLogger("EventApplier")
 
@@ -31,7 +35,8 @@ export class EventApplier {
     private readonly eventRepository: EventRepository,
     private readonly ingredientProjection: IngredientProjection,
     private readonly listProjection: IngredientListProjection,
-    private readonly cursorRepository: SyncCursorRepository
+    private readonly cursorRepository: SyncCursorRepository,
+    private readonly listSyncSettingsRepository: ListSyncSettingsRepository
   ) {}
 
   /**
@@ -46,6 +51,7 @@ export class EventApplier {
   ): Promise<Result<{ applied: number }, DbQueryError>> {
     try {
       let applied = 0
+      let listDeleted = false
 
       await runExclusive(() =>
         this.db.withTransactionAsync(async () => {
@@ -57,7 +63,7 @@ export class EventApplier {
           // (our own push, or a re-delivered page) - nothing to rebuild,
           // just advance the cursor below.
           if (applied > 0) {
-            await this.rebuildListProjections(listId)
+            listDeleted = await this.rebuildListProjections(listId)
           }
 
           await this.cursorRepository.setWithin(
@@ -71,6 +77,9 @@ export class EventApplier {
 
       if (applied > 0) {
         notifyListDataChanged(listId)
+      }
+      if (listDeleted) {
+        notifySyncListsChanged()
       }
 
       return Result.ok({ applied })
@@ -94,10 +103,16 @@ export class EventApplier {
    */
   async rebuildForAck(listId: string): Promise<Result<void, DbQueryError>> {
     try {
+      let listDeleted = false
       await runExclusive(() =>
-        this.db.withTransactionAsync(() => this.rebuildListProjections(listId))
+        this.db.withTransactionAsync(async () => {
+          listDeleted = await this.rebuildListProjections(listId)
+        })
       )
       notifyListDataChanged(listId)
+      if (listDeleted) {
+        notifySyncListsChanged()
+      }
       return Result.ok(undefined)
     } catch (error) {
       logger.error(`Failed to rebuild list ${listId} after ack`, error)
@@ -112,7 +127,8 @@ export class EventApplier {
     }
   }
 
-  private async rebuildListProjections(listId: string): Promise<void> {
+  /** Returns whether this list was actually deleted (vs. just missing its `created`). */
+  private async rebuildListProjections(listId: string): Promise<boolean> {
     const historyResult = await this.eventRepository.getByListId(listId)
     if (!historyResult.success) {
       throw historyResult.getError()
@@ -121,23 +137,36 @@ export class EventApplier {
 
     await this.listProjection.rebuildForList(this.db, listId, history)
 
-    // If the merged history's last word for this list is todo_list.deleted,
-    // the list projection just deleted the row - rebuilding ingredients
-    // would re-insert rows referencing a list that no longer exists in the
-    // read model. Harmless on-device (expo-sqlite runs without PRAGMA
-    // foreign_keys) but a hard FK violation under the exclusive-FK test
-    // mock, and pointless either way - just drop them instead.
+    // No row in ingredient_lists after a rebuild has two causes, not one:
+    // the merged history ends in todo_list.deleted, or it's simply missing
+    // todo_list.created (the case #230's repairList exists to fix). Either
+    // way, rebuilding ingredients would re-insert rows referencing a list
+    // that no longer exists in the read model - harmless on-device
+    // (expo-sqlite runs without PRAGMA foreign_keys) but a hard FK
+    // violation under the exclusive-FK test mock, and pointless either way
+    // - just drop them instead.
     const listRow = await this.db.getFirstAsync<{ id: string }>(
       `SELECT id FROM ingredient_lists WHERE id = ?`,
       listId
     )
     if (listRow) {
       await this.ingredientProjection.rebuildForList(this.db, listId, history)
-    } else {
-      await this.db.runAsync(
-        `DELETE FROM ingredients WHERE list_id = ?`,
-        listId
-      )
+      return false
     }
+
+    await this.db.runAsync(`DELETE FROM ingredients WHERE list_id = ?`, listId)
+
+    // Only drop the sync setting on an actual deletion. Dropping it just
+    // because the row is missing would also fire for a repairable list
+    // (no created event yet) - silently kicking it out of
+    // getEnabledIds() and out of every pull/reconcile/subscribe, the same
+    // catch-22 this device-local setting was introduced to fix.
+    const deleted = history.some(
+      (event) => event.event_type === EventTypes.TODO_LIST_DELETED
+    )
+    if (deleted) {
+      await this.listSyncSettingsRepository.removeWithin(this.db, listId)
+    }
+    return deleted
   }
 }
