@@ -3,7 +3,7 @@
 -- create-invite call, and never stored (see entities.InviteToken).
 CREATE TABLE list_invites (
     id         UUID PRIMARY KEY,
-    list_id    UUID NOT NULL REFERENCES todo_lists(id),
+    list_id    UUID NOT NULL REFERENCES todo_lists(id) ON DELETE CASCADE,
     token_hash TEXT NOT NULL UNIQUE,
     created_by TEXT NOT NULL, -- Keycloak sub of the inviter
     created_at TIMESTAMP WITH TIME ZONE NOT NULL,
@@ -23,7 +23,7 @@ CREATE INDEX idx_list_invites_list_active ON list_invites(list_id, expires_at) W
 -- Membership on a list, either bootstrapped ("claim-on-first-invite" - see
 -- ClaimListOwnership below) or granted by redeeming a ListInvite.
 CREATE TABLE list_members (
-    list_id   UUID NOT NULL REFERENCES todo_lists(id),
+    list_id   UUID NOT NULL REFERENCES todo_lists(id) ON DELETE CASCADE,
     user_id   TEXT NOT NULL, -- Keycloak sub; server-set, never client-supplied
     role      TEXT NOT NULL CHECK (role IN ('owner', 'member')),
     joined_at TIMESTAMP WITH TIME ZONE NOT NULL,

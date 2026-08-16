@@ -21,16 +21,7 @@ func timeFromTimestamptz(ts pgtype.Timestamptz) time.Time {
 	return time.Time{}
 }
 
-// timestamptzFromTimePtr is the nullable counterpart to timestamptzFromTime,
-// for optional timestamps like list_invites.revoked_at.
-func timestamptzFromTimePtr(t *time.Time) pgtype.Timestamptz {
-	if t == nil {
-		return pgtype.Timestamptz{}
-	}
-	return timestamptzFromTime(*t)
-}
-
-// timePtrFromTimestamptz is the inverse of timestamptzFromTimePtr.
+// timePtrFromTimestamptz converts a nullable pgx timestamptz into a *time.Time.
 func timePtrFromTimestamptz(ts pgtype.Timestamptz) *time.Time {
 	if !ts.Valid {
 		return nil
