@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/interfaces"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
 )
 
@@ -365,9 +366,13 @@ func TestEventIngestor_DuplicateEventID_AcksWithoutRedispatching(t *testing.T) {
 	assert.Equal(t, ack.seqOf(event.EventID), int64(1))
 }
 
+// TestEventIngestor_DispatchFailure_NoAckAndNotMarkedProcessed covers a
+// transient dispatch error (a plain, unwrapped error - e.g. a DB connection
+// blip) - it must stay unprocessed and unacked so sweepUnprocessed retries
+// it, unlike a permanent error (see the Permanent_ tests below).
 func TestEventIngestor_DispatchFailure_NoAckAndNotMarkedProcessed(t *testing.T) {
 	repo := newFakeEventRepo()
-	handler := &fakeHandler{eventType: "todo_list.updated", err: errors.New("todo list not found")}
+	handler := &fakeHandler{eventType: "todo_list.updated", err: errors.New("connection reset by peer")}
 	dispatcher := NewEventDispatcher(testLogger(), handler)
 	ack := &fakeAckPublisher{}
 	ingestor := NewEventIngestor(testLogger(), repo, dispatcher, ack)
@@ -397,7 +402,7 @@ func TestEventIngestor_DispatchFailure_LogsWithEventContext(t *testing.T) {
 	logger := slog.New(slog.NewJSONHandler(&buf, nil))
 
 	repo := newFakeEventRepo()
-	handler := &fakeHandler{eventType: "todo_list.updated", err: errors.New("todo list not found")}
+	handler := &fakeHandler{eventType: "todo_list.updated", err: errors.New("connection reset by peer")}
 	dispatcher := NewEventDispatcher(logger, handler)
 	ack := &fakeAckPublisher{}
 	ingestor := NewEventIngestor(logger, repo, dispatcher, ack)
@@ -417,7 +422,63 @@ func TestEventIngestor_DispatchFailure_LogsWithEventContext(t *testing.T) {
 	require.NoError(t, json.Unmarshal(buf.Bytes(), &decoded))
 	assert.Equal(t, "ERROR", decoded["level"])
 	assert.Equal(t, event.EventID.String(), decoded["event_id"])
-	assert.Contains(t, decoded["error"], "todo list not found")
+	assert.Contains(t, decoded["error"], "connection reset by peer")
+}
+
+// TestEventIngestor_PermanentDispatchFailure_MarkedProcessedAndAcked is the
+// counterpart to the transient case above: a handler error wrapped in
+// interfaces.ErrPermanent (bad payload, failed validation - unfixable by
+// retrying) must be treated like the unknown-event-type no-op path -
+// recorded and acked, not left to poison sweepUnprocessed forever.
+func TestEventIngestor_PermanentDispatchFailure_MarkedProcessedAndAcked(t *testing.T) {
+	repo := newFakeEventRepo()
+	handler := &fakeHandler{eventType: "todo_list.updated", err: interfaces.Permanent(errors.New("name must not be empty"))}
+	dispatcher := NewEventDispatcher(testLogger(), handler)
+	ack := &fakeAckPublisher{}
+	ingestor := NewEventIngestor(testLogger(), repo, dispatcher, ack)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ingestor.Start(ctx)
+	defer ingestor.Stop()
+
+	event := makeIngestorTestEvent("todo_list.updated")
+	require.NoError(t, ingestor.Enqueue(ctx, event))
+
+	require.Eventually(t, func() bool { return ack.has(event.EventID) }, time.Second, time.Millisecond)
+	assert.True(t, repo.isProcessed(event.EventID))
+	assert.Equal(t, 1, handler.callCount())
+}
+
+// TestEventIngestor_PermanentDispatchFailure_LogsWithEventContext mirrors
+// TestEventIngestor_DispatchFailure_LogsWithEventContext for the permanent
+// path - silently swallowing an unprocessable event would be as bad as
+// looping on it forever.
+func TestEventIngestor_PermanentDispatchFailure_LogsWithEventContext(t *testing.T) {
+	var buf syncBuffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+
+	repo := newFakeEventRepo()
+	handler := &fakeHandler{eventType: "todo_list.updated", err: interfaces.Permanent(errors.New("name must not be empty"))}
+	dispatcher := NewEventDispatcher(logger, handler)
+	ack := &fakeAckPublisher{}
+	ingestor := NewEventIngestor(logger, repo, dispatcher, ack)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ingestor.Start(ctx)
+	defer ingestor.Stop()
+
+	event := makeIngestorTestEvent("todo_list.updated")
+	require.NoError(t, ingestor.Enqueue(ctx, event))
+	require.Eventually(t, func() bool { return ack.has(event.EventID) }, time.Second, time.Millisecond)
+	require.Eventually(t, func() bool { return buf.Len() > 0 }, time.Second, time.Millisecond)
+
+	var decoded map[string]any
+	require.NoError(t, json.Unmarshal(buf.Bytes(), &decoded))
+	assert.Equal(t, "ERROR", decoded["level"])
+	assert.Equal(t, event.EventID.String(), decoded["event_id"])
+	assert.Contains(t, decoded["error"], "name must not be empty")
 }
 
 func TestEventIngestor_UnknownEventType_StillAckedForwardCompatibly(t *testing.T) {
