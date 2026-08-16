@@ -82,6 +82,7 @@ describe("ShoppingListService", () => {
     mockListSyncSettingsRepository = {
       setEnabled: jest.fn().mockResolvedValue(Result.ok(undefined)),
       setEnabledWithin: jest.fn().mockResolvedValue(undefined),
+      removeWithin: jest.fn().mockResolvedValue(undefined),
       isEnabled: jest.fn(),
       getEnabledIds: jest.fn(),
       remove: jest.fn(),
@@ -273,6 +274,26 @@ describe("ShoppingListService", () => {
       expect(mockEventRepository.getByListId).not.toHaveBeenCalled()
       expect(mockEventRepository.appendAll).not.toHaveBeenCalled()
       expect(mockEventRepository.enqueueExistingForSync).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("deleteList", () => {
+    it("removes the list projection and sync-setting row in appendWithProjection callback", async () => {
+      mockEventRepository.appendWithProjection.mockImplementation(
+        async (_event, projection) => {
+          await projection({} as SQLite.SQLiteDatabase)
+          return Result.ok(undefined)
+        }
+      )
+
+      const result = await service.deleteList("list-1")
+
+      expect(result.success).toBe(true)
+      expect(mockProjection.handleDeleted).toHaveBeenCalled()
+      expect(mockListSyncSettingsRepository.removeWithin).toHaveBeenCalledWith(
+        expect.anything(),
+        "list-1"
+      )
     })
   })
 })

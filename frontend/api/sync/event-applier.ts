@@ -2,6 +2,7 @@ import { SQLiteDatabase } from "expo-sqlite"
 import { EventRepository } from "@/database/event-repository"
 import { IngredientProjection } from "@/database/ingredient-projection"
 import { IngredientListProjection } from "@/database/ingredient-list-projection"
+import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
 import { SyncCursorRepository } from "@/database/sync-cursor-repository"
 import { runExclusive } from "@/database/write-lock"
 import { DbQueryError } from "@/api/common/error-types"
@@ -31,7 +32,8 @@ export class EventApplier {
     private readonly eventRepository: EventRepository,
     private readonly ingredientProjection: IngredientProjection,
     private readonly listProjection: IngredientListProjection,
-    private readonly cursorRepository: SyncCursorRepository
+    private readonly cursorRepository: SyncCursorRepository,
+    private readonly listSyncSettingsRepository: ListSyncSettingsRepository
   ) {}
 
   /**
@@ -138,6 +140,7 @@ export class EventApplier {
         `DELETE FROM ingredients WHERE list_id = ?`,
         listId
       )
+      await this.listSyncSettingsRepository.removeWithin(this.db, listId)
     }
   }
 }
