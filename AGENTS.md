@@ -99,6 +99,7 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
 
 ## Relevant docs
 
+- `frontend/docs/sync-sharing-target.md` — Sollzustand Sync & Teilen: Rollen, Lebenszyklus, Invarianten; bei Widerspruch maßgeblich gegenüber dem Entscheidungsprotokoll
 - `frontend/docs/project-overview.md`
 - `frontend/docs/sync-design-decisions.md`
 - `backend/README.md` (run/sync details)
