@@ -60,11 +60,8 @@ export class SyncCoordinator {
         // (self-heal) anything we sent that never got acked. The socket
         // itself already resent our subscriptions from its own onopen,
         // before this fires.
-        this.pullNow().catch((error) => {
-          logger.error("Pull on connect failed", error)
-        })
-        this.reconcileNow().catch((error) => {
-          logger.error("Reconcile on connect failed", error)
+        this.pullThenReconcile().catch((error) => {
+          logger.error("Pull/reconcile on connect failed", error)
         })
       },
       (listId) => this.debouncedPullList(listId)
@@ -115,6 +112,14 @@ export class SyncCoordinator {
       return
     }
     await this.engine.pull(idsResult.getValue()!)
+  }
+
+  // reconcile's drift check compares the pull cursor against the server
+  // head, so it must not run concurrently with a pull still moving that
+  // cursor - see sync-design-decisions.md ("Reparatur: voller Re-Pull").
+  private async pullThenReconcile(): Promise<void> {
+    await this.pullNow()
+    await this.reconcileNow()
   }
 
   private async subscribeNow(): Promise<void> {
@@ -181,13 +186,10 @@ export class SyncCoordinator {
       "change",
       (nextState: AppStateStatus) => {
         if (nextState === "active") {
-          this.pullNow().catch((error) => {
-            logger.error("Pull on foreground failed", error)
+          this.pullThenReconcile().catch((error) => {
+            logger.error("Pull/reconcile on foreground failed", error)
           })
           this.flush()
-          this.reconcileNow().catch((error) => {
-            logger.error("Reconcile on foreground failed", error)
-          })
           this.socket.connect().catch((error) => {
             logger.error("Failed to reconnect sync socket", error)
           })
@@ -196,11 +198,8 @@ export class SyncCoordinator {
     )
 
     this.safetyInterval = setInterval(() => {
-      this.pullNow().catch((error) => {
-        logger.error("Periodic pull failed", error)
-      })
-      this.reconcileNow().catch((error) => {
-        logger.error("Periodic reconcile failed", error)
+      this.pullThenReconcile().catch((error) => {
+        logger.error("Periodic pull/reconcile failed", error)
       })
       this.socket.reconnectIfTokenChanged().catch((error) => {
         logger.error("Failed to check for token refresh", error)

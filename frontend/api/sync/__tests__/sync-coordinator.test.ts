@@ -164,6 +164,32 @@ describe("SyncCoordinator", () => {
     expect(reconcileMock).toHaveBeenCalledWith(["list-1", "list-2"])
   })
 
+  it("waits for pull to finish before starting reconcile on socket connect", async () => {
+    // reconcile's drift check compares the pull cursor against the server
+    // head - it must not race a pull still moving that cursor (see
+    // sync-design-decisions.md, "Reparatur: voller Re-Pull").
+    let resolvePull: (() => void) | undefined
+    pullMock.mockImplementation(
+      () =>
+        new Promise<void>((resolve) => {
+          resolvePull = resolve
+        })
+    )
+
+    buildCoordinator().start()
+    reconcileMock.mockClear()
+
+    onConnectedHandler!()
+    await flushMicrotasks()
+
+    expect(reconcileMock).not.toHaveBeenCalled()
+
+    resolvePull!()
+    await flushMicrotasks()
+
+    expect(reconcileMock).toHaveBeenCalledWith(["list-1", "list-2"])
+  })
+
   it("flushes again when the outbox reports a change", async () => {
     buildCoordinator().start()
     await flushMicrotasks()
