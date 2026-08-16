@@ -155,6 +155,16 @@ describe("ShoppingListEntry", () => {
     expect(getByTestId("shopping-list-context-resync-1")).toBeTruthy()
   })
 
+  it("does not show Re-sync from server when sync interactions are disabled (e.g. signed out)", () => {
+    const { getByTestId, queryByTestId } = render(
+      <ShoppingListEntry {...defaultProps} syncEnabled syncToggleDisabled />
+    )
+
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+
+    expect(queryByTestId("shopping-list-context-resync-1")).toBeFalsy()
+  })
+
   it("calls onResync when Re-sync from server is pressed", () => {
     const onResync = jest.fn()
     const { getByTestId } = render(

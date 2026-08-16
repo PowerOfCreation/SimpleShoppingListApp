@@ -109,9 +109,11 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
             disabled: props.syncToggleDisabled,
             onValueChange: (enabled) => props.onToggleSync?.(enabled),
           },
-          // Only meaningful once sync is actually on for this list - there's
-          // nothing to re-derive from the server otherwise.
-          ...(props.syncEnabled
+          // Only meaningful once sync is actually on for this list and sync
+          // interactions aren't disabled (e.g. signed out) - otherwise
+          // there's nothing to re-derive from the server, or no valid
+          // session to do it with.
+          ...(props.syncEnabled && !props.syncToggleDisabled
             ? [
                 {
                   label: "Re-sync from server",
