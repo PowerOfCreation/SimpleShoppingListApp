@@ -84,7 +84,7 @@ The API logs structured JSON to stdout (via `log/slog`), one line per event
 or request:
 
 ```json
-{"time":"2026-08-02T10:00:00Z","level":"INFO","msg":"request","service":"shopping-list-api","version":"dev","request_id":"3f9c...","method":"GET","uri":"/api/v1/todo-lists","status":200,"latency":1200000}
+{"time":"2026-08-02T10:00:00Z","level":"INFO","msg":"request","service":"shopping-list-api","version":"dev","request_id":"3f9c...","method":"GET","uri":"/api/v1/sync/head","status":200,"latency":1200000}
 ```
 
 - `LOG_LEVEL` — `debug|info|warn|error` (default `info`). `debug` also adds

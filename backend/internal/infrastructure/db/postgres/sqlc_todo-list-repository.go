@@ -54,22 +54,6 @@ func (repo *SqlcToDoListRepository) FindById(id uuid.UUID) (*entities.ToDoList, 
 	return fromSqlcToDoListRow(&row), nil
 }
 
-func (repo *SqlcToDoListRepository) FindAll() ([]*entities.ToDoList, error) {
-	ctx := context.Background()
-
-	rows, err := repo.queries.GetAllToDoLists(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	toDoLists := make([]*entities.ToDoList, len(rows))
-	for i, row := range rows {
-		toDoLists[i] = fromSqlcToDoListRowAll(&row)
-	}
-
-	return toDoLists, nil
-}
-
 func (repo *SqlcToDoListRepository) Update(toDoList *entities.ValidatedToDoList) (*entities.ToDoList, error) {
 	ctx := context.Background()
 
@@ -91,18 +75,6 @@ func (repo *SqlcToDoListRepository) Delete(id uuid.UUID) error {
 }
 
 func fromSqlcToDoListRow(row *db.GetToDoListByIdRow) *entities.ToDoList {
-	toDoList := &entities.ToDoList{
-		Id:        row.ID,
-		Name:      row.Name,
-		CreatedAt: timeFromTimestamptz(row.CreatedAt),
-		UpdatedAt: timeFromTimestamptz(row.UpdatedAt),
-	}
-
-	return toDoList
-}
-
-func fromSqlcToDoListRowAll(row *db.GetAllToDoListsRow) *entities.ToDoList {
-
 	toDoList := &entities.ToDoList{
 		Id:        row.ID,
 		Name:      row.Name,
