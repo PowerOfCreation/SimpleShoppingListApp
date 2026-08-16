@@ -22,9 +22,18 @@ type Querier interface {
 	// means the list already had members and nothing was written.
 	ClaimListOwnership(ctx context.Context, arg ClaimListOwnershipParams) (uuid.UUID, error)
 	CreateToDo(ctx context.Context, arg CreateToDoParams) (Todo, error)
-	CreateToDoList(ctx context.Context, arg CreateToDoListParams) (TodoList, error)
+	// Projection, not an aggregate: a re-delivered created may update an
+	// existing row, but must never resurrect one that's already tombstoned.
+	CreateToDoList(ctx context.Context, arg CreateToDoListParams) error
 	DeleteToDo(ctx context.Context, id uuid.UUID) error
-	DeleteToDoList(ctx context.Context, id uuid.UUID) error
+	// Tombstone upsert: a deleted event that arrives before its created (the
+	// unprocessed-event sweep can replay a previously-failed create after a
+	// later delete already landed) still plants the tombstone row itself, so
+	// the later created bounces off the deleted_at IS NULL guard above. The
+	// WHERE guard in DO UPDATE makes this idempotent - the first tombstone
+	// timestamp sticks. name is left empty for a list never otherwise seen;
+	// that row is unreadable (every read filters deleted_at IS NULL).
+	DeleteToDoList(ctx context.Context, arg DeleteToDoListParams) error
 	// An invite is active if it hasn't been revoked and hasn't expired as of
 	// sqlc.arg(now) - the caller passes the current time rather than this query
 	// using NOW() so results are reproducible in tests.
@@ -74,6 +83,8 @@ type Querier interface {
 	// but this keeps the first revocation timestamp authoritative.
 	RevokeListInvite(ctx context.Context, arg RevokeListInviteParams) error
 	UpdateToDo(ctx context.Context, arg UpdateToDoParams) error
+	// Missing or already-deleted row: zero rows affected, not an error - the
+	// row is a rebuildable projection, not the authority.
 	UpdateToDoList(ctx context.Context, arg UpdateToDoListParams) error
 }
 

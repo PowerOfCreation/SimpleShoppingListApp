@@ -21,7 +21,7 @@ func createTestToDoList(t *testing.T, testDB *testhelpers.PostgresTestContainer)
 	t.Helper()
 	id := uuid.New()
 	now := timestamptzFromTime(time.Now().UTC())
-	_, err := testDB.Queries.CreateToDoList(context.Background(), db.CreateToDoListParams{
+	err := testDB.Queries.CreateToDoList(context.Background(), db.CreateToDoListParams{
 		ID:        id,
 		Name:      "Rewe",
 		CreatedAt: now,

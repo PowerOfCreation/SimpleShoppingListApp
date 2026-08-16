@@ -152,23 +152,19 @@ func newFakeToDoListRepo(lists ...*entities.ToDoList) *fakeToDoListRepo {
 	return &fakeToDoListRepo{lists: m}
 }
 
-func (f *fakeToDoListRepo) Create(*entities.ValidatedToDoList) (*entities.ToDoList, error) {
+func (f *fakeToDoListRepo) Create(context.Context, *entities.ValidatedToDoList) error {
 	panic("not used by ListSharingService tests")
 }
 
-func (f *fakeToDoListRepo) FindById(id uuid.UUID) (*entities.ToDoList, error) {
+func (f *fakeToDoListRepo) FindById(_ context.Context, id uuid.UUID) (*entities.ToDoList, error) {
 	return f.lists[id], nil
 }
 
-func (f *fakeToDoListRepo) FindAll() ([]*entities.ToDoList, error) {
+func (f *fakeToDoListRepo) Update(context.Context, *entities.ValidatedToDoList) error {
 	panic("not used by ListSharingService tests")
 }
 
-func (f *fakeToDoListRepo) Update(*entities.ValidatedToDoList) (*entities.ToDoList, error) {
-	panic("not used by ListSharingService tests")
-}
-
-func (f *fakeToDoListRepo) Delete(uuid.UUID) error {
+func (f *fakeToDoListRepo) Delete(context.Context, uuid.UUID, time.Time) error {
 	panic("not used by ListSharingService tests")
 }
 

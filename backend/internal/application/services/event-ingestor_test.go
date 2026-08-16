@@ -214,7 +214,7 @@ type fakeHandler struct {
 
 func (h *fakeHandler) EventType() string { return h.eventType }
 
-func (h *fakeHandler) Handle(ctx context.Context, aggregateID uuid.UUID, payload json.RawMessage) error {
+func (h *fakeHandler) Handle(ctx context.Context, aggregateID uuid.UUID, occurredAt time.Time, payload json.RawMessage) error {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.calls++
@@ -508,7 +508,7 @@ type orderTrackingHandler struct {
 
 func (h *orderTrackingHandler) EventType() string { return h.eventType }
 
-func (h *orderTrackingHandler) Handle(ctx context.Context, aggregateID uuid.UUID, payload json.RawMessage) error {
+func (h *orderTrackingHandler) Handle(ctx context.Context, aggregateID uuid.UUID, occurredAt time.Time, payload json.RawMessage) error {
 	h.onHandle(aggregateID, payload)
 	return nil
 }

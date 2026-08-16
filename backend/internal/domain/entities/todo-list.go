@@ -25,19 +25,23 @@ func (p *ToDoList) validate() error {
 	return nil
 }
 
-func NewToDoList(id uuid.UUID, name string) *ToDoList {
-	now := time.Now()
+// NewToDoListAt builds a list stamped with at (the originating event's
+// OccurredAt), not the server clock - so a rebuild replaying the same
+// events lands on the exact same timestamps as forward application.
+func NewToDoListAt(id uuid.UUID, name string, at time.Time) *ToDoList {
 	return &ToDoList{
 		Id:        id,
 		Name:      name,
-		CreatedAt: now,
-		UpdatedAt: now,
+		CreatedAt: at,
+		UpdatedAt: at,
 	}
 }
 
-func (p *ToDoList) UpdateName(name string) error {
+// UpdateNameAt mirrors NewToDoListAt: at comes from the event, not the
+// server clock.
+func (p *ToDoList) UpdateNameAt(name string, at time.Time) error {
 	p.Name = name
-	p.UpdatedAt = time.Now()
+	p.UpdatedAt = at
 
 	return p.validate()
 }

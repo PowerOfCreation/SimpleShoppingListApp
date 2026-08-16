@@ -71,8 +71,8 @@ func (s *ListSharingService) requireOwner(ctx context.Context, listID uuid.UUID,
 	return nil
 }
 
-func (s *ListSharingService) requireList(listID uuid.UUID) (*entities.ToDoList, error) {
-	list, err := s.todoLists.FindById(listID)
+func (s *ListSharingService) requireList(ctx context.Context, listID uuid.UUID) (*entities.ToDoList, error) {
+	list, err := s.todoLists.FindById(ctx, listID)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,7 @@ func (s *ListSharingService) CreateInvite(ctx context.Context, cmd *command.Crea
 		return nil, fmt.Errorf("%w: %s", interfaces.ErrInvalidInviteTTL, cmd.TTLKey)
 	}
 
-	if _, err := s.requireList(cmd.ListID); err != nil {
+	if _, err := s.requireList(ctx, cmd.ListID); err != nil {
 		return nil, err
 	}
 
@@ -113,7 +113,7 @@ func (s *ListSharingService) CreateInvite(ctx context.Context, cmd *command.Crea
 }
 
 func (s *ListSharingService) FindActiveInvites(ctx context.Context, qry *query.GetListInvitesQuery) (*query.GetListInvitesQueryResult, error) {
-	if _, err := s.requireList(qry.ListID); err != nil {
+	if _, err := s.requireList(ctx, qry.ListID); err != nil {
 		return nil, err
 	}
 
@@ -173,7 +173,7 @@ func (s *ListSharingService) RedeemInvite(ctx context.Context, cmd *command.Rede
 
 	// The list may have been deleted since this invite was created; a
 	// deleted list can't be joined.
-	list, err := s.requireList(invite.ListID)
+	list, err := s.requireList(ctx, invite.ListID)
 	if err != nil {
 		return nil, err
 	}

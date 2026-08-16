@@ -3,6 +3,7 @@ package services
 import (
 	"context"
 	"encoding/json"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/command"
@@ -22,15 +23,16 @@ func (h *CreateToDoListEventHandler) EventType() string {
 	return events.EventTypeCreateToDoList
 }
 
-func (h *CreateToDoListEventHandler) Handle(ctx context.Context, aggregateID uuid.UUID, payload json.RawMessage) error {
+func (h *CreateToDoListEventHandler) Handle(ctx context.Context, aggregateID uuid.UUID, occurredAt time.Time, payload json.RawMessage) error {
 	var event events.CreateToDoListEvent
 	if err := json.Unmarshal(payload, &event); err != nil {
 		return err
 	}
 
-	_, err := h.service.CreateToDoList(&command.CreateToDoListCommand{
-		Id:   aggregateID,
-		Name: event.Name,
+	_, err := h.service.CreateToDoList(ctx, &command.CreateToDoListCommand{
+		Id:         aggregateID,
+		Name:       event.Name,
+		OccurredAt: occurredAt,
 	})
 	return err
 }
