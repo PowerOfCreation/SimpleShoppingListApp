@@ -55,8 +55,8 @@ func (repo *SqlcToDoListRepository) Update(ctx context.Context, toDoList *entiti
 
 func (repo *SqlcToDoListRepository) Delete(ctx context.Context, id uuid.UUID, deletedAt time.Time) error {
 	return repo.queries.DeleteToDoList(ctx, db.DeleteToDoListParams{
-		ID:        id,
-		CreatedAt: timestamptzFromTime(deletedAt),
+		ID:           id,
+		TombstonedAt: timestamptzFromTime(deletedAt),
 	})
 }
 
@@ -69,35 +69,4 @@ func fromSqlcToDoListRow(row *db.GetToDoListByIdRow) *entities.ToDoList {
 	}
 
 	return toDoList
-}
-
-// txBeginner is what WithinTx needs to start a transaction - satisfied by
-// both *pgxpool.Pool (production) and the *pgx.Conn testhelpers.SetupTestDB
-// hands out (tests stay on a single serial connection), mirroring the same
-// db.DBTX abstraction NewQueries already relies on in connection.go.
-type txBeginner interface {
-	Begin(context.Context) (pgx.Tx, error)
-}
-
-type SqlcToDoListTx struct {
-	conn txBeginner
-}
-
-func NewSqlcToDoListTx(conn txBeginner) repositories.ToDoListTx {
-	return &SqlcToDoListTx{conn: conn}
-}
-
-func (t *SqlcToDoListTx) WithinTx(ctx context.Context, fn func(repo repositories.ToDoListRepository) error) error {
-	tx, err := t.conn.Begin(ctx)
-	if err != nil {
-		return err
-	}
-	defer tx.Rollback(ctx) //nolint:errcheck // no-op once committed
-
-	repo := NewSqlcToDoListRepository(db.New(tx))
-	if err := fn(repo); err != nil {
-		return err
-	}
-
-	return tx.Commit(ctx)
 }

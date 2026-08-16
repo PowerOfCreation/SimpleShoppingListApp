@@ -2,13 +2,11 @@ package interfaces
 
 import (
 	"context"
-	"encoding/json"
-	"time"
 
-	"github.com/google/uuid"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
 )
 
 type EventHandler interface {
 	EventType() string
-	Handle(ctx context.Context, aggregateID uuid.UUID, occurredAt time.Time, payload json.RawMessage) error
+	Handle(ctx context.Context, event *repositories.StoredEvent) error
 }

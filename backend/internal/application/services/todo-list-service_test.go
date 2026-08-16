@@ -19,62 +19,36 @@ import (
 )
 
 func newTestToDoListService(testDB *testhelpers.PostgresTestContainer) interfaces.ToDoListService {
-	queries := postgres.NewQueries(testDB.Conn)
-	repo := postgres.NewSqlcToDoListRepository(queries)
-	tx := postgres.NewSqlcToDoListTx(testDB.Conn)
-	eventRepo := postgres.NewSqlcEventRepository(queries)
-	return NewToDoListService(testLogger(), repo, tx, eventRepo)
+	repo := postgres.NewSqlcToDoListRepository(postgres.NewQueries(testDB.Conn))
+	return NewToDoListService(repo)
 }
 
 // rawToDoListRow reads a todo_lists row directly, bypassing the
 // deleted_at IS NULL filter every repository read applies - the only way
-// these tests can see a tombstoned row's name/deleted-ness to compare
-// forward application against RebuildList.
-func rawToDoListRow(t *testing.T, testDB *testhelpers.PostgresTestContainer, id uuid.UUID) (name string, deleted bool) {
+// these tests can see a tombstoned row's full state (including its
+// timestamps) to compare two independent applications of the same events.
+func rawToDoListRow(t *testing.T, testDB *testhelpers.PostgresTestContainer, id uuid.UUID) (name string, deleted bool, createdAt, updatedAt time.Time) {
 	t.Helper()
 	err := testDB.Conn.QueryRow(context.Background(),
-		"SELECT name, deleted_at IS NOT NULL FROM todo_lists WHERE id = $1", id,
-	).Scan(&name, &deleted)
+		"SELECT name, deleted_at IS NOT NULL, created_at, updated_at FROM todo_lists WHERE id = $1", id,
+	).Scan(&name, &deleted, &createdAt, &updatedAt)
 	require.NoError(t, err)
-	return name, deleted
+	return name, deleted, createdAt, updatedAt
 }
 
-// insertProcessedEvent durably stores an event the way EventIngestor would
-// once it's finished processing it - present in the event log with a seq,
-// so RebuildList's FindEventsSince can see it.
-func insertProcessedEvent(t *testing.T, eventRepo repositories.EventRepository, listID uuid.UUID, eventType string, payload any, occurredAt time.Time) {
-	t.Helper()
-	raw, err := json.Marshal(payload)
-	require.NoError(t, err)
-
-	ctx := context.Background()
-	stored := &repositories.StoredEvent{
-		EventID:       uuid.New(),
-		EventType:     eventType,
-		AggregateID:   listID,
-		AggregateType: "todo_list",
-		ListID:        &listID,
-		Payload:       raw,
-		OccurredAt:    occurredAt,
-		ClientID:      "client-1",
-	}
-
-	_, _, _, err = eventRepo.Insert(ctx, stored)
-	require.NoError(t, err)
-	_, _, err = eventRepo.MarkProcessed(ctx, stored.EventID)
-	require.NoError(t, err)
-}
-
-// TestToDoListService_RebuildList_MatchesForwardApplication is the plan's
-// leading invariant: forward application and RebuildList must produce the
-// same end state for the same event sequence. Both are run against the
-// same row (RebuildList replays and overwrites it), so a mismatch would
-// show up as a changed name or deleted-ness after the rebuild.
-func TestToDoListService_RebuildList_MatchesForwardApplication_CreatedUpdatedDeleted(t *testing.T) {
+// TestToDoListService_ForwardApplication_IsDeterministic is invariant 6.1
+// from sync-sharing-target.md: applying the same event sequence must always
+// produce the same projection state, timestamps included - so a from-scratch
+// replay (e.g. a future rebuild) can never diverge from what forward
+// application already produced. The row is dropped and the same three
+// service calls are replayed against a clean slate; a test that only ran
+// the calls once and re-read the same row could not catch a determinism
+// break (see sync-sharing-target.md 6.1's "kein Test - er kann nicht
+// fehlschlagen").
+func TestToDoListService_ForwardApplication_IsDeterministic_CreatedUpdatedDeleted(t *testing.T) {
 	testDB := testhelpers.SetupTestDB(t)
 	defer testDB.Close(t)
 	service := newTestToDoListService(testDB)
-	eventRepo := postgres.NewSqlcEventRepository(postgres.NewQueries(testDB.Conn))
 	ctx := context.Background()
 
 	listID := uuid.New()
@@ -82,27 +56,31 @@ func TestToDoListService_RebuildList_MatchesForwardApplication_CreatedUpdatedDel
 	t2 := t1.Add(time.Hour)
 	t3 := t2.Add(time.Hour)
 
-	insertProcessedEvent(t, eventRepo, listID, events.EventTypeCreateToDoList, events.CreateToDoListEvent{Name: "Rewe"}, t1)
-	insertProcessedEvent(t, eventRepo, listID, events.EventTypeUpdateToDoList, events.UpdateToDoListEvent{Name: "Aldi"}, t2)
-	insertProcessedEvent(t, eventRepo, listID, events.EventTypeDeleteToDoList, events.DeleteToDoListEvent{}, t3)
+	apply := func() {
+		_, err := service.CreateToDoList(ctx, &command.CreateToDoListCommand{Id: listID, Name: "Rewe", OccurredAt: t1})
+		require.NoError(t, err)
+		_, err = service.UpdateToDoList(ctx, &command.UpdateToDoListCommand{Id: listID, Name: "Aldi", OccurredAt: t2})
+		require.NoError(t, err)
+		_, err = service.DeleteToDoList(ctx, &command.DeleteToDoListCommand{Id: listID, OccurredAt: t3})
+		require.NoError(t, err)
+	}
 
-	// Forward application: dispatch the same three commands EventIngestor
-	// would have, in the same order.
-	_, err := service.CreateToDoList(ctx, &command.CreateToDoListCommand{Id: listID, Name: "Rewe", OccurredAt: t1})
+	apply()
+	firstName, firstDeleted, firstCreatedAt, firstUpdatedAt := rawToDoListRow(t, testDB, listID)
+	require.True(t, firstDeleted)
+
+	// Reset to a clean slate and replay - a from-scratch rebuild's starting
+	// point.
+	_, err := testDB.Conn.Exec(ctx, "DELETE FROM todo_lists WHERE id = $1", listID)
 	require.NoError(t, err)
-	_, err = service.UpdateToDoList(ctx, &command.UpdateToDoListCommand{Id: listID, Name: "Aldi", OccurredAt: t2})
-	require.NoError(t, err)
-	_, err = service.DeleteToDoList(ctx, &command.DeleteToDoListCommand{Id: listID, OccurredAt: t3})
-	require.NoError(t, err)
 
-	forwardName, forwardDeleted := rawToDoListRow(t, testDB, listID)
-	require.True(t, forwardDeleted)
+	apply()
+	secondName, secondDeleted, secondCreatedAt, secondUpdatedAt := rawToDoListRow(t, testDB, listID)
 
-	require.NoError(t, service.RebuildList(ctx, listID))
-
-	rebuiltName, rebuiltDeleted := rawToDoListRow(t, testDB, listID)
-	assert.Equal(t, forwardName, rebuiltName)
-	assert.Equal(t, forwardDeleted, rebuiltDeleted)
+	assert.Equal(t, firstName, secondName)
+	assert.Equal(t, firstDeleted, secondDeleted)
+	assert.True(t, firstCreatedAt.Equal(secondCreatedAt))
+	assert.True(t, firstUpdatedAt.Equal(secondUpdatedAt))
 }
 
 // TestToDoListService_CreateToDoList_AfterDeleteDoesNotResurrectTheList

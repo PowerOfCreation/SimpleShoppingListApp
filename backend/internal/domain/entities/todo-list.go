@@ -36,12 +36,3 @@ func NewToDoListAt(id uuid.UUID, name string, at time.Time) *ToDoList {
 		UpdatedAt: at,
 	}
 }
-
-// UpdateNameAt mirrors NewToDoListAt: at comes from the event, not the
-// server clock.
-func (p *ToDoList) UpdateNameAt(name string, at time.Time) error {
-	p.Name = name
-	p.UpdatedAt = at
-
-	return p.validate()
-}

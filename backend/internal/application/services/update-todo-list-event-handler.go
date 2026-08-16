@@ -3,12 +3,11 @@ package services
 import (
 	"context"
 	"encoding/json"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/command"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/interfaces"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/events"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
 )
 
 type UpdateToDoListEventHandler struct {
@@ -23,16 +22,16 @@ func (h *UpdateToDoListEventHandler) EventType() string {
 	return events.EventTypeUpdateToDoList
 }
 
-func (h *UpdateToDoListEventHandler) Handle(ctx context.Context, aggregateID uuid.UUID, occurredAt time.Time, payload json.RawMessage) error {
+func (h *UpdateToDoListEventHandler) Handle(ctx context.Context, storedEvent *repositories.StoredEvent) error {
 	var event events.UpdateToDoListEvent
-	if err := json.Unmarshal(payload, &event); err != nil {
+	if err := json.Unmarshal(storedEvent.Payload, &event); err != nil {
 		return err
 	}
 
 	_, err := h.service.UpdateToDoList(ctx, &command.UpdateToDoListCommand{
-		Id:         aggregateID,
+		Id:         storedEvent.AggregateID,
 		Name:       event.Name,
-		OccurredAt: occurredAt,
+		OccurredAt: storedEvent.OccurredAt,
 	})
 	return err
 }

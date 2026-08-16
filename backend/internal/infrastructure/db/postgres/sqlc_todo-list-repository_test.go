@@ -71,8 +71,7 @@ func TestSqlcToDoListRepository_Update_OfAnUnknownListIsANoOp(t *testing.T) {
 	repo := NewSqlcToDoListRepository(NewQueries(testDB.Conn))
 	ctx := context.Background()
 
-	toDoList := entities.NewToDoListAt(uuid.New(), "Rewe", time.Now().UTC())
-	require.NoError(t, toDoList.UpdateNameAt("Aldi", time.Now().UTC()))
+	toDoList := entities.NewToDoListAt(uuid.New(), "Aldi", time.Now().UTC())
 	validated, err := entities.NewValidatedToDoList(toDoList)
 	require.NoError(t, err)
 
@@ -98,8 +97,8 @@ func TestSqlcToDoListRepository_Update_OfASoftDeletedListIsANoOp(t *testing.T) {
 	require.NoError(t, repo.Create(ctx, validated))
 	require.NoError(t, repo.Delete(ctx, toDoList.Id, time.Now().UTC()))
 
-	require.NoError(t, toDoList.UpdateNameAt("Aldi", time.Now().UTC()))
-	validated, err = entities.NewValidatedToDoList(toDoList)
+	renamed := entities.NewToDoListAt(toDoList.Id, "Aldi", time.Now().UTC())
+	validated, err = entities.NewValidatedToDoList(renamed)
 	require.NoError(t, err)
 	require.NoError(t, repo.Update(ctx, validated))
 

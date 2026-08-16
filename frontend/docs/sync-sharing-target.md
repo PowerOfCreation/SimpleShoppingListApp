@@ -80,7 +80,7 @@ Erlaubt **nur** dem Owner und **nur**, wenn list_members genau eine Zeile hat (e
 
 „Allein" heißt dabei: **kein anderer Nutzer**. Eigene weitere Geräte werden nicht mitgezählt — list_members ist auf (list_id, user_id) geschlüsselt, und client_id ist bewusst die Keycloak-sub und keine Geräte-ID (siehe sync-design-decisions.md). Der Owner ist eine Person, die diese Aktion bewusst auslöst.
 
-Das Entsyncen ist ein **autorisierter REST-Befehl, kein Domain-Event** (siehe die erste Folgerung aus Abschnitt 2). Es löscht serverseitig **hart**: die todo_lists-Zeile, die domain_events der Liste, ihre Einladungen und Mitgliedschaften (ON DELETE CASCADE). Kein Soft-Delete — ein Tombstone würde die Liste dauerhaft unsyncbar machen (siehe Invariante 6.2).
+Das Entsyncen ist ein **autorisierter REST-Befehl, kein Domain-Event** (siehe die erste Folgerung aus Abschnitt 2). Es löscht serverseitig **hart**: die todo_lists-Zeile, ihre Einladungen und Mitgliedschaften (ON DELETE CASCADE) sowie die domain_events der Liste. Letztere **explizit** — `events.list_id` referenziert `todo_lists` ohne Fremdschlüssel (nullable Spalte, siehe Migration `00004`), das Cascade greift nur für `list_invites`/`list_members` (Migration `00005`). Kein Soft-Delete — ein Tombstone würde die Liste dauerhaft unsyncbar machen (siehe Invariante 6.2).
 
 Lokal auf dem auslösenden Gerät danach: list_sync_settings.enabled = 0, sync_cursors-Zeile löschen, domain_events.seq = NULL für alle Events der Liste, ausstehende Outbox-Zeilen der Liste canceln. Die Liste selbst bleibt unangetastet — das ist der Zweck der Aktion.
 
@@ -127,6 +127,8 @@ Verletzungen sind Bugs, auch wenn kein Test rot wird.
 
 *Testform:* zwei getrennte Zustände vergleichen (vorwärts auf Liste A aufbauen, Zeile zurücksetzen, rebuilden, gegen A prüfen). Ein Rebuild über dieselbe, unveränderte Zeile ist kein Test — er kann nicht fehlschlagen.
 
+*Bekannte Lücke im Vorwärtspfad:* `sweepUnprocessed` sortiert nach `received_at`, nicht nach `seq`. Ein nachgeholtes `created` (z. B. nach einem vorübergehenden Dispatch-Fehler) kann so ein bereits verarbeitetes `updated` überschreiben — der Create-Upsert setzt `name`/`created_at` mit, der Name fällt auf den Create-Wert zurück. Sehr schmaler Pfad, aber eine echte 6.1-Verletzung; ohne einen Rebuild-Mechanismus gibt es dafür aktuell keinen Reparaturweg.
+
 **6.2 deleted_at ist terminal.** Ein todo_list.created oder .updated darf eine getombstonete Liste nie wiederbeleben. Entsyncen benutzt deshalb kein Soft-Delete, sondern löscht hart.
 
 **6.3 Kein Schreibweg in todo_lists außer über den Event-Log.**
@@ -148,6 +150,8 @@ Verletzungen sind Bugs, auch wenn kein Test rot wird.
 **7.3 list_members.invite_id hat kein ON DELETE.** Ausreichend, solange Invites nur widerrufen und nie gelöscht werden. Ein künftiger „abgelaufene Invites aufräumen"-Job würde daran scheitern; ON DELETE SET NULL wäre dann die richtige Semantik — eine gelöschte Einladung darf die Mitgliedschaft nicht mitnehmen.
 
 **7.4 todo_list.deleted ist nicht rollenbeschränkt.** Ein Mitglied kann die Liste für alle löschen. Ob das gewollt ist (geteilter Haushalt) oder auf den Owner beschränkt gehört, ist nicht entschieden.
+
+**7.5 Tombstone-Squatting.** Der Tombstone-Upsert von `DeleteToDoList` legt eine `todo_lists`-Zeile für Listen-UUIDs an, die der Server nie gesehen hat (vorher: Fehler, aber keine Zeile). Zusammen mit **6.2** (terminal) und **7.1** (kein Enforcement auf `/events`) heißt das: wer eine fremde UUID rät und ein `todo_list.deleted` pusht, macht die Liste für ihren echten Besitzer **dauerhaft unsyncbar** — `CreateToDoList` prallt am Tombstone ab, und „synchronisiert" ist laut **4.2** genau „es existiert eine `todo_lists`-Zeile". Selbe Klasse wie 7.2, aber irreversibel. Schließt sich mit dem Owner-Backfill aus 7.1; bis dahin offen.
 
 ## 8. Bewusst nicht gebaut
 

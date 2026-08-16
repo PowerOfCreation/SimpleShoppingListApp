@@ -144,7 +144,7 @@ func (ing *EventIngestor) dispatchAndAck(ctx context.Context, event *repositorie
 	// compatibility, see EventDispatcher) - that still counts as "durably
 	// received", so it's still marked processed and acked. Only handled
 	// types that error should stay unprocessed for a retry.
-	if err := ing.dispatcher.Dispatch(ctx, event.EventType, event.AggregateID, event.OccurredAt, event.Payload); err != nil {
+	if err := ing.dispatcher.Dispatch(ctx, event); err != nil {
 		ing.logger.Error(
 			"failed to dispatch event",
 			"event_id", event.EventID, "event_type", event.EventType, "error", err,

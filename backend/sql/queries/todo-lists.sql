@@ -30,7 +30,7 @@ WHERE id = $1 AND todo_lists.deleted_at IS NULL;
 -- timestamp sticks. name is left empty for a list never otherwise seen;
 -- that row is unreadable (every read filters deleted_at IS NULL).
 INSERT INTO todo_lists (id, name, created_at, updated_at, deleted_at)
-VALUES ($1, '', $2, $2, $2)
+VALUES ($1, '', sqlc.arg(tombstoned_at), sqlc.arg(tombstoned_at), sqlc.arg(tombstoned_at))
 ON CONFLICT (id) DO UPDATE
   SET deleted_at = EXCLUDED.deleted_at
   WHERE todo_lists.deleted_at IS NULL;

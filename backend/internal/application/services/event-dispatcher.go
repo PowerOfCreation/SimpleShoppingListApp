@@ -2,12 +2,10 @@ package services
 
 import (
 	"context"
-	"encoding/json"
 	"log/slog"
-	"time"
 
-	"github.com/google/uuid"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/interfaces"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
 )
 
 type EventDispatcher struct {
@@ -26,11 +24,11 @@ func NewEventDispatcher(logger *slog.Logger, handlers ...interfaces.EventHandler
 // Dispatch routes a single event to its handler. Unknown event types are silently
 // ignored so the backend stays forward-compatible with events from newer clients -
 // but logged, since it also signals client/server version skew worth knowing about.
-func (d *EventDispatcher) Dispatch(ctx context.Context, eventType string, aggregateID uuid.UUID, occurredAt time.Time, payload json.RawMessage) error {
-	handler, ok := d.handlers[eventType]
+func (d *EventDispatcher) Dispatch(ctx context.Context, event *repositories.StoredEvent) error {
+	handler, ok := d.handlers[event.EventType]
 	if !ok {
-		d.logger.Warn("unknown event type", "event_type", eventType, "aggregate_id", aggregateID)
+		d.logger.Warn("unknown event type", "event_type", event.EventType, "aggregate_id", event.AggregateID)
 		return nil
 	}
-	return handler.Handle(ctx, aggregateID, occurredAt, payload)
+	return handler.Handle(ctx, event)
 }

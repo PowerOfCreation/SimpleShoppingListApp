@@ -50,8 +50,8 @@ ON CONFLICT (id) DO UPDATE
 `
 
 type DeleteToDoListParams struct {
-	ID        uuid.UUID          `db:"id" json:"id"`
-	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	ID           uuid.UUID          `db:"id" json:"id"`
+	TombstonedAt pgtype.Timestamptz `db:"tombstoned_at" json:"tombstoned_at"`
 }
 
 // Tombstone upsert: a deleted event that arrives before its created (the
@@ -62,7 +62,7 @@ type DeleteToDoListParams struct {
 // timestamp sticks. name is left empty for a list never otherwise seen;
 // that row is unreadable (every read filters deleted_at IS NULL).
 func (q *Queries) DeleteToDoList(ctx context.Context, arg DeleteToDoListParams) error {
-	_, err := q.db.Exec(ctx, deleteToDoList, arg.ID, arg.CreatedAt)
+	_, err := q.db.Exec(ctx, deleteToDoList, arg.ID, arg.TombstonedAt)
 	return err
 }
 
