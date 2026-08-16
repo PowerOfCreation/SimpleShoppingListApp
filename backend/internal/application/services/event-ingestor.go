@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"sync"
 
@@ -142,14 +143,23 @@ func (ing *EventIngestor) process(ctx context.Context, event *repositories.Store
 func (ing *EventIngestor) dispatchAndAck(ctx context.Context, event *repositories.StoredEvent) {
 	// Dispatch silently no-ops for unknown event types (forward
 	// compatibility, see EventDispatcher) - that still counts as "durably
-	// received", so it's still marked processed and acked. Only handled
-	// types that error should stay unprocessed for a retry.
+	// received", so it's still marked processed and acked. A handler error
+	// wrapped in interfaces.ErrPermanent (bad payload, failed validation) is
+	// unfixable by retrying and gets the same treatment - only an
+	// unwrapped, presumably transient error (e.g. a DB blip) is left
+	// unprocessed for sweepUnprocessed to retry.
 	if err := ing.dispatcher.Dispatch(ctx, event); err != nil {
+		if !errors.Is(err, interfaces.ErrPermanent) {
+			ing.logger.Error(
+				"failed to dispatch event",
+				"event_id", event.EventID, "event_type", event.EventType, "error", err,
+			)
+			return
+		}
 		ing.logger.Error(
-			"failed to dispatch event",
+			"event permanently undeliverable, recording it without applying it",
 			"event_id", event.EventID, "event_type", event.EventType, "error", err,
 		)
-		return
 	}
 	seq, listID, err := ing.eventRepo.MarkProcessed(ctx, event.EventID)
 	if err != nil {

@@ -27,7 +27,11 @@ func (s *ToDoListService) CreateToDoList(ctx context.Context, todoListCommand *c
 
 	validatedToDoList, err := entities.NewValidatedToDoList(newToDoList)
 	if err != nil {
-		return nil, err
+		// A validation failure (e.g. empty name) will fail identically on
+		// every retry - not a transient failure, see interfaces.ErrPermanent.
+		// Only this error is wrapped; a repository error below is left as-is
+		// since it may well be transient (e.g. a DB connection blip).
+		return nil, interfaces.Permanent(err)
 	}
 
 	if err := s.todoListRepository.Create(ctx, validatedToDoList); err != nil {
@@ -52,7 +56,8 @@ func (s *ToDoListService) UpdateToDoList(ctx context.Context, todoListCommand *c
 
 	validatedToDoList, err := entities.NewValidatedToDoList(toDoList)
 	if err != nil {
-		return nil, err
+		// See the identical comment in CreateToDoList.
+		return nil, interfaces.Permanent(err)
 	}
 
 	if err := s.todoListRepository.Update(ctx, validatedToDoList); err != nil {
