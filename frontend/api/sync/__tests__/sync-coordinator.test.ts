@@ -166,6 +166,7 @@ describe("SyncCoordinator", () => {
 
   it("waits for pull to finish before starting reconcile on socket connect", async () => {
     buildCoordinator().start()
+    await flushMicrotasks()
     let releasePull: (() => void) | undefined
     pullMock.mockImplementationOnce(
       () =>

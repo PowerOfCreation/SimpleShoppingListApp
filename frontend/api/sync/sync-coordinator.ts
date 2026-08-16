@@ -213,10 +213,12 @@ export class SyncCoordinator {
     )
 
     this.safetyInterval = setInterval(() => {
-      this.pullThenReconcile("Periodic pull failed", "Periodic reconcile failed")
-        .catch((error) => {
-          logger.error("Periodic pull/reconcile failed", error)
-        })
+      this.pullThenReconcile(
+        "Periodic pull failed",
+        "Periodic reconcile failed"
+      ).catch((error) => {
+        logger.error("Periodic pull/reconcile failed", error)
+      })
       this.socket.reconnectIfTokenChanged().catch((error) => {
         logger.error("Failed to check for token refresh", error)
       })
