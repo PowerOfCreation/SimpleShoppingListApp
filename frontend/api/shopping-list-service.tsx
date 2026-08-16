@@ -285,12 +285,17 @@ export class ShoppingListService {
 
       const result = await this.eventRepository.appendWithProjection(
         event,
-        (db) => this.projection.handleDeleted(db, event)
+        async (db) => {
+          await this.projection.handleDeleted(db, event)
+          await this.listSyncSettingsRepository.removeWithin(db, listId)
+        }
       )
 
       if (!result.success) {
         return Result.fail(result.getError())
       }
+
+      notifySyncListsChanged()
 
       return Result.ok(undefined)
     } catch (error) {

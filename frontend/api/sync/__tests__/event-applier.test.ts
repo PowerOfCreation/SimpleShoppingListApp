@@ -3,6 +3,7 @@ import { EventApplier } from "../event-applier"
 import { EventRepository } from "@/database/event-repository"
 import { IngredientProjection } from "@/database/ingredient-projection"
 import { IngredientListProjection } from "@/database/ingredient-list-projection"
+import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
 import { SyncCursorRepository } from "@/database/sync-cursor-repository"
 import { getDatabase } from "@/database/database"
 import { DomainEventRow, EventTypes } from "@/types/DomainEvent"
@@ -52,6 +53,7 @@ describe("EventApplier", () => {
   let eventRepository: EventRepository
   let ingredientProjection: IngredientProjection
   let listProjection: IngredientListProjection
+  let listSyncSettingsRepository: ListSyncSettingsRepository
   let cursorRepository: SyncCursorRepository
   let applier: EventApplier
 
@@ -61,13 +63,15 @@ describe("EventApplier", () => {
     eventRepository = new EventRepository(db)
     ingredientProjection = new IngredientProjection(db)
     listProjection = new IngredientListProjection(db)
+    listSyncSettingsRepository = new ListSyncSettingsRepository(db)
     cursorRepository = new SyncCursorRepository(db)
     applier = new EventApplier(
       db,
       eventRepository,
       ingredientProjection,
       listProjection,
-      cursorRepository
+      cursorRepository,
+      listSyncSettingsRepository
     )
 
     await db.execAsync(`
@@ -76,6 +80,7 @@ describe("EventApplier", () => {
       DROP TABLE IF EXISTS ingredients;
       DROP TABLE IF EXISTS ingredient_lists;
       DROP TABLE IF EXISTS sync_cursors;
+      DROP TABLE IF EXISTS list_sync_settings;
       CREATE TABLE domain_events (
         event_id TEXT PRIMARY KEY,
         event_type TEXT NOT NULL,
@@ -117,6 +122,11 @@ describe("EventApplier", () => {
         list_id TEXT PRIMARY KEY,
         last_seen_seq INTEGER NOT NULL DEFAULT 0,
         last_pulled_at INTEGER
+      );
+      CREATE TABLE list_sync_settings (
+        list_id TEXT PRIMARY KEY,
+        enabled INTEGER NOT NULL DEFAULT 0,
+        updated_at INTEGER NOT NULL
       );
     `)
   })
@@ -213,6 +223,13 @@ describe("EventApplier", () => {
   })
 
   it("deletes ingredients and skips the ingredient rebuild when the list's history ends in a delete", async () => {
+    await db.runAsync(
+      `INSERT INTO list_sync_settings (list_id, enabled, updated_at) VALUES (?, ?, ?)`,
+      "list-1",
+      1,
+      Date.now()
+    )
+
     const deleted = makeEvent({
       event_id: "list-deleted",
       event_type: EventTypes.TODO_LIST_DELETED,
@@ -240,6 +257,11 @@ describe("EventApplier", () => {
       `SELECT id FROM ingredients WHERE id = 'ing-1'`
     )
     expect(ingredient).toBeNull()
+
+    const syncSetting = await db.getFirstAsync(
+      `SELECT list_id FROM list_sync_settings WHERE list_id = 'list-1'`
+    )
+    expect(syncSetting).toBeNull()
   })
 
   it("is atomic: a failure partway through rolls back the event inserts, projections, and cursor together", async () => {

@@ -46,7 +46,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       eventRepository,
       new IngredientProjection(db),
       new IngredientListProjection(db),
-      cursorRepository
+      cursorRepository,
+      new ListSyncSettingsRepository(db)
     )
     return new SyncEngine(
       new OutboxRepository(db),
