@@ -188,6 +188,19 @@ export class SyncEngine {
       return
     }
     const known = new Set(knownResult.getValue()!)
+    const headsResult = await this.client.getListHeads(listIds)
+    if (!headsResult.success) {
+      logger.warn(
+        "Reconcile: failed to fetch list heads; skipping drift-repair check for this batch",
+        headsResult.getError()
+      )
+    }
+    const headSeqByListId = new Map(
+      (headsResult.success ? headsResult.getValue()! : []).map((head) => [
+        head.listId,
+        head.seq,
+      ])
+    )
 
     for (const listId of listIds) {
       const eventsResult = await this.eventRepository.getByListId(listId)
@@ -223,10 +236,29 @@ export class SyncEngine {
       // doc's caveat on that). A normal incremental pull trusts the local
       // cursor and won't revisit an event behind it on its own - repairList
       // resets the cursor and re-derives the list from scratch.
-      const hasStaleOrdering = syncable.some(
+      const hasKnownUnsequencedEvent = syncable.some(
         (event) => event.seq === null && known.has(event.event_id)
       )
-      if (hasStaleOrdering) {
+      if (!hasKnownUnsequencedEvent) {
+        continue
+      }
+
+      const headSeq = headSeqByListId.get(listId)
+      if (headSeq === undefined) {
+        continue
+      }
+
+      const cursorResult = await this.cursorRepository.get(listId)
+      if (!cursorResult.success) {
+        logger.warn(
+          `Reconcile: failed to read cursor for list ${listId}; skipping drift repair`,
+          cursorResult.getError()
+        )
+        continue
+      }
+      const localCursor = cursorResult.getValue()?.last_seen_seq ?? 0
+
+      if (localCursor >= headSeq) {
         await this.repairList(listId)
       }
     }

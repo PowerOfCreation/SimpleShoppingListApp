@@ -60,11 +60,11 @@ export class SyncCoordinator {
         // (self-heal) anything we sent that never got acked. The socket
         // itself already resent our subscriptions from its own onopen,
         // before this fires.
-        this.pullNow().catch((error) => {
-          logger.error("Pull on connect failed", error)
-        })
-        this.reconcileNow().catch((error) => {
-          logger.error("Reconcile on connect failed", error)
+        this.pullThenReconcile(
+          "Pull on connect failed",
+          "Reconcile on connect failed"
+        ).catch((error) => {
+          logger.error("Pull/reconcile on connect failed", error)
         })
       },
       (listId) => this.debouncedPullList(listId)
@@ -115,6 +115,23 @@ export class SyncCoordinator {
       return
     }
     await this.engine.pull(idsResult.getValue()!)
+  }
+
+  private async pullThenReconcile(
+    pullErrorMessage: string,
+    reconcileErrorMessage: string
+  ): Promise<void> {
+    try {
+      await this.pullNow()
+    } catch (error) {
+      logger.error(pullErrorMessage, error)
+    }
+
+    try {
+      await this.reconcileNow()
+    } catch (error) {
+      logger.error(reconcileErrorMessage, error)
+    }
   }
 
   private async subscribeNow(): Promise<void> {
@@ -181,13 +198,13 @@ export class SyncCoordinator {
       "change",
       (nextState: AppStateStatus) => {
         if (nextState === "active") {
-          this.pullNow().catch((error) => {
-            logger.error("Pull on foreground failed", error)
+          this.pullThenReconcile(
+            "Pull on foreground failed",
+            "Reconcile on foreground failed"
+          ).catch((error) => {
+            logger.error("Pull/reconcile on foreground failed", error)
           })
           this.flush()
-          this.reconcileNow().catch((error) => {
-            logger.error("Reconcile on foreground failed", error)
-          })
           this.socket.connect().catch((error) => {
             logger.error("Failed to reconnect sync socket", error)
           })
@@ -196,12 +213,10 @@ export class SyncCoordinator {
     )
 
     this.safetyInterval = setInterval(() => {
-      this.pullNow().catch((error) => {
-        logger.error("Periodic pull failed", error)
-      })
-      this.reconcileNow().catch((error) => {
-        logger.error("Periodic reconcile failed", error)
-      })
+      this.pullThenReconcile("Periodic pull failed", "Periodic reconcile failed")
+        .catch((error) => {
+          logger.error("Periodic pull/reconcile failed", error)
+        })
       this.socket.reconnectIfTokenChanged().catch((error) => {
         logger.error("Failed to check for token refresh", error)
       })

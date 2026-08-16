@@ -164,6 +164,28 @@ describe("SyncCoordinator", () => {
     expect(reconcileMock).toHaveBeenCalledWith(["list-1", "list-2"])
   })
 
+  it("waits for pull to finish before starting reconcile on socket connect", async () => {
+    buildCoordinator().start()
+    let releasePull: (() => void) | undefined
+    pullMock.mockImplementationOnce(
+      () =>
+        new Promise<void>((resolve) => {
+          releasePull = resolve
+        })
+    )
+    pullMock.mockClear()
+    reconcileMock.mockClear()
+
+    onConnectedHandler!()
+    await flushMicrotasks()
+    expect(pullMock).toHaveBeenCalledWith(["list-1", "list-2"])
+    expect(reconcileMock).not.toHaveBeenCalled()
+
+    releasePull?.()
+    await flushMicrotasks()
+    expect(reconcileMock).toHaveBeenCalledWith(["list-1", "list-2"])
+  })
+
   it("flushes again when the outbox reports a change", async () => {
     buildCoordinator().start()
     await flushMicrotasks()
