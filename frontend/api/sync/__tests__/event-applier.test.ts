@@ -7,7 +7,10 @@ import { ListSyncSettingsRepository } from "@/database/list-sync-settings-reposi
 import { SyncCursorRepository } from "@/database/sync-cursor-repository"
 import { getDatabase } from "@/database/database"
 import { DomainEventRow, EventTypes } from "@/types/DomainEvent"
-import { notifyListDataChanged } from "@/api/sync/sync-events"
+import {
+  notifyListDataChanged,
+  notifySyncListsChanged,
+} from "@/api/sync/sync-events"
 
 jest.mock("@/database/database", () => {
   const originalModule = jest.requireActual("@/database/database")
@@ -16,6 +19,7 @@ jest.mock("@/database/database", () => {
 
 jest.mock("@/api/sync/sync-events", () => ({
   notifyListDataChanged: jest.fn(),
+  notifySyncListsChanged: jest.fn(),
 }))
 
 const makeEvent = (
@@ -262,6 +266,35 @@ describe("EventApplier", () => {
       `SELECT list_id FROM list_sync_settings WHERE list_id = 'list-1'`
     )
     expect(syncSetting).toBeNull()
+    expect(notifySyncListsChanged).toHaveBeenCalled()
+  })
+
+  it("keeps the sync setting and does not notify when the list is merely missing its created event", async () => {
+    // A history with no todo_list.created also leaves no row in
+    // ingredient_lists after rebuild - the same symptom as an actual
+    // deletion, but this list is repairable (see #230's repairList) and
+    // must not be silently dropped out of getEnabledIds().
+    await db.runAsync(
+      `INSERT INTO list_sync_settings (list_id, enabled, updated_at) VALUES (?, ?, ?)`,
+      "list-1",
+      1,
+      Date.now()
+    )
+
+    const result = await applier.apply("list-1", [makeIngredientCreated()], 5)
+
+    expect(result.success).toBe(true)
+
+    const list = await db.getFirstAsync(
+      `SELECT id FROM ingredient_lists WHERE id = 'list-1'`
+    )
+    expect(list).toBeNull()
+
+    const syncSetting = await db.getFirstAsync(
+      `SELECT list_id FROM list_sync_settings WHERE list_id = 'list-1'`
+    )
+    expect(syncSetting).not.toBeNull()
+    expect(notifySyncListsChanged).not.toHaveBeenCalled()
   })
 
   it("is atomic: a failure partway through rolls back the event inserts, projections, and cursor together", async () => {
