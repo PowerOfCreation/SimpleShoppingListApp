@@ -76,6 +76,9 @@ export class ListSyncSettingsRepository extends BaseRepository {
   }
 
   async removeWithin(db: SQLiteDatabase, listId: string): Promise<void> {
-    await db.runAsync(`DELETE FROM list_sync_settings WHERE list_id = ?`, listId)
+    await db.runAsync(
+      `DELETE FROM list_sync_settings WHERE list_id = ?`,
+      listId
+    )
   }
 }

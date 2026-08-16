@@ -80,6 +80,7 @@ describe("EventApplier", () => {
       DROP TABLE IF EXISTS ingredients;
       DROP TABLE IF EXISTS ingredient_lists;
       DROP TABLE IF EXISTS sync_cursors;
+      DROP TABLE IF EXISTS list_sync_settings;
       CREATE TABLE domain_events (
         event_id TEXT PRIMARY KEY,
         event_type TEXT NOT NULL,
