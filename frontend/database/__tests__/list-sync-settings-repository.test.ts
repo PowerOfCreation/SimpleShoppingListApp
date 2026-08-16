@@ -77,12 +77,13 @@ describe("ListSyncSettingsRepository", () => {
     })
   })
 
-  describe("remove", () => {
-    it("deletes the row for a list", async () => {
+  describe("removeWithin", () => {
+    it("deletes the row for a list within a caller-supplied transaction", async () => {
       await repository.setEnabled("list-1", true)
 
-      const result = await repository.remove("list-1")
-      expect(result.success).toBe(true)
+      await db.withTransactionAsync(async () => {
+        await repository.removeWithin(db, "list-1")
+      })
 
       const enabledResult = await repository.isEnabled("list-1")
       expect(enabledResult.getValue()).toBe(false)
