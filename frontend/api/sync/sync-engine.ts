@@ -157,11 +157,17 @@ export class SyncEngine {
   }
 
   /**
-   * Self-heal: compares the syncable events we hold locally for these
-   * (sync-enabled) lists against what the server durably holds, re-queues
-   * anything missing, and flushes - recovers from a lost ack, an app kill
-   * between send and ack, or the server losing previously-acked data.
-   * Keyed by list_id, not aggregate_id - see sync-design-decisions.md.
+   * Self-heal, both directions: compares the syncable events we hold
+   * locally for these (sync-enabled) lists against what the server durably
+   * holds. Server missing something we have → re-queue it (recovers from an
+   * app kill between send and ack, or the server losing previously-acked
+   * data). Server already has something we still show as locally
+   * unconfirmed, *and* we've caught up to the server's head → repairList()
+   * re-derives that list from scratch (recovers from local/server ordering
+   * drift, see repairList's doc comment - the "caught up" guard matters
+   * because seq === null is also the normal state of a just-acked,
+   * not-yet-pulled event). Keyed by list_id, not aggregate_id - see
+   * sync-design-decisions.md.
    */
   async reconcile(listIds: string[]): Promise<void> {
     if (listIds.length === 0) {
@@ -186,6 +192,22 @@ export class SyncEngine {
     }
     const known = new Set(knownResult.getValue()!)
 
+    // Needed for the drift guard below; a failure here just disables that
+    // guard for this batch; the missing-event direction still runs.
+    const headsResult = await this.client.getListHeads(listIds)
+    if (!headsResult.success) {
+      logger.warn(
+        "Reconcile: failed to fetch list heads, skipping drift check for this batch",
+        headsResult.getError()
+      )
+    }
+    const headSeqByListId = new Map(
+      (headsResult.success ? headsResult.getValue()! : []).map((head) => [
+        head.listId,
+        head.seq,
+      ])
+    )
+
     for (const listId of listIds) {
       const eventsResult = await this.eventRepository.getByListId(listId)
       if (!eventsResult.success) {
@@ -195,27 +217,67 @@ export class SyncEngine {
         )
         continue
       }
-
-      const missing = eventsResult
+      const syncable = eventsResult
         .getValue()!
-        .filter(
-          (event) =>
-            SYNCABLE_EVENT_TYPES.includes(event.event_type) &&
-            !known.has(event.event_id)
+        .filter((event) => SYNCABLE_EVENT_TYPES.includes(event.event_type))
+
+      const missing = syncable.filter((event) => !known.has(event.event_id))
+      if (missing.length > 0) {
+        // enqueueExistingForSync creates a fresh (pending) row for anything
+        // never queued before; resetToPending forces any existing row -
+        // even one already marked synced - back to pending. Together they
+        // cover both "never sent" and "server lost what it had acked".
+        await this.eventRepository.enqueueExistingForSync(missing)
+        await this.outboxRepository.resetToPending(
+          missing.map((event) => event.event_id)
         )
-      if (missing.length === 0) {
-        continue
       }
 
-      // enqueueExistingForSync creates a fresh (pending) row for anything
-      // never queued before; resetToPending forces any existing row - even
-      // one already marked synced - back to pending. Together they cover
-      // both "never sent" and "server lost what it had acked".
-      await this.eventRepository.enqueueExistingForSync(missing)
-      await this.outboxRepository.resetToPending(
-        missing.map((event) => event.event_id)
+      // The opposite direction: the server already knows an event we still
+      // show as locally unconfirmed. Under the single-seq-writer invariant
+      // (sync-design-decisions.md, "Genau ein Writer für seq") that's the
+      // normal state of anything just pushed and acked but not yet pulled -
+      // it only means drift once our cursor has reached the server's head,
+      // since a pull that hasn't happened yet can't be blamed for not
+      // having assigned a seq.
+      const hasUnpulledKnownEvent = syncable.some(
+        (event) => event.seq === null && known.has(event.event_id)
       )
+      if (!hasUnpulledKnownEvent) {
+        continue
+      }
+      const headSeq = headSeqByListId.get(listId)
+      if (headSeq === undefined) {
+        continue
+      }
+      const cursorSeq = await this.readCursorSeq(listId)
+      if (cursorSeq !== null && cursorSeq >= headSeq) {
+        await this.repairList(listId)
+      }
     }
+  }
+
+  /**
+   * Full re-derivation of one list from the server: resets the pull cursor
+   * to 0 and re-pulls from scratch. insertRemote (seq's only writer, see
+   * EventRepository) fills in the seq for every event already held locally
+   * as an unconfirmed echo of our own push, and the pull's rebuild replays
+   * the list's complete, correctly-ordered history. Called by reconcile
+   * when it detects local/server drift a normal incremental pull can't
+   * self-correct (see reconcileBatch), and exposed directly for a
+   * user-triggered "re-sync from server" action - see
+   * sync-design-decisions.md ("Reparatur: voller Re-Pull").
+   */
+  async repairList(listId: string): Promise<void> {
+    const clearResult = await this.cursorRepository.clear(listId)
+    if (!clearResult.success) {
+      logger.error(
+        `Failed to clear pull cursor for list ${listId} before repair`,
+        clearResult.getError()
+      )
+      return
+    }
+    await this.pullList(listId)
   }
 
   /**
@@ -259,20 +321,30 @@ export class SyncEngine {
     await this.pull([listId])
   }
 
-  private async pullListToHead(listId: string, headSeq: number): Promise<void> {
+  /**
+   * The local pull cursor's seq, defaulting to 0 if the list's never been
+   * pulled. Null (already logged) means a real DB error - distinct from
+   * "never pulled", which callers must not treat as an unnecessary full
+   * pull.
+   */
+  private async readCursorSeq(listId: string): Promise<number | null> {
     const cursorResult = await this.cursorRepository.get(listId)
     if (!cursorResult.success) {
-      // A real local DB error, not "never pulled before" (that's a
-      // success with a null value, treated as seq 0 below) - don't mask it
-      // as an empty cursor, which would force an unnecessary full pull.
-      // Skip this list; the next trigger retries.
       logger.error(
         `Failed to read pull cursor for list ${listId}`,
         cursorResult.getError()
       )
+      return null
+    }
+    return cursorResult.getValue()?.last_seen_seq ?? 0
+  }
+
+  private async pullListToHead(listId: string, headSeq: number): Promise<void> {
+    const cursorSeq = await this.readCursorSeq(listId)
+    if (cursorSeq === null) {
+      // Already logged; skip this list, the next trigger retries.
       return
     }
-    const cursorSeq = cursorResult.getValue()?.last_seen_seq ?? 0
 
     if (headSeq < cursorSeq) {
       // The server's head is behind what we last saw - it lost data (e.g.

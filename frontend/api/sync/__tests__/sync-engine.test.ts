@@ -81,6 +81,7 @@ describe("SyncEngine", () => {
     cursor = {
       get: jest.fn().mockResolvedValue(Result.ok(null)),
       set: jest.fn().mockResolvedValue(Result.ok(undefined)),
+      clear: jest.fn().mockResolvedValue(Result.ok(undefined)),
     } as unknown as jest.Mocked<SyncCursorRepository>
 
     client = {
@@ -308,6 +309,7 @@ describe("SyncEngine", () => {
           makeEvent({
             event_id: "known-evt",
             event_type: EventTypes.TODO_LIST_CREATED,
+            seq: 1,
           }),
           makeEvent({
             event_id: "missing-evt",
@@ -367,16 +369,120 @@ describe("SyncEngine", () => {
       expect(outbox.resetToPending).not.toHaveBeenCalled()
     })
 
-    it("does nothing further when the server already knows everything", async () => {
+    it("does nothing further when the server already knows everything and locally has a seq", async () => {
       client.getKnownEventIds.mockResolvedValue(Result.ok(["e1"]))
       events.getByListId.mockResolvedValue(
-        Result.ok([makeEvent({ event_id: "e1" })])
+        Result.ok([makeEvent({ event_id: "e1", seq: 1 })])
       )
 
       await engine.reconcile(["list-1"])
 
       expect(events.enqueueExistingForSync).not.toHaveBeenCalled()
       expect(outbox.resetToPending).not.toHaveBeenCalled()
+      expect(cursor.clear).not.toHaveBeenCalled()
+    })
+
+    it("repairs a list when the server knows an event we still show as locally unconfirmed, and we've caught up to the server head", async () => {
+      // seq has exactly one writer, the pull path - so server-knows +
+      // local seq === null means our ordering has drifted, not that the
+      // event is merely unsent (see sync-design-decisions.md). That's only
+      // true once our cursor has reached the server's head - otherwise a
+      // just-acked, not-yet-pulled event looks identical.
+      client.getKnownEventIds.mockResolvedValue(Result.ok(["e1"]))
+      events.getByListId.mockResolvedValue(
+        Result.ok([makeEvent({ event_id: "e1", seq: null })])
+      )
+      client.getListHeads.mockResolvedValue(
+        Result.ok([{ listId: "list-1", seq: 5, eventId: "e1" }])
+      )
+      cursor.get.mockResolvedValue(
+        Result.ok({ list_id: "list-1", last_seen_seq: 5, last_pulled_at: null })
+      )
+      client.getEventsSince.mockResolvedValue(
+        Result.ok({ events: [], nextSeq: 5, hasMore: false })
+      )
+
+      await engine.reconcile(["list-1"])
+
+      expect(cursor.clear).toHaveBeenCalledWith("list-1")
+      // repairList's pull re-derives from scratch via the normal pull path.
+      expect(client.getListHeads).toHaveBeenCalledWith(["list-1"])
+    })
+
+    it("does not repair a freshly-acked, not-yet-pulled event - only a drift signal once caught up to the server head", async () => {
+      client.getKnownEventIds.mockResolvedValue(Result.ok(["e1"]))
+      events.getByListId.mockResolvedValue(
+        Result.ok([makeEvent({ event_id: "e1", seq: null })])
+      )
+      client.getListHeads.mockResolvedValue(
+        Result.ok([{ listId: "list-1", seq: 5, eventId: "e1" }])
+      )
+      // Cursor is behind the head - a pull just hasn't caught up yet.
+      cursor.get.mockResolvedValue(
+        Result.ok({ list_id: "list-1", last_seen_seq: 2, last_pulled_at: null })
+      )
+
+      await engine.reconcile(["list-1"])
+
+      expect(cursor.clear).not.toHaveBeenCalled()
+    })
+
+    it("does not repair when list heads can't be fetched, but still re-enqueues missing events", async () => {
+      client.getKnownEventIds.mockResolvedValue(Result.ok(["known-evt"]))
+      client.getListHeads.mockResolvedValue(
+        Result.fail(new SyncError("boom", true))
+      )
+      events.getByListId.mockResolvedValue(
+        Result.ok([
+          makeEvent({ event_id: "known-evt", seq: null }),
+          makeEvent({ event_id: "missing-evt" }),
+        ])
+      )
+
+      await engine.reconcile(["list-1"])
+
+      expect(cursor.clear).not.toHaveBeenCalled()
+      expect(events.enqueueExistingForSync).toHaveBeenCalledWith([
+        expect.objectContaining({ event_id: "missing-evt" }),
+      ])
+    })
+
+    it("does not repair a list that's merely missing from the server (handled by re-enqueue instead)", async () => {
+      client.getKnownEventIds.mockResolvedValue(Result.ok([]))
+      events.getByListId.mockResolvedValue(
+        Result.ok([makeEvent({ event_id: "e1", seq: null })])
+      )
+
+      await engine.reconcile(["list-1"])
+
+      expect(cursor.clear).not.toHaveBeenCalled()
+      expect(events.enqueueExistingForSync).toHaveBeenCalled()
+    })
+  })
+
+  describe("repairList", () => {
+    it("clears the pull cursor and re-pulls the list from scratch", async () => {
+      client.getListHeads.mockResolvedValue(
+        Result.ok([{ listId: "list-1", seq: 5, eventId: "e1" }])
+      )
+      client.getEventsSince.mockResolvedValue(
+        Result.ok({ events: [], nextSeq: 5, hasMore: false })
+      )
+
+      await engine.repairList("list-1")
+
+      expect(cursor.clear).toHaveBeenCalledWith("list-1")
+      expect(client.getListHeads).toHaveBeenCalledWith(["list-1"])
+    })
+
+    it("does not attempt a pull when clearing the cursor fails", async () => {
+      cursor.clear.mockResolvedValue(
+        Result.fail(new DbQueryError("boom", "clear", "SyncCursor"))
+      )
+
+      await engine.repairList("list-1")
+
+      expect(client.getListHeads).not.toHaveBeenCalled()
     })
   })
 

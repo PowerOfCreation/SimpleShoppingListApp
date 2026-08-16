@@ -135,6 +135,48 @@ describe("ShoppingListEntry", () => {
     expect(queryByTestId("shopping-list-context-sync-1")).toBeTruthy()
   })
 
+  it("does not show Re-sync from server when sync is off", () => {
+    const { getByTestId, queryByTestId } = render(
+      <ShoppingListEntry {...defaultProps} syncEnabled={false} />
+    )
+
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+
+    expect(queryByTestId("shopping-list-context-resync-1")).toBeFalsy()
+  })
+
+  it("shows Re-sync from server when sync is on", () => {
+    const { getByTestId } = render(
+      <ShoppingListEntry {...defaultProps} syncEnabled />
+    )
+
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+
+    expect(getByTestId("shopping-list-context-resync-1")).toBeTruthy()
+  })
+
+  it("does not show Re-sync from server when sync interactions are disabled (e.g. signed out)", () => {
+    const { getByTestId, queryByTestId } = render(
+      <ShoppingListEntry {...defaultProps} syncEnabled syncToggleDisabled />
+    )
+
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+
+    expect(queryByTestId("shopping-list-context-resync-1")).toBeFalsy()
+  })
+
+  it("calls onResync when Re-sync from server is pressed", () => {
+    const onResync = jest.fn()
+    const { getByTestId } = render(
+      <ShoppingListEntry {...defaultProps} syncEnabled onResync={onResync} />
+    )
+
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+    fireEvent.press(getByTestId("shopping-list-context-resync-1"))
+
+    expect(onResync).toHaveBeenCalledTimes(1)
+  })
+
   it("opens the rename sheet when Rename is pressed in the context menu", () => {
     const { getByTestId, queryByTestId } = render(
       <ShoppingListEntry {...defaultProps} />
