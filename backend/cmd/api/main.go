@@ -56,8 +56,11 @@ func run(logger *slog.Logger) error {
 
 	toDoListRepo := postgres2.NewSqlcToDoListRepository(queries)
 	eventRepo := postgres2.NewSqlcEventRepository(queries)
+	listInviteRepo := postgres2.NewSqlcListInviteRepository(queries)
+	listMemberRepo := postgres2.NewSqlcListMemberRepository(queries)
 
 	toDoListService := services.NewToDoListService(toDoListRepo)
+	listSharingService := services.NewListSharingService(logger, listInviteRepo, listMemberRepo, toDoListRepo)
 
 	eventDispatcher := services.NewEventDispatcher(
 		logger,
@@ -96,6 +99,7 @@ func run(logger *slog.Logger) error {
 	rest.NewSyncWebSocketController(e, hub, authMW)
 	rest.NewSyncStateController(e, logger, eventRepo, authMW)
 	rest.NewSyncPullController(e, logger, eventRepo, authMW)
+	rest.NewListSharingController(e, logger, listSharingService, authMW)
 
 	logger.Info("server starting", "port", port)
 	if err := e.Start(port); err != nil {

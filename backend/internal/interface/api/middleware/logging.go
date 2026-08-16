@@ -74,7 +74,7 @@ func ContextLogger(logger *slog.Logger) echo.MiddlewareFunc {
 // consistent correlation fields instead of copy-pasted attribute lists.
 func RequestScopedLogger(base *slog.Logger, c echo.Context) *slog.Logger {
 	l := base.With("request_id", c.Response().Header().Get(echo.HeaderXRequestID))
-	if userID, ok := c.Get("user_id").(string); ok && userID != "" {
+	if userID, ok := UserIDFromContext(c); ok {
 		l = l.With("user_id", userID)
 	}
 	return l

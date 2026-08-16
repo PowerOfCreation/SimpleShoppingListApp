@@ -87,6 +87,15 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
   `KEYCLOAK_ISSUER`/`KEYCLOAK_CLIENT_ID` aren't set or the issuer is
   unreachable. Still **no user scoping** of the data itself — any valid token
   can read/write any known list id (see design doc).
+- **List sharing (invite links):** `POST /api/v1/todo-lists/:listId/invites`
+  creates a multi-use link with a TTL preset (`1h`\|`24h`\|`7d`\|`30d`); only
+  the token's sha256 hash is persisted, the plaintext is returned once. A
+  list with no members yet auto-claims the first inviter as `owner`
+  (claim-on-first-invite — the bootstrap for lists that predate this
+  feature). `POST /api/v1/invites/redeem` joins as `member`, idempotently.
+  This adds a membership model but does **not** enforce it: `/api/v1/events`
+  and `/api/v1/sync/*` are unchanged and still accept any valid token for
+  any known list id (see design doc).
 
 ## Relevant docs
 
