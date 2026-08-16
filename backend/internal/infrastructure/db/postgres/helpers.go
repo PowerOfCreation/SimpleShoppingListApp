@@ -21,6 +21,15 @@ func timeFromTimestamptz(ts pgtype.Timestamptz) time.Time {
 	return time.Time{}
 }
 
+// timePtrFromTimestamptz converts a nullable pgx timestamptz into a *time.Time.
+func timePtrFromTimestamptz(ts pgtype.Timestamptz) *time.Time {
+	if !ts.Valid {
+		return nil
+	}
+	t := ts.Time
+	return &t
+}
+
 // pgtypeFromUUIDPtr converts a nullable domain uuid.UUID (nil = not
 // resolved / not sent by an older client) into pgx's nullable wire type.
 func pgtypeFromUUIDPtr(id *uuid.UUID) pgtype.UUID {
