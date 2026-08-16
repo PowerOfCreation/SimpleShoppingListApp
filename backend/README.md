@@ -78,6 +78,10 @@ feature, which otherwise have no owner recorded anywhere.
 token for any known list id, same as before; membership isn't checked
 there yet. See `frontend/docs/sync-design-decisions.md`.
 
+For the target architecture — roles, list lifecycle, invariants every
+sync/sharing PR should be checked against — see
+`frontend/docs/sync-sharing-target.md`.
+
 ## Logging
 
 The API logs structured JSON to stdout (via `log/slog`), one line per event

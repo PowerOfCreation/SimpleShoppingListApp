@@ -1,5 +1,7 @@
 # Sync: wichtige Entscheidungen
 
+Dieses Dokument hält fest, *warum* etwas so ist, wie es ist (rückblickend). *Was gelten soll*, steht in [`sync-sharing-target.md`](./sync-sharing-target.md) — bei Widerspruch ist das dort maßgeblich.
+
 Kurzreferenz zu den nicht-offensichtlichen Entscheidungen aus der Listen-Sync-Implementierung (`api/sync/`, `database/outbox-repository.ts`, `backend/internal/application/services/event-ingestor.go`, `backend/internal/infrastructure/realtime/`).
 
 Sync ist inzwischen bidirektional: Push (Client → Server, seit Anfang an) **und** Pull (Server → Client, inklusive Listeninhalt — nicht mehr nur der Listenkopf). Ein eigener Abschnitt dazu folgt unten; die ursprünglichen Push-only-Entscheidungen darunter gelten weiterhin.
