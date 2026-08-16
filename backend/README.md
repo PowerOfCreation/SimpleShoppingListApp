@@ -58,7 +58,7 @@ fetches lists already known and sync-enabled locally. See
 | POST | `/api/v1/sync/head` | Reports each requested list's current pull cursor (seq + latest event id) |
 | GET | `/api/v1/sync/events` | Pull: one page of a list's event history since a given seq |
 | GET | `/api/v1/sync/ws` | WebSocket; pushes per-event `ack`s and, to clients subscribed to a list (`{"type":"subscribe","list_ids":[...]}`), a `{"type":"event"}` notification when that list gets a new event |
-| POST | `/api/v1/todo-lists/:listId/invites` | Create a multi-use invite link with a TTL preset (`1h`\|`24h`\|`7d`\|`30d`); only the list's owner may call this; returns the plaintext token once |
+| POST | `/api/v1/todo-lists/:listId/invites` | Create a multi-use invite link with a TTL preset (`1h`\|`24h`\|`7d`\|`30d`); requires owner — a list with no members yet claims the caller as owner (see [List sharing](#list-sharing)); returns the plaintext token once |
 | GET | `/api/v1/todo-lists/:listId/invites` | List a list's active (non-expired, non-revoked) invites; only the owner may call this; never returns a token |
 | DELETE | `/api/v1/invites/:inviteId` | Revoke an invite; only the list's owner may call this |
 | POST | `/api/v1/invites/redeem` | Redeem a token, joining the list as `member`; idempotent if already a member |
