@@ -6,7 +6,6 @@ import (
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/command"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/interfaces"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/mapper"
-	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/query"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/entities"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
 )
@@ -51,32 +50,6 @@ func (s *ToDoListService) CreateToDoList(todoListCommand *command.CreateToDoList
 
 	return &result, nil
 }
-
-func (s *ToDoListService) FindAllToDoLists() (*query.GetAllToDoListsQueryResult, error) {
-	storedToDoLists, err := s.todoListRepository.FindAll()
-	if err != nil {
-		return nil, err
-	}
-
-	var queryListResult query.GetAllToDoListsQueryResult
-	for _, todoList := range storedToDoLists {
-		queryListResult.Result = append(queryListResult.Result, mapper.NewToDoListResultFromEntity(todoList))
-	}
-
-	return &queryListResult, nil
-}
-
-/*func (s *ToDoListService) FindToDoListById(todoListQuery *query.GetToDoListByIdQuery) (*query.GetToDoListByIdQueryResult, error) {
-	storedToDoList, err := s.todoListRepository.FindById(todoListQuery.Id)
-	if err != nil {
-		return nil, err
-	}
-
-	var queryResult query.GetToDoListByIdQueryResult
-	queryResult.Result = mapper.NewToDoListResultFromEntity(storedToDoList)
-
-	return &queryResult, nil
-}*/
 
 func (s *ToDoListService) UpdateToDoList(todoListCommand *command.UpdateToDoListCommand) (*command.UpdateToDoListCommandResult, error) {
 	// Find existing todo list

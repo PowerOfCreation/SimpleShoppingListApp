@@ -52,45 +52,6 @@ func (q *Queries) DeleteToDoList(ctx context.Context, id uuid.UUID) error {
 	return err
 }
 
-const getAllToDoLists = `-- name: GetAllToDoLists :many
-SELECT p.id, p.name, p.created_at, p.updated_at
-FROM todo_lists p
-WHERE p.deleted_at IS NULL
-ORDER BY p.created_at DESC
-`
-
-type GetAllToDoListsRow struct {
-	ID        uuid.UUID          `db:"id" json:"id"`
-	Name      string             `db:"name" json:"name"`
-	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) GetAllToDoLists(ctx context.Context) ([]GetAllToDoListsRow, error) {
-	rows, err := q.db.Query(ctx, getAllToDoLists)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []GetAllToDoListsRow{}
-	for rows.Next() {
-		var i GetAllToDoListsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getToDoListById = `-- name: GetToDoListById :one
 SELECT p.id, p.name, p.created_at, p.updated_at
 FROM todo_lists p

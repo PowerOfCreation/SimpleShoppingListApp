@@ -28,6 +28,10 @@ Zweck: (1) WebSocket-Ack-Routing (Server muss wissen, an welche Verbindung ein A
 - **Sync-Toggle nur nutzbar wenn angemeldet** — abgemeldet ist der Schalter sichtbar, aber deaktiviert. Kein Zustand, den die App nicht einlösen kann.
 - **Backend-URL** kommt aus `.env.development`/`.env.production` (nicht `Constants.expoConfig.extra`), weil das zur Bundle-Zeit fest verdrahtet wird und nicht davon abhängt, welcher Prozess gerade `app.config.js` ausgewertet hat.
 - **JWT-Prüfung ist Pflicht, User-Scoping nicht.** Das Backend verifiziert Bearer-Token gegen das gehostete Keycloak (`internal/interface/api/middleware`, Signatur via JWKS + `iss` + `exp`; `aud` ist bei Keycloak-Access-Token immer `"account"`, deshalb wird stattdessen `azp` gegen die erwartete Client-ID geprüft). Fehlt `KEYCLOAK_ISSUER`/`KEYCLOAK_CLIENT_ID` oder ist der Issuer nicht erreichbar, startet der Server gar nicht — kein Passthrough-Fallback, keine hybride Lösung. Die Test-Suite ist davon unabhängig: Controller-Tests reichen dort `middleware.Passthrough` explizit ein statt über `NewKeycloakAuth` zu laufen. Was weiterhin fehlt: **User-Scoping der Daten.** Jeder gültige Token (irgendeines Accounts) darf noch jede bekannte Listen-UUID lesen/schreiben — die Middleware schließt "API ist komplett offen", nicht "Nutzer A sieht Nutzer Bs Listen". Muss vor Produktivbetrieb mit echten Nutzerdaten nachgezogen werden.
+- Die alten `/api/v1/todo-lists`-CRUD-Routen aus der Prä-Sync-Zeit liefen
+  ohne `authMW` — echter Passthrough, nicht bloß fehlendes Scoping. Ersatzlos
+  entfernt (kein Frontend-Aufrufer), damit "kein Passthrough" oben für die
+  gesamte API stimmt.
 
 ## Pull-Sync: Listeninhalte, nicht mehr nur der Listenkopf
 

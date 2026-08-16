@@ -29,7 +29,6 @@ type Querier interface {
 	// sqlc.arg(now) - the caller passes the current time rather than this query
 	// using NOW() so results are reproducible in tests.
 	GetActiveListInvites(ctx context.Context, arg GetActiveListInvitesParams) ([]ListInvite, error)
-	GetAllToDoLists(ctx context.Context) ([]GetAllToDoListsRow, error)
 	GetAllToDos(ctx context.Context) ([]GetAllToDosRow, error)
 	// Pull page: every event for one list with seq strictly greater than
 	// since_seq, oldest-first, capped at limit_count. The controller requests

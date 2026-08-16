@@ -8,7 +8,6 @@ import (
 type ToDoListRepository interface {
 	Create(todoList *entities.ValidatedToDoList) (*entities.ToDoList, error)
 	FindById(id uuid.UUID) (*entities.ToDoList, error)
-	FindAll() ([]*entities.ToDoList, error)
 	Update(todoList *entities.ValidatedToDoList) (*entities.ToDoList, error)
 	Delete(id uuid.UUID) error
 }

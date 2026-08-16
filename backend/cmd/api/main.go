@@ -91,7 +91,6 @@ func run(logger *slog.Logger) error {
 	e.Use(middleware.RequestLogger(logger))
 	e.Use(middleware.ContextLogger(logger))
 
-	rest.NewToDoListController(e, logger, toDoListService)
 	rest.NewEventController(e, logger, eventIngestor, authMW)
 	rest.NewSyncWebSocketController(e, hub, authMW)
 	rest.NewSyncStateController(e, logger, eventRepo, authMW)
