@@ -42,7 +42,9 @@ async function columnExists(
  * exactly what the ack-ordering race could reset to 0 via a rebuild while
  * the event proving sync was actually turned on stayed in the log - reading
  * from the log instead of the corrupted projection is what repairs those
- * lists here, with no manual intervention.
+ * lists here, with no manual intervention. Skips aggregate_ids without a
+ * current ingredient_lists row (already-deleted lists) so this doesn't
+ * seed orphan settings that would keep dead list ids in getEnabledIds().
  */
 async function seedFromEventLog(
   db: SQLite.SQLiteDatabase,
@@ -52,6 +54,7 @@ async function seedFromEventLog(
     `SELECT aggregate_id, CASE event_type WHEN ? THEN 1 ELSE 0 END AS enabled
      FROM domain_events
      WHERE event_type IN (?, ?)
+       AND aggregate_id IN (SELECT id FROM ingredient_lists)
        AND rowid = (
          SELECT MAX(rowid) FROM domain_events AS d2
          WHERE d2.aggregate_id = domain_events.aggregate_id

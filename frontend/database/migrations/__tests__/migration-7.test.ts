@@ -129,6 +129,22 @@ describe("migrateToVersion7", () => {
     expect(row?.enabled).toBe(1)
   })
 
+  it("does not seed a setting for a list that no longer exists in ingredient_lists", async () => {
+    // The list was deleted, but its historical sync events are still in
+    // domain_events - seeding from them would create an orphan row that
+    // keeps a dead list id in getEnabledIds() forever.
+    await insertEvent("e1", "list-1", EventTypes.TODO_LIST_CREATED)
+    await insertEvent("e2", "list-1", EventTypes.TODO_LIST_SYNC_ENABLED)
+
+    const result = await migrateToVersion7(db)
+    expect(result.success).toBe(true)
+
+    const row = await db.getFirstAsync(
+      `SELECT list_id FROM list_sync_settings WHERE list_id = 'list-1'`
+    )
+    expect(row).toBeNull()
+  })
+
   it("is idempotent (safe to run twice)", async () => {
     await insertList("list-1", 0)
     await insertEvent("e1", "list-1", EventTypes.TODO_LIST_CREATED)
