@@ -48,8 +48,8 @@ export class SyncCoordinator {
     private readonly listSyncSettingsRepository: ListSyncSettingsRepository
   ) {
     this.socket = new SyncSocket(
-      (eventId, seq) => {
-        this.engine.handleAck(eventId, seq).catch((error) => {
+      (eventId) => {
+        this.engine.handleAck(eventId).catch((error) => {
           logger.error("Failed to handle ack", error)
         })
       },

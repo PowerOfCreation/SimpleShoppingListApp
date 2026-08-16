@@ -294,32 +294,6 @@ describe("EventRepository", () => {
     })
   })
 
-  describe("markSeq", () => {
-    it("sets seq on an event that doesn't have one yet", async () => {
-      await repo.append(makeEvent({ event_id: "e1" }))
-
-      const result = await repo.markSeq("e1", 42)
-
-      expect(result.success).toBe(true)
-      const row = await db.getFirstAsync<{ seq: number }>(
-        `SELECT seq FROM domain_events WHERE event_id = 'e1'`
-      )
-      expect(row?.seq).toBe(42)
-    })
-
-    it("is a no-op when the event already has a seq", async () => {
-      await repo.insertRemote(makeEvent({ event_id: "e1", seq: 1 }))
-
-      const result = await repo.markSeq("e1", 2)
-
-      expect(result.success).toBe(true)
-      const row = await db.getFirstAsync<{ seq: number }>(
-        `SELECT seq FROM domain_events WHERE event_id = 'e1'`
-      )
-      expect(row?.seq).toBe(1)
-    })
-  })
-
   describe("insertRemote / appendRemote", () => {
     it("insertRemote inserts a new event and reports 1 row changed", async () => {
       const changes = await repo.insertRemote(

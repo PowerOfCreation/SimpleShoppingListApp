@@ -143,7 +143,7 @@ describe("SyncSocket", () => {
     expect(fake.closeCalls).toBe(1)
   })
 
-  it("calls onAck with the event id and seq from an ack message", async () => {
+  it("calls onAck with the event id from an ack message", async () => {
     const socket = makeSocket()
     await socket.connect()
     createdSockets[0].triggerMessage({
@@ -152,16 +152,28 @@ describe("SyncSocket", () => {
       seq: 7,
     })
 
-    expect(onAck).toHaveBeenCalledWith("evt-123", 7)
+    expect(onAck).toHaveBeenCalledWith("evt-123")
   })
 
-  it("ignores an ack message with a malformed seq", async () => {
+  it("calls onAck even with a malformed seq - seq has exactly one writer, the pull path, and is no longer read from an ack", async () => {
     const socket = makeSocket()
     await socket.connect()
     createdSockets[0].triggerMessage({
       type: "ack",
       event_id: "evt-123",
       seq: "not-a-number",
+    })
+
+    expect(onAck).toHaveBeenCalledWith("evt-123")
+  })
+
+  it("ignores an ack message with a malformed event_id", async () => {
+    const socket = makeSocket()
+    await socket.connect()
+    createdSockets[0].triggerMessage({
+      type: "ack",
+      event_id: 123,
+      seq: 7,
     })
 
     expect(onAck).not.toHaveBeenCalled()
