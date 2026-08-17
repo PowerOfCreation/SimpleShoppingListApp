@@ -220,3 +220,120 @@ func TestEventIngestor_ToDoListUpdated_ForUnknownList_IsMarkedProcessedAndAcked(
 	require.Eventually(t, func() bool { return ack.has(event.EventID) }, time.Second, time.Millisecond)
 	assert.True(t, eventRepo.isProcessed(event.EventID))
 }
+
+// TestToDoListService_CreateAndUpdate_EmptyNameIsAPermanentError asserts
+// that the one error CreateToDoList/UpdateToDoList can return today - a
+// validation failure from entities.NewValidatedToDoList - is wrapped in
+// interfaces.ErrPermanent, since retrying an empty-name event can never
+// succeed. A repository-layer error is deliberately not covered here: it's
+// left unwrapped because it may well be transient (e.g. a DB blip).
+func TestToDoListService_CreateAndUpdate_EmptyNameIsAPermanentError(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	service := newTestToDoListService(testDB)
+	ctx := context.Background()
+	listID := uuid.New()
+	now := time.Now().UTC()
+
+	_, err := service.CreateToDoList(ctx, &command.CreateToDoListCommand{Id: listID, Name: "", OccurredAt: now})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, interfaces.ErrPermanent)
+
+	_, err = service.UpdateToDoList(ctx, &command.UpdateToDoListCommand{Id: listID, Name: "", OccurredAt: now})
+	require.Error(t, err)
+	assert.ErrorIs(t, err, interfaces.ErrPermanent)
+}
+
+// TestEventIngestor_ToDoListCreated_EmptyName_IsMarkedProcessedAndAcked is
+// the end-to-end regression test for a permanently undeliverable event
+// reaching the real service/handler stack (not the fakeHandler used
+// elsewhere): a todo_list.created with an empty name must not poison the
+// queue the same way an unknown list id used to before this fix - it's
+// recorded and acked, not retried forever.
+func TestEventIngestor_ToDoListCreated_EmptyName_IsMarkedProcessedAndAcked(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+
+	service := newTestToDoListService(testDB)
+	repo := postgres.NewSqlcToDoListRepository(postgres.NewQueries(testDB.Conn))
+	dispatcher := NewEventDispatcher(testLogger(),
+		NewCreateToDoListEventHandler(service),
+		NewUpdateToDoListEventHandler(service),
+		NewDeleteToDoListEventHandler(service),
+	)
+	eventRepo := newFakeEventRepo()
+	ack := &fakeAckPublisher{}
+	ingestor := NewEventIngestor(testLogger(), eventRepo, dispatcher, ack)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ingestor.Start(ctx)
+	defer ingestor.Stop()
+
+	listID := uuid.New()
+	payload, err := json.Marshal(events.CreateToDoListEvent{Name: ""})
+	require.NoError(t, err)
+	event := &repositories.StoredEvent{
+		EventID:       uuid.New(),
+		EventType:     events.EventTypeCreateToDoList,
+		AggregateID:   listID,
+		AggregateType: "todo_list",
+		ListID:        &listID,
+		Payload:       payload,
+		OccurredAt:    time.Now().UTC(),
+		ClientID:      "client-1",
+	}
+
+	require.NoError(t, ingestor.Enqueue(ctx, event))
+
+	require.Eventually(t, func() bool { return ack.has(event.EventID) }, time.Second, time.Millisecond)
+	assert.True(t, eventRepo.isProcessed(event.EventID))
+
+	// The permanent error means the list was never actually created either -
+	// only the event's fate (processed, acked) changed, not CreateToDoList's
+	// own no-op-on-failure behavior.
+	found, err := repo.FindById(ctx, listID)
+	require.NoError(t, err)
+	assert.Nil(t, found)
+}
+
+// TestEventIngestor_ToDoListCreated_MalformedPayload_IsMarkedProcessedAndAcked
+// is the same regression, triggered by the other permanent-error source:
+// json.Unmarshal failing on a payload that isn't valid JSON for the event
+// type at all (as opposed to valid JSON with an invalid field value).
+func TestEventIngestor_ToDoListCreated_MalformedPayload_IsMarkedProcessedAndAcked(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+
+	service := newTestToDoListService(testDB)
+	dispatcher := NewEventDispatcher(testLogger(),
+		NewCreateToDoListEventHandler(service),
+		NewUpdateToDoListEventHandler(service),
+		NewDeleteToDoListEventHandler(service),
+	)
+	eventRepo := newFakeEventRepo()
+	ack := &fakeAckPublisher{}
+	ingestor := NewEventIngestor(testLogger(), eventRepo, dispatcher, ack)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	ingestor.Start(ctx)
+	defer ingestor.Stop()
+
+	listID := uuid.New()
+	event := &repositories.StoredEvent{
+		EventID:       uuid.New(),
+		EventType:     events.EventTypeCreateToDoList,
+		AggregateID:   listID,
+		AggregateType: "todo_list",
+		ListID:        &listID,
+		Payload:       json.RawMessage(`{"name": `), // truncated - not valid JSON
+		OccurredAt:    time.Now().UTC(),
+		ClientID:      "client-1",
+	}
+
+	require.NoError(t, ingestor.Enqueue(ctx, event))
+
+	require.Eventually(t, func() bool { return ack.has(event.EventID) }, time.Second, time.Millisecond)
+	assert.True(t, eventRepo.isProcessed(event.EventID))
+}

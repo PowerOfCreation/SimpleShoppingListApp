@@ -25,7 +25,9 @@ func (h *CreateToDoListEventHandler) EventType() string {
 func (h *CreateToDoListEventHandler) Handle(ctx context.Context, storedEvent *repositories.StoredEvent) error {
 	var event events.CreateToDoListEvent
 	if err := json.Unmarshal(storedEvent.Payload, &event); err != nil {
-		return err
+		// Malformed payload will fail to unmarshal on every retry - not a
+		// transient failure, see interfaces.ErrPermanent.
+		return interfaces.Permanent(err)
 	}
 
 	_, err := h.service.CreateToDoList(ctx, &command.CreateToDoListCommand{

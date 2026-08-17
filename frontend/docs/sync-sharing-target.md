@@ -178,12 +178,15 @@ zweifacher Vorwärts-Anwendung derselben Event-Folge (`TestToDoListService_Forwa
 
 **6.8 Jedes durabel angenommene Event bekommt genau einmal ein seq.** `GetEventsSince`, `GetListHeads`
 und `GetKnownEventIdsByList` filtern alle `seq IS NOT NULL` — ein Event, dessen Handler dauerhaft
-fehlschlägt (heute z. B. `UpdateToDoList`/`DeleteToDoList` mit leerem Namen, siehe `validate()` in
-`entities/todo-list.go`), bekommt nie ein `seq` und ist damit für Pull *und* Reconcile unsichtbar.
-`dispatchAndAck` überspringt in diesem Fall auch `MarkProcessed` und den Ack (siehe `event-ingestor.go`),
-der Client resendet also unbegrenzt, ohne dass der Server je „fertig" meldet. Das ist derselbe
-Mechanismus, den `b81caa1`/`3821b45` für „Zeile nicht gefunden" bereits behoben haben — für dauerhafte
-Handler-Fehler (kaputtes Payload, leerer Name) steht die gleichwertige Behebung noch aus.
+fehlschlägt (z. B. `CreateToDoList`/`UpdateToDoList` mit leerem Namen, siehe `validate()` in
+`entities/todo-list.go`, oder ein Payload, an dem `json.Unmarshal` scheitert), bekommt sonst nie ein
+`seq` und ist damit für Pull *und* Reconcile unsichtbar, während `dispatchAndAck` `MarkProcessed` und
+den Ack überspringt (siehe `event-ingestor.go`) — der Client resendet unbegrenzt, ohne dass der
+Server je „fertig" meldet. Das ist derselbe Mechanismus, den `b81caa1`/`3821b45` für „Zeile nicht
+gefunden" behoben haben; für dauerhafte Handler-Fehler (kaputtes Payload, leerer Name) übernimmt das
+`interfaces.ErrPermanent`/`interfaces.Permanent(err)` (`permanent-error.go`): ein so markierter Fehler
+wird in `dispatchAndAck` wie der Unknown-Event-Type-Pfad behandelt — `MarkProcessed` + Ack, statt
+unprocessed liegen zu bleiben.
 
 ## 7. Offene Entscheidungen
 
