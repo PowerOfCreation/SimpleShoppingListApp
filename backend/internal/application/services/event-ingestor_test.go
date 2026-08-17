@@ -142,9 +142,9 @@ func (f *fakeEventRepo) isProcessed(id uuid.UUID) bool {
 }
 
 type ackCall struct {
-	clientID string
-	eventID  uuid.UUID
-	seq      int64
+	userID  string
+	eventID uuid.UUID
+	seq     int64
 }
 
 type listEventCall struct {
@@ -158,10 +158,10 @@ type fakeAckPublisher struct {
 	listEvents []listEventCall
 }
 
-func (f *fakeAckPublisher) PublishAck(clientID string, eventID uuid.UUID, seq int64) {
+func (f *fakeAckPublisher) PublishAck(userID string, eventID uuid.UUID, seq int64) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
-	f.acked = append(f.acked, ackCall{clientID, eventID, seq})
+	f.acked = append(f.acked, ackCall{userID, eventID, seq})
 }
 
 func (f *fakeAckPublisher) PublishListEvent(listID uuid.UUID, seq int64) {
