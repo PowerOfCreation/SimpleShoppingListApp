@@ -1,6 +1,7 @@
 package realtime
 
 import (
+	"context"
 	"log/slog"
 	"sync"
 	"time"
@@ -37,19 +38,31 @@ func (c *connection) writeJSON(v any) error {
 	return c.ws.WriteJSON(v)
 }
 
-// Hub fans out acks (by client_id) and list-event notifications (by
-// list_id, via subscribe) to connections. Not user-scoped (no
-// auth/user-scoping exists yet) - same trust boundary as the REST
-// endpoints, not a new one. See sync-design-decisions.md.
+// ListAccessFilter narrows the application layer's ListAccessService down
+// to the one read filter Hub needs, so subscribing to a list can't
+// silently hand a non-member another list's notifications. A small
+// interface defined at the point of use, not the full application
+// interface - Hub only ever calls this one method.
+type ListAccessFilter interface {
+	FilterAccessible(ctx context.Context, userID string, listIDs []uuid.UUID) ([]uuid.UUID, error)
+}
+
+// Hub fans out acks (by userID) and list-event notifications (by list_id,
+// via subscribe) to connections. Both are access-checked at the point a
+// caller could learn something: PublishAck only ever reaches connections
+// registered under the verified user_id that pushed the event (see
+// EventIngestor), and subscribe (below) filters requested list_ids through
+// ListAccessFilter before a connection is added to a list's subscriber set.
 //
-// Client registration is keyed by client_id -> set of connections, and
+// Client registration is keyed by user_id -> set of connections, and
 // unregistration removes a connection by pointer identity, not just by
-// client_id: a dying connection's cleanup can run *after* a new connection
-// for the same client_id has already registered, and keying by client_id
-// alone would delete the new connection instead of the dead one. List
+// user_id: a dying connection's cleanup can run *after* a new connection
+// for the same user_id has already registered, and keying by user_id alone
+// would delete the new connection instead of the dead one. List
 // subscriptions follow the same by-pointer discipline for the same reason.
 type Hub struct {
 	logger  *slog.Logger
+	access  ListAccessFilter
 	mu      sync.RWMutex
 	clients map[string]map[*connection]struct{}
 	// subscriptions maps list_id -> the connections subscribed to it.
@@ -60,32 +73,33 @@ type Hub struct {
 	subscribedLists map[*connection]map[uuid.UUID]struct{}
 }
 
-func NewHub(logger *slog.Logger) *Hub {
+func NewHub(logger *slog.Logger, access ListAccessFilter) *Hub {
 	return &Hub{
 		logger:          logger,
+		access:          access,
 		clients:         make(map[string]map[*connection]struct{}),
 		subscriptions:   make(map[uuid.UUID]map[*connection]struct{}),
 		subscribedLists: make(map[*connection]map[uuid.UUID]struct{}),
 	}
 }
 
-func (h *Hub) register(clientID string, conn *connection) {
+func (h *Hub) register(userID string, conn *connection) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.clients[clientID] == nil {
-		h.clients[clientID] = make(map[*connection]struct{})
+	if h.clients[userID] == nil {
+		h.clients[userID] = make(map[*connection]struct{})
 	}
-	h.clients[clientID][conn] = struct{}{}
+	h.clients[userID][conn] = struct{}{}
 }
 
-func (h *Hub) unregister(clientID string, conn *connection) {
+func (h *Hub) unregister(userID string, conn *connection) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	conns, ok := h.clients[clientID]
+	conns, ok := h.clients[userID]
 	if ok {
 		delete(conns, conn)
 		if len(conns) == 0 {
-			delete(h.clients, clientID)
+			delete(h.clients, userID)
 		}
 	}
 	h.unsubscribeAllLocked(conn)
@@ -94,14 +108,23 @@ func (h *Hub) unregister(clientID string, conn *connection) {
 // subscribe replaces (not accumulates) the set of lists this connection is
 // subscribed to - the frontend resends its full sync-enabled list_ids
 // whenever that set changes, and it must not accumulate hearing about a
-// list it's since turned sync off for.
-func (h *Hub) subscribe(conn *connection, listIDs []uuid.UUID) {
+// list it's since turned sync off for. listIDs is filtered through
+// ListAccessFilter first, so requesting a list_id the caller isn't a
+// member of is a silent no-op for that id, not an error - same "omit,
+// don't leak" posture as the REST read paths.
+func (h *Hub) subscribe(ctx context.Context, userID string, conn *connection, listIDs []uuid.UUID) {
+	accessible, err := h.access.FilterAccessible(ctx, userID, listIDs)
+	if err != nil {
+		h.logger.Warn("failed to filter subscribe list_ids", "user_id", userID, "error", err)
+		accessible = nil
+	}
+
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.unsubscribeAllLocked(conn)
 
-	set := make(map[uuid.UUID]struct{}, len(listIDs))
-	for _, listID := range listIDs {
+	set := make(map[uuid.UUID]struct{}, len(accessible))
+	for _, listID := range accessible {
 		if h.subscriptions[listID] == nil {
 			h.subscriptions[listID] = make(map[*connection]struct{})
 		}
@@ -123,10 +146,10 @@ func (h *Hub) unsubscribeAllLocked(conn *connection) {
 	delete(h.subscribedLists, conn)
 }
 
-func (h *Hub) connectionsFor(clientID string) []*connection {
+func (h *Hub) connectionsFor(userID string) []*connection {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
-	conns := h.clients[clientID]
+	conns := h.clients[userID]
 	out := make([]*connection, 0, len(conns))
 	for c := range conns {
 		out = append(out, c)
@@ -145,17 +168,19 @@ func (h *Hub) subscribersFor(listID uuid.UUID) []*connection {
 	return out
 }
 
-// PublishAck implements interfaces.AckPublisher. Best-effort: if no
-// connection is registered for clientID (offline, or never connected),
-// this is a silent no-op - the client's reconcile pass is the source of
-// truth, not the ack.
-func (h *Hub) PublishAck(clientID string, eventID uuid.UUID, seq int64) {
+// PublishAck implements interfaces.AckPublisher. userID is the verified
+// Keycloak sub that pushed the event (StoredEvent.UserID), not client_id -
+// this is what keeps an ack from being deliverable to a connection that
+// merely guessed someone else's client_id. Best-effort: if no connection
+// is registered for userID (offline, or never connected), this is a silent
+// no-op - the client's reconcile pass is the source of truth, not the ack.
+func (h *Hub) PublishAck(userID string, eventID uuid.UUID, seq int64) {
 	msg := map[string]any{"type": "ack", "event_id": eventID.String(), "seq": seq}
-	for _, conn := range h.connectionsFor(clientID) {
+	for _, conn := range h.connectionsFor(userID) {
 		if err := conn.writeJSON(msg); err != nil {
 			// Warn, not Error: a client that disconnected mid-send is
 			// expected, not a server fault.
-			h.logger.Warn("failed to send ack", "client_id", clientID, "event_id", eventID, "error", err)
+			h.logger.Warn("failed to send ack", "user_id", userID, "event_id", eventID, "error", err)
 		}
 	}
 }
@@ -163,7 +188,9 @@ func (h *Hub) PublishAck(clientID string, eventID uuid.UUID, seq int64) {
 // PublishListEvent implements interfaces.ListEventPublisher. Best-effort,
 // same as PublishAck: no subscriber is a silent no-op - a client's own
 // periodic pull (and its next connect/foreground pull) is the fallback if
-// this notification never arrives or is missed while disconnected.
+// this notification never arrives or is missed while disconnected. Safe to
+// reach every subscriber unconditionally - subscribe already access-checked
+// membership before adding anyone to this list's set.
 func (h *Hub) PublishListEvent(listID uuid.UUID, seq int64) {
 	msg := map[string]any{"type": "event", "list_id": listID.String(), "seq": seq}
 	for _, conn := range h.subscribersFor(listID) {
@@ -176,15 +203,16 @@ func (h *Hub) PublishListEvent(listID uuid.UUID, seq int64) {
 // Serve registers the connection and blocks, running its read loop, until
 // the connection closes. Meant to be called from the HTTP handler
 // goroutine that performed the upgrade - it owns the connection for its
-// entire lifetime.
-func (h *Hub) Serve(clientID string, ws *websocket.Conn) {
+// entire lifetime, and ctx (the still-live request context - the handler
+// hasn't returned yet) is what subscribe uses for its access-filter lookup.
+func (h *Hub) Serve(ctx context.Context, userID string, ws *websocket.Conn) {
 	conn := newConnection(ws)
-	h.register(clientID, conn)
-	h.logger.Debug("connection registered", "client_id", clientID)
+	h.register(userID, conn)
+	h.logger.Debug("connection registered", "user_id", userID)
 	defer func() {
-		h.unregister(clientID, conn)
+		h.unregister(userID, conn)
 		_ = ws.Close()
-		h.logger.Debug("connection closed", "client_id", clientID)
+		h.logger.Debug("connection closed", "user_id", userID)
 	}()
 
 	_ = ws.SetReadDeadline(time.Now().Add(readDeadline))
@@ -193,7 +221,7 @@ func (h *Hub) Serve(clientID string, ws *websocket.Conn) {
 		if err := ws.ReadJSON(&msg); err != nil {
 			// Debug, not Warn/Error: a client going away (app backgrounded,
 			// network drop) is the normal way this loop ends.
-			h.logger.Debug("read loop ended", "client_id", clientID, "error", err)
+			h.logger.Debug("read loop ended", "user_id", userID, "error", err)
 			return
 		}
 		_ = ws.SetReadDeadline(time.Now().Add(readDeadline))
@@ -201,13 +229,13 @@ func (h *Hub) Serve(clientID string, ws *websocket.Conn) {
 		switch msg["type"] {
 		case "ping":
 			if err := conn.writeJSON(map[string]string{"type": "pong"}); err != nil {
-				h.logger.Debug("failed to send pong", "client_id", clientID, "error", err)
+				h.logger.Debug("failed to send pong", "user_id", userID, "error", err)
 				return
 			}
 		case "subscribe":
 			listIDs := parseListIDs(msg["list_ids"])
-			h.subscribe(conn, listIDs)
-			h.logger.Debug("subscribed", "client_id", clientID, "list_count", len(listIDs))
+			h.subscribe(ctx, userID, conn, listIDs)
+			h.logger.Debug("subscribed", "user_id", userID, "requested_count", len(listIDs))
 		}
 	}
 }

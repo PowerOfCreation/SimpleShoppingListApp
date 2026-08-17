@@ -35,8 +35,10 @@ locally, so this needs network access to it.
 Postgres and the API are only run locally for development; in production
 they're deployed elsewhere, targeting `DATABASE_URL`.
 
-The backend does not yet **scope** data to a user — any valid token can
-read/write any known list id; see `frontend/docs/sync-design-decisions.md`.
+The backend **scopes** data to a user: every `/api/v1/events` and
+`/api/v1/sync/*` call requires the caller to be a member (owner or member)
+of every list involved, enforced synchronously by `ListAccessService`. See
+[List sharing](#list-sharing).
 
 ## Sync API
 
@@ -46,10 +48,10 @@ reconcile + a live WebSocket nudge mean neither direction has to poll.
 `/api/v1/events` and every `/api/v1/sync/*` route (including the WebSocket
 upgrade) require a bearer token — see [Run locally](#run-locally-dev).
 
-Not yet built: user-scoping (any valid token can read/write any known list
-id) and a "restore my lists after reinstall" endpoint — pull only ever
-fetches lists already known and sync-enabled locally. See
-`frontend/docs/sync-design-decisions.md`.
+Not yet built: a "restore my lists after reinstall" endpoint — pull only
+ever fetches lists already known and sync-enabled locally, and discovering
+a user's other lists needs its own, separate endpoint. See
+`frontend/docs/sync-sharing-target.md` §8.
 
 | Method | Path | Description |
 |--------|------|-------------|
@@ -58,7 +60,7 @@ fetches lists already known and sync-enabled locally. See
 | POST | `/api/v1/sync/head` | Reports each requested list's current pull cursor (seq + latest event id) |
 | GET | `/api/v1/sync/events` | Pull: one page of a list's event history since a given seq |
 | GET | `/api/v1/sync/ws` | WebSocket; pushes per-event `ack`s and, to clients subscribed to a list (`{"type":"subscribe","list_ids":[...]}`), a `{"type":"event"}` notification when that list gets a new event |
-| POST | `/api/v1/todo-lists/:listId/invites` | Create a multi-use invite link with a TTL preset (`1h`\|`24h`\|`7d`\|`30d`); requires owner — a list with no members yet claims the caller as owner (see [List sharing](#list-sharing)); returns the plaintext token once |
+| POST | `/api/v1/todo-lists/:listId/invites` | Create a multi-use invite link with a TTL preset (`1h`\|`24h`\|`7d`\|`30d`); owner-only (see [List sharing](#list-sharing)); returns the plaintext token once |
 | GET | `/api/v1/todo-lists/:listId/invites` | List a list's active (non-expired, non-revoked) invites; only the owner may call this; never returns a token |
 | DELETE | `/api/v1/invites/:inviteId` | Revoke an invite; only the list's owner may call this |
 | POST | `/api/v1/invites/redeem` | Redeem a token, joining the list as `member`; idempotent if already a member |
@@ -68,15 +70,17 @@ fetches lists already known and sync-enabled locally. See
 Lists can be shared via invite links (`ListSharingService`,
 `internal/interface/api/rest/list-sharing-controller.go`): the creator picks
 a validity preset, gets back a one-time plaintext token, and only its
-sha256 hash is ever persisted (`list_invites.token_hash`). A list with no
-members yet auto-claims the first inviter as `owner`
-(claim-on-first-invite) — the bootstrap for lists that predate this
-feature, which otherwise have no owner recorded anywhere.
+sha256 hash is ever persisted (`list_invites.token_hash`). Ownership is
+granted the first time anyone pushes an event for a list
+(`ListAccessService.AuthorizeWrite`, called from `POST /api/v1/events`), not
+by inviting — `CreateInvite` and every other sharing action require the
+caller to already be the owner.
 
-**This only adds a membership model — it does not enforce it.**
-`/api/v1/events` and every `/api/v1/sync/*` route still accept any valid
-token for any known list id, same as before; membership isn't checked
-there yet. See `frontend/docs/sync-design-decisions.md`.
+**Membership is enforced everywhere, not just on the sharing endpoints.**
+`/api/v1/events` and every `/api/v1/sync/*` route (including the WebSocket
+upgrade) require the caller to be a member (owner or member) of every
+list_id involved — checked synchronously by `ListAccessService`, on every
+request, before anything is written or read.
 
 For the target architecture — roles, list lifecycle, invariants every
 sync/sharing PR should be checked against — see

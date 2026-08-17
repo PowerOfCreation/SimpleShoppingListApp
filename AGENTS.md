@@ -85,17 +85,23 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
   `backend/internal/interface/api/middleware`) on `/api/v1/events` and every
   `/api/v1/sync/*` route; the API refuses to start if
   `KEYCLOAK_ISSUER`/`KEYCLOAK_CLIENT_ID` aren't set or the issuer is
-  unreachable. Still **no user scoping** of the data itself — any valid token
-  can read/write any known list id (see design doc).
-- **List sharing (invite links):** `POST /api/v1/todo-lists/:listId/invites`
-  creates a multi-use link with a TTL preset (`1h`\|`24h`\|`7d`\|`30d`); only
-  the token's sha256 hash is persisted, the plaintext is returned once. A
-  list with no members yet auto-claims the first inviter as `owner`
-  (claim-on-first-invite — the bootstrap for lists that predate this
-  feature). `POST /api/v1/invites/redeem` joins as `member`, idempotently.
-  This adds a membership model but does **not** enforce it: `/api/v1/events`
-  and `/api/v1/sync/*` are unchanged and still accept any valid token for
-  any known list id (see design doc).
+  unreachable. Verifying the token is only identity, not authorization —
+  see **List sharing** below for the access check.
+- **List sharing (invite links) and user scoping:** ownership is granted
+  the first time anyone pushes an event for a list
+  (`ListAccessService.AuthorizeWrite`, called synchronously from
+  `POST /api/v1/events` before anything is enqueued — the ingestor's async
+  worker has no request context, so this can't happen there). Every
+  `/api/v1/events` and `/api/v1/sync/*` call, including the WebSocket
+  upgrade, requires the caller to be a member (owner or member) of every
+  list_id involved — read paths (`/sync/head`, `/sync/state`) silently omit
+  a list the caller can't access rather than erroring, to avoid an
+  enumeration oracle. `POST /api/v1/todo-lists/:listId/invites` creates a
+  multi-use link with a TTL preset (`1h`\|`24h`\|`7d`\|`30d`); only the
+  token's sha256 hash is persisted, the plaintext is returned once, and
+  only the owner may call it. `POST /api/v1/invites/redeem` joins as
+  `member`, idempotently. See `backend/internal/application/services/list-access-service.go`
+  and `frontend/docs/sync-sharing-target.md` §2–3.
 
 ## Relevant docs
 

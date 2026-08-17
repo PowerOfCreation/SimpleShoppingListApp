@@ -26,6 +26,13 @@ type StoredEvent struct {
 	Payload    json.RawMessage
 	OccurredAt time.Time
 	ClientID   string
+	// UserID is the verified Keycloak sub of whoever pushed this event, set
+	// by the push handler (which still has the request context) - never by
+	// the async EventIngestor worker, which doesn't (see
+	// sync-sharing-target.md 7.1). Empty for events accepted before access
+	// enforcement existed; those get no owner and stay outside every
+	// list_members-based check (see migration 00007).
+	UserID string
 	// Seq is the pull cursor position, assigned by Insert as soon as the
 	// event is durably received - independent of whether its projection
 	// ever succeeds (see EventIngestor). Zero on an event that hasn't been

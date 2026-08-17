@@ -21,4 +21,8 @@ type ListMemberRepository interface {
 	// not error or duplicate the membership row.
 	Add(ctx context.Context, member *entities.ListMember) error
 	FindByListAndUser(ctx context.Context, listID uuid.UUID, userID string) (*entities.ListMember, error)
+	// FindAccessibleListIDs returns the subset of listIDs userID is a member
+	// of - the filter behind every read path. Omission, not an error, is
+	// how "not yours" is reported (see GetAccessibleListIDs).
+	FindAccessibleListIDs(ctx context.Context, userID string, listIDs []uuid.UUID) ([]uuid.UUID, error)
 }

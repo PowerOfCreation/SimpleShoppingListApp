@@ -25,7 +25,11 @@ type SyncEventRequest struct {
 	Payload    json.RawMessage `json:"payload"`
 }
 
-func (req *SyncEventRequest) ToStoredEvent() *repositories.StoredEvent {
+// ToStoredEvent takes userID as a parameter rather than reading it off the
+// request - it must be the verified Keycloak sub the push handler read from
+// the auth middleware, never a client-supplied field (there is no
+// user_id/sub in the wire shape above for exactly that reason).
+func (req *SyncEventRequest) ToStoredEvent(userID string) *repositories.StoredEvent {
 	return &repositories.StoredEvent{
 		EventID:       req.EventID,
 		EventType:     req.EventType,
@@ -35,5 +39,6 @@ func (req *SyncEventRequest) ToStoredEvent() *repositories.StoredEvent {
 		Payload:       req.Payload,
 		OccurredAt:    time.UnixMilli(req.OccurredAt).UTC(),
 		ClientID:      req.ClientID,
+		UserID:        userID,
 	}
 }

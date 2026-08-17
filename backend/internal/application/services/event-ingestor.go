@@ -157,7 +157,7 @@ func (ing *EventIngestor) process(ctx context.Context, event *repositories.Store
 		return
 	}
 	event.Seq = seq
-	ing.publisher.PublishAck(event.ClientID, event.EventID, seq)
+	ing.publisher.PublishAck(event.UserID, event.EventID, seq)
 	if alreadyProcessed {
 		// A previous delivery of this exact event_id already ran apply -
 		// re-applying would duplicate the side effect. No PublishListEvent

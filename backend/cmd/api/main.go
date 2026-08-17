@@ -60,7 +60,8 @@ func run(logger *slog.Logger) error {
 	listMemberRepo := postgres2.NewSqlcListMemberRepository(queries)
 
 	toDoListService := services.NewToDoListService(toDoListRepo)
-	listSharingService := services.NewListSharingService(logger, listInviteRepo, listMemberRepo, toDoListRepo)
+	listAccessService := services.NewListAccessService(listMemberRepo)
+	listSharingService := services.NewListSharingService(logger, listInviteRepo, listMemberRepo, toDoListRepo, listAccessService)
 
 	eventDispatcher := services.NewEventDispatcher(
 		logger,
@@ -69,7 +70,7 @@ func run(logger *slog.Logger) error {
 		services.NewDeleteToDoListEventHandler(toDoListService),
 	)
 
-	hub := realtime.NewHub(logger)
+	hub := realtime.NewHub(logger, listAccessService)
 	eventIngestor := services.NewEventIngestor(logger, eventRepo, eventDispatcher, hub)
 	eventIngestor.Start(ctx)
 	defer eventIngestor.Stop()
@@ -94,10 +95,10 @@ func run(logger *slog.Logger) error {
 	e.Use(middleware.RequestLogger(logger))
 	e.Use(middleware.ContextLogger(logger))
 
-	rest.NewEventController(e, logger, eventIngestor, authMW)
+	rest.NewEventController(e, logger, eventIngestor, listAccessService, authMW)
 	rest.NewSyncWebSocketController(e, hub, authMW)
-	rest.NewSyncStateController(e, logger, eventRepo, authMW)
-	rest.NewSyncPullController(e, logger, eventRepo, authMW)
+	rest.NewSyncStateController(e, logger, eventRepo, listAccessService, authMW)
+	rest.NewSyncPullController(e, logger, eventRepo, listAccessService, authMW)
 	rest.NewListSharingController(e, logger, listSharingService, authMW)
 
 	logger.Info("server starting", "port", port)

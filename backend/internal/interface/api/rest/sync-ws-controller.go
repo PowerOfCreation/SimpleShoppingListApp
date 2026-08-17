@@ -6,6 +6,7 @@ import (
 	"github.com/gorilla/websocket"
 	"github.com/labstack/echo/v4"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/infrastructure/realtime"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
 )
 
 // CheckOrigin is permissive: this is a native-app API with no browser CORS
@@ -27,17 +28,17 @@ func NewSyncWebSocketController(e *echo.Echo, hub *realtime.Hub, authMW echo.Mid
 }
 
 // Connect upgrades to a WebSocket and blocks for the connection's entire
-// lifetime (see Hub.Serve). client_id stays a query parameter rather than
-// becoming the verified identity - the Authorization header (checked by
-// authMW before this handler runs) is what's actually trusted now;
-// client_id remains purely a routing key for ack fan-out (see
-// realtime.Hub), same as before auth existed.
+// lifetime (see Hub.Serve). Routing is keyed by the verified user_id from
+// the Authorization header (checked by authMW before this handler runs),
+// not the client_id query parameter - a query param is client-supplied and
+// unverified, so trusting it as a fan-out key would let a connection
+// receive acks for events it never sent by simply guessing someone else's
+// client_id. The query param is no longer required; if present, it's
+// ignored.
 func (swc *SyncWebSocketController) Connect(c echo.Context) error {
-	clientID := c.QueryParam("client_id")
-	if clientID == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "client_id is required",
-		})
+	userID, ok := middleware.UserIDFromContext(c)
+	if !ok {
+		return unauthorized(c)
 	}
 
 	ws, err := syncUpgrader.Upgrade(c.Response(), c.Request(), nil)
@@ -45,6 +46,6 @@ func (swc *SyncWebSocketController) Connect(c echo.Context) error {
 		return err
 	}
 
-	swc.hub.Serve(clientID, ws)
+	swc.hub.Serve(c.Request().Context(), userID, ws)
 	return nil
 }

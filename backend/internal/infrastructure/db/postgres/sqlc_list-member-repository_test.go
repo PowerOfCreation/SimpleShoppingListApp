@@ -5,6 +5,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -141,4 +142,56 @@ func TestSqlcListMemberRepository_FindByListAndUser_CorruptRoleReturnsError(t *t
 
 	_, err = repo.FindByListAndUser(ctx, listID, "corrupt-user")
 	assert.Error(t, err)
+}
+
+// TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_DoesNotRequireATodoListsRow
+// guards migration 00007: list_members.list_id no longer has a foreign key
+// to todo_lists, precisely so a list can be claimed at push time, before
+// its projection (todo_lists) necessarily exists (see
+// ListAccessService.AuthorizeWrite and sync-sharing-target.md §2 on why
+// access must not hang off a rebuildable projection).
+func TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_DoesNotRequireATodoListsRow(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
+	ctx := context.Background()
+
+	listID := uuid.New() // deliberately never inserted into todo_lists
+
+	claimed, err := repo.ClaimOwnershipIfUnowned(ctx, listID, "alice", time.Now().UTC())
+	require.NoError(t, err)
+	assert.True(t, claimed)
+}
+
+func TestSqlcListMemberRepository_FindAccessibleListIDs_ReturnsOnlyListsTheUserIsAMemberOf(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
+	ctx := context.Background()
+
+	own := createTestToDoList(t, testDB)
+	foreign := createTestToDoList(t, testDB)
+	unknown := uuid.New()
+
+	claimed, err := repo.ClaimOwnershipIfUnowned(ctx, own, "alice", time.Now().UTC())
+	require.NoError(t, err)
+	require.True(t, claimed)
+	_, err = repo.ClaimOwnershipIfUnowned(ctx, foreign, "mallory", time.Now().UTC())
+	require.NoError(t, err)
+
+	accessible, err := repo.FindAccessibleListIDs(ctx, "alice", []uuid.UUID{own, foreign, unknown})
+
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []uuid.UUID{own}, accessible)
+}
+
+func TestSqlcListMemberRepository_FindAccessibleListIDs_EmptyInputReturnsNil(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
+
+	accessible, err := repo.FindAccessibleListIDs(context.Background(), "alice", nil)
+
+	require.NoError(t, err)
+	assert.Empty(t, accessible)
 }

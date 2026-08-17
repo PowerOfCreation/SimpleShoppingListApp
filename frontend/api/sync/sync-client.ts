@@ -94,6 +94,24 @@ export type EventsPage = {
 export type FetchLike = typeof fetch
 
 /**
+ * 401 and 403 both mean retrying the exact same request is pointless: the
+ * token is invalid/expired (401), or the caller has lost access to
+ * something in the request - a list they were removed from, or a list_id
+ * they were never a member of (403, enforced server-side by
+ * ListAccessService - see sync-sharing-target.md §2). Anything else is
+ * treated as possibly transient.
+ */
+function nonRetryableError(response: Response): SyncError | null {
+  if (response.status === 401) {
+    return new SyncError("Unauthorized", false)
+  }
+  if (response.status === 403) {
+    return new SyncError("Forbidden", false)
+  }
+  return null
+}
+
+/**
  * Sends already-persisted events to the backend over HTTP. A successful
  * call only means the server durably received and queued the events (the
  * backend responds 202 before it has actually written them) - it is not
@@ -182,10 +200,11 @@ export class SyncClient {
     }
     const response = responseResult.getValue()!
 
-    if (response.status === 401) {
-      return Result.fail(new SyncError("Unauthorized", false))
-    }
     if (!response.ok) {
+      const nonRetryable = nonRetryableError(response)
+      if (nonRetryable) {
+        return Result.fail(nonRetryable)
+      }
       return Result.fail(
         new SyncError(`Unexpected response status ${response.status}`, true)
       )
@@ -233,6 +252,10 @@ export class SyncClient {
     const response = responseResult.getValue()!
 
     if (!response.ok) {
+      const nonRetryable = nonRetryableError(response)
+      if (nonRetryable) {
+        return Result.fail(nonRetryable)
+      }
       return Result.fail(
         new SyncError(`Unexpected response status ${response.status}`, true)
       )
@@ -278,6 +301,10 @@ export class SyncClient {
     const response = responseResult.getValue()!
 
     if (!response.ok) {
+      const nonRetryable = nonRetryableError(response)
+      if (nonRetryable) {
+        return Result.fail(nonRetryable)
+      }
       return Result.fail(
         new SyncError(`Unexpected response status ${response.status}`, true)
       )
@@ -325,6 +352,10 @@ export class SyncClient {
     const response = responseResult.getValue()!
 
     if (!response.ok) {
+      const nonRetryable = nonRetryableError(response)
+      if (nonRetryable) {
+        return Result.fail(nonRetryable)
+      }
       return Result.fail(
         new SyncError(`Unexpected response status ${response.status}`, true)
       )

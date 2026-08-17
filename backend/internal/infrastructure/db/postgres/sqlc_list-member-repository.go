@@ -83,3 +83,17 @@ func (r *SqlcListMemberRepository) FindByListAndUser(
 	}
 	return member, nil
 }
+
+func (r *SqlcListMemberRepository) FindAccessibleListIDs(
+	ctx context.Context,
+	userID string,
+	listIDs []uuid.UUID,
+) ([]uuid.UUID, error) {
+	if len(listIDs) == 0 {
+		return nil, nil
+	}
+	return r.queries.GetAccessibleListIDs(ctx, db.GetAccessibleListIDsParams{
+		ListIds: listIDs,
+		UserID:  userID,
+	})
+}
