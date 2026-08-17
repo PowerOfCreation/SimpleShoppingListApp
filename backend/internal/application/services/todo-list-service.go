@@ -1,7 +1,7 @@
 package services
 
 import (
-	"errors"
+	"context"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/command"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/interfaces"
@@ -12,35 +12,25 @@ import (
 
 type ToDoListService struct {
 	todoListRepository repositories.ToDoListRepository
-	//sellerRepository  repositories.SellerRepository
-	//idempotencyRepo   repositories.IdempotencyRepository
 }
 
 func NewToDoListService(
 	todoListRepository repositories.ToDoListRepository,
-	//sellerRepository repositories.SellerRepository,
-	//idempotencyRepo repositories.IdempotencyRepository,
 ) interfaces.ToDoListService {
 	return &ToDoListService{
 		todoListRepository: todoListRepository,
-		//sellerRepository:  sellerRepository,
-		//idempotencyRepo:   idempotencyRepo,
 	}
 }
 
-func (s *ToDoListService) CreateToDoList(todoListCommand *command.CreateToDoListCommand) (*command.CreateToDoListCommandResult, error) {
-	var newToDoList = entities.NewToDoList(
-		todoListCommand.Id,
-		todoListCommand.Name,
-	)
+func (s *ToDoListService) CreateToDoList(ctx context.Context, todoListCommand *command.CreateToDoListCommand) (*command.CreateToDoListCommandResult, error) {
+	newToDoList := entities.NewToDoListAt(todoListCommand.Id, todoListCommand.Name, todoListCommand.OccurredAt)
 
 	validatedToDoList, err := entities.NewValidatedToDoList(newToDoList)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = s.todoListRepository.Create(validatedToDoList)
-	if err != nil {
+	if err := s.todoListRepository.Create(ctx, validatedToDoList); err != nil {
 		return nil, err
 	}
 
@@ -51,29 +41,21 @@ func (s *ToDoListService) CreateToDoList(todoListCommand *command.CreateToDoList
 	return &result, nil
 }
 
-func (s *ToDoListService) UpdateToDoList(todoListCommand *command.UpdateToDoListCommand) (*command.UpdateToDoListCommandResult, error) {
-	// Find existing todo list
-	existingToDoList, err := s.todoListRepository.FindById(todoListCommand.Id)
+// UpdateToDoList never reads the row first - todo_lists is a derived
+// projection, not the authority, so a missing or already-deleted row is
+// never an error (see UpdateToDoList in sql/queries/todo-lists.sql, which
+// silently affects zero rows in that case). CreatedAt here is a synthetic
+// stand-in purely to satisfy validate(); the UPDATE only ever touches
+// name/updated_at, so it never actually reaches storage.
+func (s *ToDoListService) UpdateToDoList(ctx context.Context, todoListCommand *command.UpdateToDoListCommand) (*command.UpdateToDoListCommandResult, error) {
+	toDoList := entities.NewToDoListAt(todoListCommand.Id, todoListCommand.Name, todoListCommand.OccurredAt)
+
+	validatedToDoList, err := entities.NewValidatedToDoList(toDoList)
 	if err != nil {
 		return nil, err
 	}
 
-	if existingToDoList == nil {
-		return nil, errors.New("todo list not found")
-	}
-
-	// Update product fields
-	if err := existingToDoList.UpdateName(todoListCommand.Name); err != nil {
-		return nil, err
-	}
-
-	validatedToDoList, err := entities.NewValidatedToDoList(existingToDoList)
-	if err != nil {
-		return nil, err
-	}
-
-	_, err = s.todoListRepository.Update(validatedToDoList)
-	if err != nil {
+	if err := s.todoListRepository.Update(ctx, validatedToDoList); err != nil {
 		return nil, err
 	}
 
@@ -83,21 +65,13 @@ func (s *ToDoListService) UpdateToDoList(todoListCommand *command.UpdateToDoList
 
 	return &result, nil
 }
-func (s *ToDoListService) DeleteToDoList(todoListCommand *command.DeleteToDoListCommand) (*command.DeleteToDoListCommandResult, error) {
 
-	// Check if todo list exists
-	existingToDoList, err := s.todoListRepository.FindById(todoListCommand.Id)
-	if err != nil {
-		return nil, err
-	}
-
-	if existingToDoList == nil {
-		return nil, errors.New("todo list not found")
-	}
-
-	// Delete todo list
-	err = s.todoListRepository.Delete(todoListCommand.Id)
-	if err != nil {
+// DeleteToDoList never reads the row first, for the same reason as
+// UpdateToDoList: a missing row just means the tombstone lands with no
+// prior state to overwrite. The delete itself is idempotent (see
+// DeleteToDoList in sql/queries/todo-lists.sql).
+func (s *ToDoListService) DeleteToDoList(ctx context.Context, todoListCommand *command.DeleteToDoListCommand) (*command.DeleteToDoListCommandResult, error) {
+	if err := s.todoListRepository.Delete(ctx, todoListCommand.Id, todoListCommand.OccurredAt); err != nil {
 		return nil, err
 	}
 

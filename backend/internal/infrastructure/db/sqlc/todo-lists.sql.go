@@ -12,10 +12,14 @@ import (
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
-const createToDoList = `-- name: CreateToDoList :one
+const createToDoList = `-- name: CreateToDoList :exec
 INSERT INTO todo_lists (id, name, created_at, updated_at)
 VALUES ($1, $2, $3, $4)
-RETURNING id, name, created_at, updated_at, deleted_at
+ON CONFLICT (id) DO UPDATE
+  SET name = EXCLUDED.name,
+      created_at = EXCLUDED.created_at,
+      updated_at = EXCLUDED.updated_at
+  WHERE todo_lists.deleted_at IS NULL
 `
 
 type CreateToDoListParams struct {
@@ -25,30 +29,40 @@ type CreateToDoListParams struct {
 	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
 }
 
-func (q *Queries) CreateToDoList(ctx context.Context, arg CreateToDoListParams) (TodoList, error) {
-	row := q.db.QueryRow(ctx, createToDoList,
+// Projection, not an aggregate: a re-delivered created may update an
+// existing row, but must never resurrect one that's already tombstoned.
+func (q *Queries) CreateToDoList(ctx context.Context, arg CreateToDoListParams) error {
+	_, err := q.db.Exec(ctx, createToDoList,
 		arg.ID,
 		arg.Name,
 		arg.CreatedAt,
 		arg.UpdatedAt,
 	)
-	var i TodoList
-	err := row.Scan(
-		&i.ID,
-		&i.Name,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-		&i.DeletedAt,
-	)
-	return i, err
+	return err
 }
 
 const deleteToDoList = `-- name: DeleteToDoList :exec
-UPDATE todo_lists SET deleted_at = NOW() WHERE id = $1
+INSERT INTO todo_lists (id, name, created_at, updated_at, deleted_at)
+VALUES ($1, '', $2, $2, $2)
+ON CONFLICT (id) DO UPDATE
+  SET deleted_at = EXCLUDED.deleted_at
+  WHERE todo_lists.deleted_at IS NULL
 `
 
-func (q *Queries) DeleteToDoList(ctx context.Context, id uuid.UUID) error {
-	_, err := q.db.Exec(ctx, deleteToDoList, id)
+type DeleteToDoListParams struct {
+	ID           uuid.UUID          `db:"id" json:"id"`
+	TombstonedAt pgtype.Timestamptz `db:"tombstoned_at" json:"tombstoned_at"`
+}
+
+// Tombstone upsert: a deleted event that arrives before its created (the
+// unprocessed-event sweep can replay a previously-failed create after a
+// later delete already landed) still plants the tombstone row itself, so
+// the later created bounces off the deleted_at IS NULL guard above. The
+// WHERE guard in DO UPDATE makes this idempotent - the first tombstone
+// timestamp sticks. name is left empty for a list never otherwise seen;
+// that row is unreadable (every read filters deleted_at IS NULL).
+func (q *Queries) DeleteToDoList(ctx context.Context, arg DeleteToDoListParams) error {
+	_, err := q.db.Exec(ctx, deleteToDoList, arg.ID, arg.TombstonedAt)
 	return err
 }
 
@@ -78,9 +92,9 @@ func (q *Queries) GetToDoListById(ctx context.Context, id uuid.UUID) (GetToDoLis
 }
 
 const updateToDoList = `-- name: UpdateToDoList :exec
-UPDATE todo_lists 
+UPDATE todo_lists
 SET name = $2, updated_at = $3
-WHERE id = $1
+WHERE id = $1 AND todo_lists.deleted_at IS NULL
 `
 
 type UpdateToDoListParams struct {
@@ -89,6 +103,8 @@ type UpdateToDoListParams struct {
 	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
 }
 
+// Missing or already-deleted row: zero rows affected, not an error - the
+// row is a rebuildable projection, not the authority.
 func (q *Queries) UpdateToDoList(ctx context.Context, arg UpdateToDoListParams) error {
 	_, err := q.db.Exec(ctx, updateToDoList, arg.ID, arg.Name, arg.UpdatedAt)
 	return err
