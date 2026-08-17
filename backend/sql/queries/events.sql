@@ -1,39 +1,50 @@
 -- name: InsertEvent :one
--- Upserts as a no-op update (rather than DO NOTHING) purely so RETURNING
--- always yields exactly one row, whether this event_id was just inserted
--- or already existed from a previous delivery. Callers use processed_at to
--- tell the two cases apart without a second round-trip; seq/list_id ride
--- along so a duplicate delivery can still ack with the event's seq.
-INSERT INTO events (id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+-- Assigns seq here, not at MarkEventProcessed (see migration
+-- 00006-events-seq-at-insert) - a durably received event gets its log
+-- position regardless of whether its projection ever succeeds. Upserts as
+-- a no-op update (rather than DO NOTHING) purely so RETURNING always
+-- yields exactly one row, whether this event_id was just inserted or
+-- already existed from a previous delivery; since seq isn't in the SET
+-- clause, a duplicate delivery keeps its original seq and RETURNING hands
+-- back that one, not a freshly burned one (nextval() is still evaluated
+-- for the value list on a conflicting insert - a harmless gap, since seq's
+-- only contract is monotonic-and-unique, not contiguous).
+INSERT INTO events (id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id, seq)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, nextval('events_seq_seq'))
 ON CONFLICT (id) DO UPDATE SET id = events.id
 RETURNING processed_at, seq, list_id;
 
--- name: MarkEventProcessed :one
--- Assigns seq from the dedicated events_seq_seq sequence atomically with
--- marking the row processed (see migration 00004 for why seq is assigned
--- here rather than at insert). The `seq IS NULL` guard makes a second call
--- for the same id a no-op that returns zero rows rather than silently
--- handing out a second seq - callers can only reach this for a row that
--- was genuinely never marked before, so a zero-row result signals a bug,
--- not a legitimate race (see EventIngestor's single-writer guarantee).
+-- name: MarkEventProcessed :exec
+-- Only marks the row's projection attempt as finished - seq is already
+-- assigned by InsertEvent. The `processed_at IS NULL` guard makes a second
+-- call for the same id a genuine no-op (0 rows) rather than clobbering the
+-- original timestamp: the periodic sweep can legitimately race a
+-- just-finished live dispatch and call this again for the same row.
 UPDATE events
-SET processed_at = NOW(), seq = nextval('events_seq_seq')
-WHERE id = $1 AND seq IS NULL
-RETURNING seq, list_id;
+SET processed_at = NOW()
+WHERE id = $1 AND processed_at IS NULL;
 
 -- name: GetUnprocessedEvents :many
-SELECT id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id
+-- The startup/periodic sweep's replay set - ordered by seq (unique,
+-- assigned once at insert) so a retried event can never be replayed out of
+-- position relative to one that arrived after it. received_at ordering
+-- (pre migration 00006) had neither property: it wasn't unique, and it no
+-- longer tracked seq order once seq could be assigned later than insert.
+SELECT id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id, seq
 FROM events
 WHERE processed_at IS NULL
-ORDER BY received_at ASC;
+ORDER BY seq ASC;
 
 -- name: GetKnownEventIdsByList :many
--- Which of a set of lists' events this server has durably processed - the
--- reconcile self-heal endpoint's query. Keyed by list_id rather than
--- aggregate_id: aggregate_id is the ingredient id for ingredient.* events,
--- so a single list can span arbitrarily many aggregate_ids, but always has
--- exactly one list_id.
+-- Which of a set of lists' events this server has durably received - the
+-- reconcile self-heal endpoint's query. seq IS NOT NULL as of migration
+-- 00006-events-seq-at-insert means "durably inserted", not "projection
+-- applied" - an event whose handler is still stuck (or permanently failed)
+-- is "known" here just the same, since the client only needs confirmation
+-- the server has it, not that the backend's own todo_lists projection
+-- reflects it yet. Keyed by list_id rather than aggregate_id: aggregate_id
+-- is the ingredient id for ingredient.* events, so a single list can span
+-- arbitrarily many aggregate_ids, but always has exactly one list_id.
 SELECT id
 FROM events
 WHERE list_id = ANY(sqlc.arg(list_ids)::uuid[])
@@ -41,9 +52,9 @@ WHERE list_id = ANY(sqlc.arg(list_ids)::uuid[])
 
 -- name: GetListHeads :many
 -- The latest (list_id, seq, id) per requested list - "what's the most
--- recent event you have for this list". Lists with zero processed events
--- simply produce no row; the controller fills in the seq=0 head itself so
--- every requested id still appears in the response.
+-- recent event you have for this list". Lists with zero durably received
+-- events simply produce no row; the controller fills in the seq=0 head
+-- itself so every requested id still appears in the response.
 SELECT DISTINCT ON (list_id) list_id, seq, id
 FROM events
 WHERE list_id = ANY(sqlc.arg(list_ids)::uuid[])

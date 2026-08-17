@@ -44,9 +44,9 @@ func (f *fakeEventRepo) Insert(ctx context.Context, event *repositories.StoredEv
 	return false, 0, nil, nil
 }
 
-func (f *fakeEventRepo) MarkProcessed(ctx context.Context, eventID uuid.UUID) (int64, *uuid.UUID, error) {
+func (f *fakeEventRepo) MarkProcessed(ctx context.Context, eventID uuid.UUID) error {
 	f.processed[eventID] = true
-	return 1, nil, nil
+	return nil
 }
 
 func (f *fakeEventRepo) FindUnprocessed(ctx context.Context) ([]*repositories.StoredEvent, error) {

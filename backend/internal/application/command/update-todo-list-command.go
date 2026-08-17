@@ -12,6 +12,8 @@ type UpdateToDoListCommand struct {
 	Id             uuid.UUID
 	Name           string
 	OccurredAt     time.Time
+	// AtSeq is the originating event's log position - see ToDoListRepository.
+	AtSeq int64
 }
 
 type UpdateToDoListCommandResult struct {

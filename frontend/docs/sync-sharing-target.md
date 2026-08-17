@@ -162,7 +162,7 @@ zweifacher Vorwärts-Anwendung derselben Event-Folge (`TestToDoListService_Forwa
 — nicht als tatsächlicher Vorwärts-vs-Rebuild-Vergleich. Fürs Frontend gilt 6.1 unverändert wörtlich:
 `IngredientListProjection.rebuildForList` ist genau dieser Rebuild.
 
-*Bekannte Lücke im Vorwärtspfad:* `sweepUnprocessed` sortiert nach `received_at`, nicht nach `seq`. Ein nachgeholtes `created` (z. B. nach einem vorübergehenden Dispatch-Fehler) kann so ein bereits verarbeitetes `updated` überschreiben — der Create-Upsert setzt `name`/`created_at` mit, der Name fällt auf den Create-Wert zurück. Sehr schmaler Pfad, aber eine echte 6.1-Verletzung; ohne einen Rebuild-Mechanismus gibt es dafür aktuell keinen Reparaturweg. Die Auswirkung bleibt dabei nicht auf die Serverzeile beschränkt: `seq` wird erst bei `MarkEventProcessed` vergeben, das nachgeholte `created` bekommt also ein *höheres* `seq` als das `updated`, das eigentlich danach kam. Jeder Client repliziert diese Reihenfolge über `GetEventsSince`/`byServerSeqThenLocal` 1:1 und landet lokal beim selben falschen Namen.
+*Ehemals bekannte Lücke im Vorwärtspfad, geschlossen durch `00006-events-seq-at-insert`:* `sweepUnprocessed` sortierte nach `received_at`, nicht nach `seq` — und `seq` wurde erst bei `MarkEventProcessed` vergeben. Ein nachgeholtes `created` (z. B. nach einem vorübergehenden Dispatch-Fehler) konnte so ein *höheres* `seq` bekommen als ein zwischenzeitlich bereits verarbeitetes `updated`, obwohl es zuerst eintraf, und den Create-Upsert dessen `name`/`created_at` überschreiben lassen. Jeder Client repliziert diese Reihenfolge über `GetEventsSince`/`byServerSeqThenLocal` 1:1 — nicht nur eine Serverzeile, sondern eine echte 6.1-Verletzung überall. Seit `00006` bekommt jedes Event sein `seq` beim Insert, unabhängig vom Projektionserfolg (siehe 6.8); `sweepUnprocessed` sortiert entsprechend nach `seq`, und `todo_lists.last_applied_seq` macht `CreateToDoList`/`UpdateToDoList` monoton in `seq` — ein außer der Reihe angewendetes `created`/`updated` kann eine bereits neuere Zeile nicht mehr zurückdrehen. `DeleteToDoList` bekommt bewusst keinen solchen Guard: ein Delete muss auch mit einem *niedrigeren* `seq` als dem bereits angewendeten noch greifen, weil ein vollständiger Rebuild in Reihenfolge das Delete zuerst anwenden und ein danach kommendes Update über dessen eigenen `deleted_at IS NULL`-Guard ablehnen würde (das Frontend-Pendant, `handleDeleted` in `ingredient-list-projection.ts`, löscht die Zeile hart — ein später verarbeitetes Update im selben Rebuild liefe dort ins Leere). Ein `last_applied_seq`-Guard auf dem Delete würde diese Projektion vom Rebuild-Ergebnis wegdrehen statt daran anzugleichen. Die Invariante gilt damit für `created`/`updated` konstruktiv, nicht mehr nur, weil der Pfad selten getroffen wird; für `deleted` galt sie es schon vorher (terminal, siehe 6.2) und bleibt unverändert.
 
 **6.2 deleted_at ist terminal.** Ein todo_list.created oder .updated darf eine getombstonete Liste nie wiederbeleben. Entsyncen benutzt deshalb kein Soft-Delete, sondern löscht hart.
 
@@ -176,17 +176,21 @@ zweifacher Vorwärts-Anwendung derselben Event-Folge (`TestToDoListService_Forwa
 
 **6.7 occurred_at ist Anzeige-Metadatum.** Es ist die Wanduhr des Clients, also untrusted. Nie Grundlage für Ordnung, Autorisierung oder Retention. Die daraus gespeisten Spalten (created_at/updated_at/deleted_at) sind damit client-geliefert; updated_at kann rückwärts laufen.
 
-**6.8 Jedes durabel angenommene Event bekommt genau einmal ein seq.** `GetEventsSince`, `GetListHeads`
-und `GetKnownEventIdsByList` filtern alle `seq IS NOT NULL` — ein Event, dessen Handler dauerhaft
-fehlschlägt (z. B. `CreateToDoList`/`UpdateToDoList` mit leerem Namen, siehe `validate()` in
-`entities/todo-list.go`, oder ein Payload, an dem `json.Unmarshal` scheitert), bekommt sonst nie ein
-`seq` und ist damit für Pull *und* Reconcile unsichtbar, während `dispatchAndAck` `MarkProcessed` und
-den Ack überspringt (siehe `event-ingestor.go`) — der Client resendet unbegrenzt, ohne dass der
-Server je „fertig" meldet. Das ist derselbe Mechanismus, den `b81caa1`/`3821b45` für „Zeile nicht
-gefunden" behoben haben; für dauerhafte Handler-Fehler (kaputtes Payload, leerer Name) übernimmt das
-`interfaces.ErrPermanent`/`interfaces.Permanent(err)` (`permanent-error.go`): ein so markierter Fehler
-wird in `dispatchAndAck` wie der Unknown-Event-Type-Pfad behandelt — `MarkProcessed` + Ack, statt
-unprocessed liegen zu bleiben.
+**6.8 Jedes durabel angenommene Event bekommt genau einmal ein seq — beim Insert, unabhängig vom
+Projektionserfolg.** `GetEventsSince`, `GetListHeads` und `GetKnownEventIdsByList` filtern alle
+`seq IS NOT NULL`; seit `00006-events-seq-at-insert` gilt das für jedes durabel eingefügte Event, nicht
+erst für ein erfolgreich projiziertes. `EventIngestor.process` ackt entsprechend sofort nach `Insert`
+(`event-ingestor.go`) — der Ack bedeutet „durabel im Log", nicht „Projektion angewendet". `apply`
+markiert danach nur noch den Projektionsversuch als abgeschlossen (`MarkProcessed`), ohne erneut zu
+acken oder `seq` zu berühren. Ein Handler, der dauerhaft fehlschlägt (z. B. `CreateToDoList`/
+`UpdateToDoList` mit leerem Namen, siehe `validate()` in `entities/todo-list.go`, oder ein Payload, an
+dem `json.Unmarshal` scheitert), wird über `interfaces.ErrPermanent`/`interfaces.Permanent(err)`
+(`permanent-error.go`) trotzdem als abgeschlossen markiert — wie der Unknown-Event-Type-Pfad. Ein
+transienter (unwrapped) Fehler bleibt unprocessed für den nächsten Sweep, ist aber, anders als vor
+`00006`, bereits geackt und für Pull/Reconcile sichtbar; nur der Backend-eigenen (nicht-autoritativen)
+`todo_lists`-Projektion fehlt er noch. Das ist derselbe strukturelle Fix, den `b81caa1`/`3821b45` für
+„Zeile nicht gefunden" und #247 für dauerhafte Handler-Fehler eingeführt haben, jetzt eine Ebene
+tiefer: an der Log-Position selbst statt nur am Ack.
 
 ## 7. Offene Entscheidungen
 

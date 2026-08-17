@@ -48,6 +48,42 @@ func TestSqlcEventRepository_Insert_FreshEventIsNotAlreadyProcessed(t *testing.T
 	assert.False(t, alreadyProcessed)
 }
 
+func TestSqlcEventRepository_Insert_AssignsMonotonicSeq(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcEventRepository(NewQueries(testDB.Conn))
+	ctx := context.Background()
+	first := makeStoredEvent()
+	second := makeStoredEvent()
+
+	_, firstSeq, firstListID, err := repo.Insert(ctx, first)
+	require.NoError(t, err)
+	_, secondSeq, _, err := repo.Insert(ctx, second)
+	require.NoError(t, err)
+
+	// seq is assigned by Insert itself (see migration
+	// 00006-events-seq-at-insert), not by MarkProcessed - neither event was
+	// ever marked processed here.
+	assert.Greater(t, firstSeq, int64(0))
+	assert.Greater(t, secondSeq, firstSeq)
+	assert.Nil(t, firstListID, "makeStoredEvent leaves list_id unset")
+}
+
+func TestSqlcEventRepository_Insert_ReturnsTheEventsListID(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcEventRepository(NewQueries(testDB.Conn))
+	ctx := context.Background()
+	listID := uuid.New()
+	event := makeStoredEventForList(listID)
+
+	_, _, gotListID, err := repo.Insert(ctx, event)
+
+	require.NoError(t, err)
+	require.NotNil(t, gotListID)
+	assert.Equal(t, listID, *gotListID)
+}
+
 func TestSqlcEventRepository_Insert_DuplicateBeforeProcessingIsNotAlreadyProcessed(t *testing.T) {
 	testDB := testhelpers.SetupTestDB(t)
 	defer testDB.Close(t)
@@ -60,8 +96,8 @@ func TestSqlcEventRepository_Insert_DuplicateBeforeProcessingIsNotAlreadyProcess
 
 	// Same event_id delivered again before it was ever marked processed
 	// (e.g. two overlapping requests) - Insert must not error, and must
-	// still report it as not-yet-processed so the caller knows a dispatch
-	// is still owed.
+	// still report it as not-yet-processed so the caller knows an apply is
+	// still owed.
 	alreadyProcessed, _, _, err := repo.Insert(ctx, event)
 
 	require.NoError(t, err)
@@ -75,19 +111,19 @@ func TestSqlcEventRepository_Insert_AfterProcessingIsAlreadyProcessed(t *testing
 	ctx := context.Background()
 	event := makeStoredEvent()
 
-	_, _, _, err := repo.Insert(ctx, event)
+	_, firstSeq, _, err := repo.Insert(ctx, event)
 	require.NoError(t, err)
-	markedSeq, _, err := repo.MarkProcessed(ctx, event.EventID)
-	require.NoError(t, err)
+	require.NoError(t, repo.MarkProcessed(ctx, event.EventID))
 
 	// A resend after the ack was lost - self-heal / reconcile path. It must
-	// still report the seq that was already assigned, so the caller can ack
-	// with it instead of leaving the client stuck without one.
+	// still report the seq that was already assigned at the first Insert
+	// (MarkProcessed never touches seq), so the caller can ack with it
+	// instead of leaving the client stuck without one.
 	alreadyProcessed, seq, _, err := repo.Insert(ctx, event)
 
 	require.NoError(t, err)
 	assert.True(t, alreadyProcessed)
-	assert.Equal(t, markedSeq, seq)
+	assert.Equal(t, firstSeq, seq)
 }
 
 func TestSqlcEventRepository_Insert_DoesNotOverwriteStoredFields(t *testing.T) {
@@ -127,56 +163,14 @@ func TestSqlcEventRepository_MarkProcessed_RemovesFromUnprocessed(t *testing.T) 
 	require.NoError(t, err)
 	assert.Len(t, before, 1)
 
-	_, _, err = repo.MarkProcessed(ctx, event.EventID)
-	require.NoError(t, err)
+	require.NoError(t, repo.MarkProcessed(ctx, event.EventID))
 
 	after, err := repo.FindUnprocessed(ctx)
 	require.NoError(t, err)
 	assert.Empty(t, after)
 }
 
-func TestSqlcEventRepository_MarkProcessed_AssignsMonotonicSeq(t *testing.T) {
-	testDB := testhelpers.SetupTestDB(t)
-	defer testDB.Close(t)
-	repo := NewSqlcEventRepository(NewQueries(testDB.Conn))
-	ctx := context.Background()
-	first := makeStoredEvent()
-	second := makeStoredEvent()
-
-	_, _, _, err := repo.Insert(ctx, first)
-	require.NoError(t, err)
-	_, _, _, err = repo.Insert(ctx, second)
-	require.NoError(t, err)
-
-	firstSeq, firstListID, err := repo.MarkProcessed(ctx, first.EventID)
-	require.NoError(t, err)
-	secondSeq, _, err := repo.MarkProcessed(ctx, second.EventID)
-	require.NoError(t, err)
-
-	assert.Greater(t, firstSeq, int64(0))
-	assert.Greater(t, secondSeq, firstSeq)
-	assert.Nil(t, firstListID, "makeStoredEvent leaves list_id unset")
-}
-
-func TestSqlcEventRepository_MarkProcessed_ReturnsTheEventsListID(t *testing.T) {
-	testDB := testhelpers.SetupTestDB(t)
-	defer testDB.Close(t)
-	repo := NewSqlcEventRepository(NewQueries(testDB.Conn))
-	ctx := context.Background()
-	listID := uuid.New()
-	event := makeStoredEventForList(listID)
-
-	_, _, _, err := repo.Insert(ctx, event)
-	require.NoError(t, err)
-
-	_, gotListID, err := repo.MarkProcessed(ctx, event.EventID)
-
-	require.NoError(t, err)
-	require.NotNil(t, gotListID)
-	assert.Equal(t, listID, *gotListID)
-}
-
-func TestSqlcEventRepository_MarkProcessed_ErrorsOnASecondCallForTheSameEvent(t *testing.T) {
+func TestSqlcEventRepository_MarkProcessed_SecondCallForTheSameEventIsANoOp(t *testing.T) {
 	testDB := testhelpers.SetupTestDB(t)
 	defer testDB.Close(t)
 	repo := NewSqlcEventRepository(NewQueries(testDB.Conn))
@@ -185,16 +179,15 @@ func TestSqlcEventRepository_MarkProcessed_ErrorsOnASecondCallForTheSameEvent(t 
 
 	_, _, _, err := repo.Insert(ctx, event)
 	require.NoError(t, err)
-	_, _, err = repo.MarkProcessed(ctx, event.EventID)
-	require.NoError(t, err)
+	require.NoError(t, repo.MarkProcessed(ctx, event.EventID))
 
-	// The seq IS NULL guard means re-marking an already-processed event
-	// matches zero rows - given the ingestor's single-writer guarantee,
-	// this can only happen from a bug, so it must surface as an error
-	// rather than silently reassigning a second seq.
-	_, _, err = repo.MarkProcessed(ctx, event.EventID)
+	// Unlike the old seq-assigning MarkProcessed, this no longer touches
+	// seq, so a second call just matches zero rows (processed_at IS NULL
+	// guard) and is a genuine no-op - the periodic sweep can legitimately
+	// race a live apply that just finished the same row.
+	err = repo.MarkProcessed(ctx, event.EventID)
 
-	assert.Error(t, err)
+	assert.NoError(t, err)
 }
 
 func TestSqlcEventRepository_FindUnprocessed_RoundTripsFields(t *testing.T) {
@@ -204,7 +197,7 @@ func TestSqlcEventRepository_FindUnprocessed_RoundTripsFields(t *testing.T) {
 	ctx := context.Background()
 	event := makeStoredEvent()
 
-	_, _, _, err := repo.Insert(ctx, event)
+	_, insertedSeq, _, err := repo.Insert(ctx, event)
 	require.NoError(t, err)
 
 	unprocessed, err := repo.FindUnprocessed(ctx)
@@ -218,13 +211,20 @@ func TestSqlcEventRepository_FindUnprocessed_RoundTripsFields(t *testing.T) {
 	assert.Equal(t, event.AggregateType, got.AggregateType)
 	assert.Equal(t, event.ClientID, got.ClientID)
 	assert.JSONEq(t, string(event.Payload), string(got.Payload))
+	// seq round-trips even though this event was never marked processed -
+	// it was assigned at Insert (see migration 00006-events-seq-at-insert).
+	assert.Equal(t, insertedSeq, got.Seq)
 	// occurred_at round-trips as UTC, matching how the frontend's epoch-ms
 	// value is converted (time.UnixMilli(...).UTC()) before it ever reaches
 	// this repository.
 	assert.WithinDuration(t, event.OccurredAt, got.OccurredAt.UTC(), 0)
 }
 
-func TestSqlcEventRepository_FindKnownEventIDsByList_OnlyReturnsProcessedEventsForRequestedLists(t *testing.T) {
+// TestSqlcEventRepository_FindKnownEventIDsByList_ReturnsAllDurablyReceivedEventsForRequestedLists
+// exercises invariant 6.8: "known" (seq IS NOT NULL) means durably
+// received, not "projection applied" - stillUnprocessedForRequested was
+// never marked processed and is still reported.
+func TestSqlcEventRepository_FindKnownEventIDsByList_ReturnsAllDurablyReceivedEventsForRequestedLists(t *testing.T) {
 	testDB := testhelpers.SetupTestDB(t)
 	defer testDB.Close(t)
 	repo := NewSqlcEventRepository(NewQueries(testDB.Conn))
@@ -233,22 +233,19 @@ func TestSqlcEventRepository_FindKnownEventIDsByList_OnlyReturnsProcessedEventsF
 	requestedList := uuid.New()
 	otherList := uuid.New()
 	processedForRequested := makeStoredEventForList(requestedList)
-	unprocessedForRequested := makeStoredEventForList(requestedList)
-	processedForOther := makeStoredEventForList(otherList)
+	stillUnprocessedForRequested := makeStoredEventForList(requestedList)
+	insertedForOther := makeStoredEventForList(otherList)
 
-	for _, e := range []*repositories.StoredEvent{processedForRequested, unprocessedForRequested, processedForOther} {
+	for _, e := range []*repositories.StoredEvent{processedForRequested, stillUnprocessedForRequested, insertedForOther} {
 		_, _, _, err := repo.Insert(ctx, e)
 		require.NoError(t, err)
 	}
-	_, _, err := repo.MarkProcessed(ctx, processedForRequested.EventID)
-	require.NoError(t, err)
-	_, _, err = repo.MarkProcessed(ctx, processedForOther.EventID)
-	require.NoError(t, err)
+	require.NoError(t, repo.MarkProcessed(ctx, processedForRequested.EventID))
 
 	known, err := repo.FindKnownEventIDsByList(ctx, []uuid.UUID{requestedList})
 
 	require.NoError(t, err)
-	assert.Equal(t, []uuid.UUID{processedForRequested.EventID}, known)
+	assert.ElementsMatch(t, []uuid.UUID{processedForRequested.EventID, stillUnprocessedForRequested.EventID}, known)
 }
 
 func TestSqlcEventRepository_FindKnownEventIDsByList_EmptyForUnknownList(t *testing.T) {
@@ -274,11 +271,7 @@ func TestSqlcEventRepository_FindListHeads_ReturnsMaxSeqPerList(t *testing.T) {
 
 	_, _, _, err := repo.Insert(ctx, older)
 	require.NoError(t, err)
-	_, _, _, err = repo.Insert(ctx, newer)
-	require.NoError(t, err)
-	_, _, err = repo.MarkProcessed(ctx, older.EventID)
-	require.NoError(t, err)
-	newerSeq, _, err := repo.MarkProcessed(ctx, newer.EventID)
+	_, newerSeq, _, err := repo.Insert(ctx, newer)
 	require.NoError(t, err)
 
 	heads, err := repo.FindListHeads(ctx, []uuid.UUID{listID})
@@ -290,20 +283,25 @@ func TestSqlcEventRepository_FindListHeads_ReturnsMaxSeqPerList(t *testing.T) {
 	assert.Equal(t, newer.EventID, heads[0].EventID)
 }
 
-func TestSqlcEventRepository_FindListHeads_OmitsListsWithNoProcessedEvents(t *testing.T) {
+// TestSqlcEventRepository_FindListHeads_OmitsListsWithNoEventsAtAll: unlike
+// before migration 00006, an inserted-but-unprocessed event now does have a
+// seq, so it's enough for its list to get a head - only a list with zero
+// events, ever, is omitted.
+func TestSqlcEventRepository_FindListHeads_OmitsListsWithNoEventsAtAll(t *testing.T) {
 	testDB := testhelpers.SetupTestDB(t)
 	defer testDB.Close(t)
 	repo := NewSqlcEventRepository(NewQueries(testDB.Conn))
 	ctx := context.Background()
 	listID := uuid.New()
-	unprocessed := makeStoredEventForList(listID)
-	_, _, _, err := repo.Insert(ctx, unprocessed)
+	event := makeStoredEventForList(listID)
+	_, _, _, err := repo.Insert(ctx, event)
 	require.NoError(t, err)
 
 	heads, err := repo.FindListHeads(ctx, []uuid.UUID{listID, uuid.New()})
 
 	require.NoError(t, err)
-	assert.Empty(t, heads)
+	require.Len(t, heads, 1)
+	assert.Equal(t, listID, heads[0].ListID)
 }
 
 func TestSqlcEventRepository_FindEventsSince_OrdersBySeqAndRespectsSinceSeqAndLimit(t *testing.T) {
@@ -316,15 +314,11 @@ func TestSqlcEventRepository_FindEventsSince_OrdersBySeqAndRespectsSinceSeqAndLi
 	e2 := makeStoredEventForList(listID)
 	e3 := makeStoredEventForList(listID)
 
-	for _, e := range []*repositories.StoredEvent{e1, e2, e3} {
-		_, _, _, err := repo.Insert(ctx, e)
-		require.NoError(t, err)
-	}
-	seq1, _, err := repo.MarkProcessed(ctx, e1.EventID)
+	_, seq1, _, err := repo.Insert(ctx, e1)
 	require.NoError(t, err)
-	_, _, err = repo.MarkProcessed(ctx, e2.EventID)
+	_, _, _, err = repo.Insert(ctx, e2)
 	require.NoError(t, err)
-	seq3, _, err := repo.MarkProcessed(ctx, e3.EventID)
+	_, seq3, _, err := repo.Insert(ctx, e3)
 	require.NoError(t, err)
 
 	page, err := repo.FindEventsSince(ctx, listID, seq1, 1)
@@ -335,6 +329,28 @@ func TestSqlcEventRepository_FindEventsSince_OrdersBySeqAndRespectsSinceSeqAndLi
 	assert.NotEqual(t, seq3, page[0].Seq)
 }
 
+// TestSqlcEventRepository_FindEventsSince_IncludesEventsNotYetMarkedProcessed
+// is the client-visible half of invariant 6.8: pull must not wait on the
+// backend's own (non-authoritative) todo_lists projection - only on the
+// event being durably received.
+func TestSqlcEventRepository_FindEventsSince_IncludesEventsNotYetMarkedProcessed(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcEventRepository(NewQueries(testDB.Conn))
+	ctx := context.Background()
+	listID := uuid.New()
+	event := makeStoredEventForList(listID)
+
+	_, _, _, err := repo.Insert(ctx, event)
+	require.NoError(t, err)
+
+	page, err := repo.FindEventsSince(ctx, listID, 0, 50)
+
+	require.NoError(t, err)
+	require.Len(t, page, 1)
+	assert.Equal(t, event.EventID, page[0].EventID)
+}
+
 func TestSqlcEventRepository_FindEventsSince_EmptyWhenAlreadyCaughtUp(t *testing.T) {
 	testDB := testhelpers.SetupTestDB(t)
 	defer testDB.Close(t)
@@ -342,9 +358,7 @@ func TestSqlcEventRepository_FindEventsSince_EmptyWhenAlreadyCaughtUp(t *testing
 	ctx := context.Background()
 	listID := uuid.New()
 	event := makeStoredEventForList(listID)
-	_, _, _, err := repo.Insert(ctx, event)
-	require.NoError(t, err)
-	seq, _, err := repo.MarkProcessed(ctx, event.EventID)
+	_, seq, _, err := repo.Insert(ctx, event)
 	require.NoError(t, err)
 
 	page, err := repo.FindEventsSince(ctx, listID, seq, 50)
@@ -360,9 +374,7 @@ func TestSqlcEventRepository_FindEventsSince_RoundTripsSeqAndListID(t *testing.T
 	ctx := context.Background()
 	listID := uuid.New()
 	event := makeStoredEventForList(listID)
-	_, _, _, err := repo.Insert(ctx, event)
-	require.NoError(t, err)
-	seq, _, err := repo.MarkProcessed(ctx, event.EventID)
+	_, seq, _, err := repo.Insert(ctx, event)
 	require.NoError(t, err)
 
 	page, err := repo.FindEventsSince(ctx, listID, 0, 50)

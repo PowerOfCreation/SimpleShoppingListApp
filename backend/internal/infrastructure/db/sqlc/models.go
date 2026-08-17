@@ -53,9 +53,10 @@ type Todo struct {
 }
 
 type TodoList struct {
-	ID        uuid.UUID          `db:"id" json:"id"`
-	Name      string             `db:"name" json:"name"`
-	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
-	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
-	DeletedAt pgtype.Timestamptz `db:"deleted_at" json:"deleted_at"`
+	ID             uuid.UUID          `db:"id" json:"id"`
+	Name           string             `db:"name" json:"name"`
+	CreatedAt      pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	UpdatedAt      pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	DeletedAt      pgtype.Timestamptz `db:"deleted_at" json:"deleted_at"`
+	LastAppliedSeq int64              `db:"last_applied_seq" json:"last_applied_seq"`
 }

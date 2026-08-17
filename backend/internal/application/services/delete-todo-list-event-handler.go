@@ -25,6 +25,7 @@ func (h *DeleteToDoListEventHandler) Handle(ctx context.Context, storedEvent *re
 	_, err := h.service.DeleteToDoList(ctx, &command.DeleteToDoListCommand{
 		Id:         storedEvent.AggregateID,
 		OccurredAt: storedEvent.OccurredAt,
+		AtSeq:      storedEvent.Seq,
 	})
 	return err
 }
