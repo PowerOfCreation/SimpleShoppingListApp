@@ -30,7 +30,7 @@ func (s *stubPullEventRepository) Insert(ctx context.Context, event *repositorie
 	panic("Insert not used by SyncPullController")
 }
 
-func (s *stubPullEventRepository) MarkProcessed(ctx context.Context, eventID uuid.UUID) (int64, *uuid.UUID, error) {
+func (s *stubPullEventRepository) MarkProcessed(ctx context.Context, eventID uuid.UUID) error {
 	panic("MarkProcessed not used by SyncPullController")
 }
 

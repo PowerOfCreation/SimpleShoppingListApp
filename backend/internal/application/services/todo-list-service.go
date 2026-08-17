@@ -34,7 +34,7 @@ func (s *ToDoListService) CreateToDoList(ctx context.Context, todoListCommand *c
 		return nil, interfaces.Permanent(err)
 	}
 
-	if err := s.todoListRepository.Create(ctx, validatedToDoList); err != nil {
+	if err := s.todoListRepository.Create(ctx, validatedToDoList, todoListCommand.AtSeq); err != nil {
 		return nil, err
 	}
 
@@ -60,7 +60,7 @@ func (s *ToDoListService) UpdateToDoList(ctx context.Context, todoListCommand *c
 		return nil, interfaces.Permanent(err)
 	}
 
-	if err := s.todoListRepository.Update(ctx, validatedToDoList); err != nil {
+	if err := s.todoListRepository.Update(ctx, validatedToDoList, todoListCommand.AtSeq); err != nil {
 		return nil, err
 	}
 
@@ -76,7 +76,7 @@ func (s *ToDoListService) UpdateToDoList(ctx context.Context, todoListCommand *c
 // prior state to overwrite. The delete itself is idempotent (see
 // DeleteToDoList in sql/queries/todo-lists.sql).
 func (s *ToDoListService) DeleteToDoList(ctx context.Context, todoListCommand *command.DeleteToDoListCommand) (*command.DeleteToDoListCommandResult, error) {
-	if err := s.todoListRepository.Delete(ctx, todoListCommand.Id, todoListCommand.OccurredAt); err != nil {
+	if err := s.todoListRepository.Delete(ctx, todoListCommand.Id, todoListCommand.OccurredAt, todoListCommand.AtSeq); err != nil {
 		return nil, err
 	}
 

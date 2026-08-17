@@ -13,13 +13,15 @@ import (
 )
 
 const createToDoList = `-- name: CreateToDoList :exec
-INSERT INTO todo_lists (id, name, created_at, updated_at)
-VALUES ($1, $2, $3, $4)
+INSERT INTO todo_lists (id, name, created_at, updated_at, last_applied_seq)
+VALUES ($1, $2, $3, $4, $5)
 ON CONFLICT (id) DO UPDATE
   SET name = EXCLUDED.name,
       created_at = EXCLUDED.created_at,
-      updated_at = EXCLUDED.updated_at
+      updated_at = EXCLUDED.updated_at,
+      last_applied_seq = EXCLUDED.last_applied_seq
   WHERE todo_lists.deleted_at IS NULL
+    AND todo_lists.last_applied_seq < EXCLUDED.last_applied_seq
 `
 
 type CreateToDoListParams struct {
@@ -27,42 +29,52 @@ type CreateToDoListParams struct {
 	Name      string             `db:"name" json:"name"`
 	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	AtSeq     int64              `db:"at_seq" json:"at_seq"`
 }
 
 // Projection, not an aggregate: a re-delivered created may update an
-// existing row, but must never resurrect one that's already tombstoned.
+// existing row, but must never resurrect a tombstoned one (deleted_at IS
+// NULL) or rewind one a later event already applied (last_applied_seq) -
+// see migration 00006-events-seq-at-insert. The two guards are not
+// redundant: deleted_at blocks a *newer* create from reviving a tombstone
+// (terminal, regardless of seq); last_applied_seq blocks an *older* event
+// (e.g. a create the sweep retried after a later update already landed)
+// from clobbering newer content.
 func (q *Queries) CreateToDoList(ctx context.Context, arg CreateToDoListParams) error {
 	_, err := q.db.Exec(ctx, createToDoList,
 		arg.ID,
 		arg.Name,
 		arg.CreatedAt,
 		arg.UpdatedAt,
+		arg.AtSeq,
 	)
 	return err
 }
 
 const deleteToDoList = `-- name: DeleteToDoList :exec
-INSERT INTO todo_lists (id, name, created_at, updated_at, deleted_at)
-VALUES ($1, '', $2, $2, $2)
+INSERT INTO todo_lists (id, name, created_at, updated_at, deleted_at, last_applied_seq)
+VALUES ($1, '', $2, $2, $2, $3)
 ON CONFLICT (id) DO UPDATE
-  SET deleted_at = EXCLUDED.deleted_at
+  SET deleted_at = EXCLUDED.deleted_at,
+      last_applied_seq = EXCLUDED.last_applied_seq
   WHERE todo_lists.deleted_at IS NULL
 `
 
 type DeleteToDoListParams struct {
 	ID           uuid.UUID          `db:"id" json:"id"`
 	TombstonedAt pgtype.Timestamptz `db:"tombstoned_at" json:"tombstoned_at"`
+	AtSeq        int64              `db:"at_seq" json:"at_seq"`
 }
 
-// Tombstone upsert: a deleted event that arrives before its created (the
-// unprocessed-event sweep can replay a previously-failed create after a
-// later delete already landed) still plants the tombstone row itself, so
-// the later created bounces off the deleted_at IS NULL guard above. The
-// WHERE guard in DO UPDATE makes this idempotent - the first tombstone
-// timestamp sticks. name is left empty for a list never otherwise seen;
-// that row is unreadable (every read filters deleted_at IS NULL).
+// Tombstone upsert: idempotent via the deleted_at IS NULL guard - the
+// first tombstone timestamp sticks, deleted_at is terminal (see 6.2 in
+// sync-sharing-target.md). name is left empty for a list never otherwise
+// seen; that row is unreadable (every read filters deleted_at IS NULL).
+// last_applied_seq is set here too, purely so a row this query created can
+// still report an accurate watermark if ever inspected outside the
+// deleted_at IS NULL read path.
 func (q *Queries) DeleteToDoList(ctx context.Context, arg DeleteToDoListParams) error {
-	_, err := q.db.Exec(ctx, deleteToDoList, arg.ID, arg.TombstonedAt)
+	_, err := q.db.Exec(ctx, deleteToDoList, arg.ID, arg.TombstonedAt, arg.AtSeq)
 	return err
 }
 
@@ -93,19 +105,28 @@ func (q *Queries) GetToDoListById(ctx context.Context, id uuid.UUID) (GetToDoLis
 
 const updateToDoList = `-- name: UpdateToDoList :exec
 UPDATE todo_lists
-SET name = $2, updated_at = $3
-WHERE id = $1 AND todo_lists.deleted_at IS NULL
+SET name = $2, updated_at = $3, last_applied_seq = $4
+WHERE id = $1
+  AND deleted_at IS NULL
+  AND last_applied_seq < $4
 `
 
 type UpdateToDoListParams struct {
 	ID        uuid.UUID          `db:"id" json:"id"`
 	Name      string             `db:"name" json:"name"`
 	UpdatedAt pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
+	AtSeq     int64              `db:"at_seq" json:"at_seq"`
 }
 
 // Missing or already-deleted row: zero rows affected, not an error - the
-// row is a rebuildable projection, not the authority.
+// row is a rebuildable projection, not the authority. last_applied_seq
+// guard: see CreateToDoList above.
 func (q *Queries) UpdateToDoList(ctx context.Context, arg UpdateToDoListParams) error {
-	_, err := q.db.Exec(ctx, updateToDoList, arg.ID, arg.Name, arg.UpdatedAt)
+	_, err := q.db.Exec(ctx, updateToDoList,
+		arg.ID,
+		arg.Name,
+		arg.UpdatedAt,
+		arg.AtSeq,
+	)
 	return err
 }

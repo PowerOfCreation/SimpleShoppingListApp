@@ -3,11 +3,8 @@ package postgres
 import (
 	"context"
 	"encoding/json"
-	"errors"
-	"fmt"
 
 	"github.com/google/uuid"
-	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
@@ -49,20 +46,8 @@ func (r *SqlcEventRepository) Insert(
 func (r *SqlcEventRepository) MarkProcessed(
 	ctx context.Context,
 	eventID uuid.UUID,
-) (int64, *uuid.UUID, error) {
-	row, err := r.queries.MarkEventProcessed(ctx, eventID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			// Zero rows means the WHERE clause (id = $1 AND seq IS NULL)
-			// matched nothing - either the id doesn't exist, or it was
-			// already marked processed. Both are bugs given the single
-			// ingestor writer this relies on (see the interface doc), not
-			// a race to quietly swallow.
-			return 0, nil, fmt.Errorf("event %s was already processed or does not exist", eventID)
-		}
-		return 0, nil, err
-	}
-	return row.Seq.Int64, uuidPtrFromPgtype(row.ListID), nil
+) error {
+	return r.queries.MarkEventProcessed(ctx, eventID)
 }
 
 func (r *SqlcEventRepository) FindUnprocessed(
@@ -84,6 +69,7 @@ func (r *SqlcEventRepository) FindUnprocessed(
 			Payload:       json.RawMessage(row.Payload),
 			OccurredAt:    timeFromTimestamptz(row.OccurredAt),
 			ClientID:      row.ClientID,
+			Seq:           row.Seq.Int64,
 		}
 	}
 	return events, nil

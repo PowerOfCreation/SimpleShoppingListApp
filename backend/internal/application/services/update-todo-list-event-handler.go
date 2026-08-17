@@ -34,6 +34,7 @@ func (h *UpdateToDoListEventHandler) Handle(ctx context.Context, storedEvent *re
 		Id:         storedEvent.AggregateID,
 		Name:       event.Name,
 		OccurredAt: storedEvent.OccurredAt,
+		AtSeq:      storedEvent.Seq,
 	})
 	return err
 }

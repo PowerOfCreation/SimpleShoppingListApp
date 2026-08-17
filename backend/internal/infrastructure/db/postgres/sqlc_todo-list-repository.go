@@ -21,12 +21,13 @@ func NewSqlcToDoListRepository(queries *db.Queries) repositories.ToDoListReposit
 	return &SqlcToDoListRepository{queries: queries}
 }
 
-func (repo *SqlcToDoListRepository) Create(ctx context.Context, toDoList *entities.ValidatedToDoList) error {
+func (repo *SqlcToDoListRepository) Create(ctx context.Context, toDoList *entities.ValidatedToDoList, atSeq int64) error {
 	return repo.queries.CreateToDoList(ctx, db.CreateToDoListParams{
 		ID:        toDoList.Id,
 		Name:      toDoList.Name,
 		CreatedAt: timestamptzFromTime(toDoList.CreatedAt),
 		UpdatedAt: timestamptzFromTime(toDoList.UpdatedAt),
+		AtSeq:     atSeq,
 	})
 }
 
@@ -45,18 +46,20 @@ func (repo *SqlcToDoListRepository) FindById(ctx context.Context, id uuid.UUID) 
 	return fromSqlcToDoListRow(&row), nil
 }
 
-func (repo *SqlcToDoListRepository) Update(ctx context.Context, toDoList *entities.ValidatedToDoList) error {
+func (repo *SqlcToDoListRepository) Update(ctx context.Context, toDoList *entities.ValidatedToDoList, atSeq int64) error {
 	return repo.queries.UpdateToDoList(ctx, db.UpdateToDoListParams{
 		ID:        toDoList.Id,
 		Name:      toDoList.Name,
 		UpdatedAt: timestamptzFromTime(toDoList.UpdatedAt),
+		AtSeq:     atSeq,
 	})
 }
 
-func (repo *SqlcToDoListRepository) Delete(ctx context.Context, id uuid.UUID, deletedAt time.Time) error {
+func (repo *SqlcToDoListRepository) Delete(ctx context.Context, id uuid.UUID, deletedAt time.Time, atSeq int64) error {
 	return repo.queries.DeleteToDoList(ctx, db.DeleteToDoListParams{
 		ID:           id,
 		TombstonedAt: timestamptzFromTime(deletedAt),
+		AtSeq:        atSeq,
 	})
 }
 

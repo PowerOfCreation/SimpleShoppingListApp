@@ -28,7 +28,7 @@ func (s *stubEventRepository) Insert(ctx context.Context, event *repositories.St
 	panic("Insert not used by SyncStateController")
 }
 
-func (s *stubEventRepository) MarkProcessed(ctx context.Context, eventID uuid.UUID) (int64, *uuid.UUID, error) {
+func (s *stubEventRepository) MarkProcessed(ctx context.Context, eventID uuid.UUID) error {
 	panic("MarkProcessed not used by SyncStateController")
 }
 
