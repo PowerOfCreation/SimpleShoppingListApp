@@ -50,8 +50,15 @@ END $$;
 -- current row.
 ALTER TABLE todo_lists ADD COLUMN last_applied_seq BIGINT NOT NULL DEFAULT 0;
 
+-- Filtered on processed_at, not seq: the backfill just above gave every
+-- still-unprocessed row a seq too (that's the whole point of this
+-- migration), so seq IS NOT NULL no longer means "was actually applied to
+-- a projection". A row whose handler never ran must not count toward this
+-- list's watermark - otherwise the eventual real apply of that event (via
+-- the sweep) would find its own seq already "covered" and silently no-op,
+-- permanently losing its effect.
 UPDATE todo_lists t
 SET last_applied_seq = COALESCE(
-  (SELECT MAX(e.seq) FROM events e WHERE e.list_id = t.id AND e.seq IS NOT NULL),
+  (SELECT MAX(e.seq) FROM events e WHERE e.list_id = t.id AND e.processed_at IS NOT NULL),
   0
 );

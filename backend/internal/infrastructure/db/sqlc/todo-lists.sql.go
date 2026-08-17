@@ -70,9 +70,25 @@ type DeleteToDoListParams struct {
 // first tombstone timestamp sticks, deleted_at is terminal (see 6.2 in
 // sync-sharing-target.md). name is left empty for a list never otherwise
 // seen; that row is unreadable (every read filters deleted_at IS NULL).
-// last_applied_seq is set here too, purely so a row this query created can
-// still report an accurate watermark if ever inspected outside the
-// deleted_at IS NULL read path.
+//
+// Deliberately no last_applied_seq guard here, unlike Create/Update above:
+// a delete must apply even when its own seq is *lower* than what's already
+// landed, e.g. a delete durably received early but stuck on a transient
+// failure until a sweep retries it, after an update with a higher seq
+// already applied live. A full in-order rebuild of the same history would
+// apply the delete first and then reject that update via its own
+// deleted_at IS NULL guard (see 6.1) - the frontend's handleDeleted
+// (ingredient-list-projection.ts) confirms this: it hard-deletes the row,
+// so a later-processed update in the same rebuild just no-ops against a
+// row that no longer exists. Guarding this delete on last_applied_seq
+// would make this projection diverge from that outcome instead of
+// converging to it - the seq comparison the guard would perform is exactly
+// backwards for a terminal write. last_applied_seq is still set here (to
+// at_seq, unconditionally) purely so a row this query creates or touches
+// reports an accurate watermark if ever inspected outside the normal
+// deleted_at IS NULL read path; no future guard check ever consults it
+// again once deleted_at is set, since deleted_at IS NULL is already the
+// universal gate ahead of it on every other write.
 func (q *Queries) DeleteToDoList(ctx context.Context, arg DeleteToDoListParams) error {
 	_, err := q.db.Exec(ctx, deleteToDoList, arg.ID, arg.TombstonedAt, arg.AtSeq)
 	return err

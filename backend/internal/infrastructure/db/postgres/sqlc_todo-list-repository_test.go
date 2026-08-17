@@ -212,3 +212,38 @@ func TestSqlcToDoListRepository_Create_WithOlderSeqThanAlreadyAppliedIsANoOp(t *
 	require.NotNil(t, found)
 	assert.Equal(t, "Aldi", found.Name)
 }
+
+// TestSqlcToDoListRepository_Delete_WithOlderSeqThanAnAlreadyAppliedUpdateStillTombstones
+// documents a deliberate asymmetry with Create/Update's monotonicity guard
+// above: Delete has no last_applied_seq guard, and must still tombstone
+// even when its own seq is *lower* than what's already landed - e.g. a
+// delete durably received early but stuck on a transient failure until a
+// sweep retries it, after an update with a higher seq already applied
+// live. A full in-order rebuild of [create, delete, update] would apply
+// the delete before the update and reject the update via its own
+// deleted_at IS NULL guard (see 6.1/6.2 in sync-sharing-target.md, and the
+// fuller rationale on DeleteToDoList in sql/queries/todo-lists.sql) -
+// guarding this delete on last_applied_seq would make this projection
+// diverge from that outcome instead of converging to it.
+func TestSqlcToDoListRepository_Delete_WithOlderSeqThanAnAlreadyAppliedUpdateStillTombstones(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcToDoListRepository(NewQueries(testDB.Conn))
+	ctx := context.Background()
+
+	toDoList := entities.NewToDoListAt(uuid.New(), "Rewe", time.Now().UTC())
+	validated, err := entities.NewValidatedToDoList(toDoList)
+	require.NoError(t, err)
+	require.NoError(t, repo.Create(ctx, validated, 1))
+
+	updated := entities.NewToDoListAt(toDoList.Id, "Aldi", time.Now().UTC())
+	validatedUpdated, err := entities.NewValidatedToDoList(updated)
+	require.NoError(t, err)
+	require.NoError(t, repo.Update(ctx, validatedUpdated, 10))
+
+	require.NoError(t, repo.Delete(ctx, toDoList.Id, time.Now().UTC(), 3))
+
+	found, err := repo.FindById(ctx, toDoList.Id)
+	require.NoError(t, err)
+	assert.Nil(t, found)
+}

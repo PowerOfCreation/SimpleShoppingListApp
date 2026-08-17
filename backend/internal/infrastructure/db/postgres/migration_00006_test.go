@@ -134,6 +134,55 @@ func TestMigration00006_BackfillsLastAppliedSeqFromProcessedEvents(t *testing.T)
 	assert.Equal(t, seq, lastAppliedSeq)
 }
 
+// TestMigration00006_LastAppliedSeqBackfillExcludesUnprocessedEvents is the
+// regression test for a review finding: computing last_applied_seq from
+// MAX(seq) without filtering to processed_at IS NOT NULL is wrong once
+// this same migration's seq backfill (above) has already given every
+// still-unprocessed row a seq too. An event whose handler never ran must
+// not count toward the watermark - otherwise its eventual real apply (via
+// the sweep) would find its own seq already "covered" and silently no-op,
+// permanently losing that event's effect.
+func TestMigration00006_LastAppliedSeqBackfillExcludesUnprocessedEvents(t *testing.T) {
+	testDB := testhelpers.SetupTestDBAtMigration(t, "00005-list-sharing.up.sql")
+	defer testDB.Close(t)
+
+	listID := uuid.New()
+	_, err := testDB.Conn.Exec(context.Background(),
+		`INSERT INTO todo_lists (id, name, created_at, updated_at) VALUES ($1, 'Rewe', NOW(), NOW())`,
+		listID,
+	)
+	require.NoError(t, err)
+
+	// A processed event that actually landed...
+	processedSeq := nextSeqForTest(t, testDB)
+	_, err = testDB.Conn.Exec(context.Background(),
+		`INSERT INTO events (id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, received_at, client_id, processed_at, seq)
+		 VALUES ($1, 'todo_list.updated', $2, 'todo_list', $2, '{"name":"Rewe"}', NOW(), NOW(), 'client-1', NOW(), $3)`,
+		uuid.New(), listID, processedSeq,
+	)
+	require.NoError(t, err)
+
+	// ...and a later-arriving event for the same list that was still stuck
+	// (transient failure) at migration time - no seq yet, backfilled below
+	// to a *higher* value than the processed event's.
+	_, err = testDB.Conn.Exec(context.Background(),
+		`INSERT INTO events (id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, received_at, client_id)
+		 VALUES ($1, 'todo_list.updated', $2, 'todo_list', $2, '{"name":"Aldi"}', NOW(), NOW() + interval '1 second', 'client-1')`,
+		uuid.New(), listID,
+	)
+	require.NoError(t, err)
+
+	testDB.ApplyMigration(t, "00006-events-seq-at-insert.up.sql")
+
+	var lastAppliedSeq int64
+	err = testDB.Conn.QueryRow(context.Background(),
+		`SELECT last_applied_seq FROM todo_lists WHERE id = $1`, listID).Scan(&lastAppliedSeq)
+	require.NoError(t, err)
+	// Must be the processed event's seq, not the higher (backfilled) seq of
+	// the event that was never actually applied.
+	assert.Equal(t, processedSeq, lastAppliedSeq)
+}
+
 func TestMigration00006_LastAppliedSeqDefaultsToZeroForAListWithNoEvents(t *testing.T) {
 	testDB := testhelpers.SetupTestDBAtMigration(t, "00005-list-sharing.up.sql")
 	defer testDB.Close(t)

@@ -36,11 +36,15 @@ WHERE processed_at IS NULL
 ORDER BY seq ASC;
 
 -- name: GetKnownEventIdsByList :many
--- Which of a set of lists' events this server has durably processed - the
--- reconcile self-heal endpoint's query. Keyed by list_id rather than
--- aggregate_id: aggregate_id is the ingredient id for ingredient.* events,
--- so a single list can span arbitrarily many aggregate_ids, but always has
--- exactly one list_id.
+-- Which of a set of lists' events this server has durably received - the
+-- reconcile self-heal endpoint's query. seq IS NOT NULL as of migration
+-- 00006-events-seq-at-insert means "durably inserted", not "projection
+-- applied" - an event whose handler is still stuck (or permanently failed)
+-- is "known" here just the same, since the client only needs confirmation
+-- the server has it, not that the backend's own todo_lists projection
+-- reflects it yet. Keyed by list_id rather than aggregate_id: aggregate_id
+-- is the ingredient id for ingredient.* events, so a single list can span
+-- arbitrarily many aggregate_ids, but always has exactly one list_id.
 SELECT id
 FROM events
 WHERE list_id = ANY(sqlc.arg(list_ids)::uuid[])
@@ -48,9 +52,9 @@ WHERE list_id = ANY(sqlc.arg(list_ids)::uuid[])
 
 -- name: GetListHeads :many
 -- The latest (list_id, seq, id) per requested list - "what's the most
--- recent event you have for this list". Lists with zero processed events
--- simply produce no row; the controller fills in the seq=0 head itself so
--- every requested id still appears in the response.
+-- recent event you have for this list". Lists with zero durably received
+-- events simply produce no row; the controller fills in the seq=0 head
+-- itself so every requested id still appears in the response.
 SELECT DISTINCT ON (list_id) list_id, seq, id
 FROM events
 WHERE list_id = ANY(sqlc.arg(list_ids)::uuid[])

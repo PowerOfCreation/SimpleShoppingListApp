@@ -36,9 +36,25 @@ type Querier interface {
 	// first tombstone timestamp sticks, deleted_at is terminal (see 6.2 in
 	// sync-sharing-target.md). name is left empty for a list never otherwise
 	// seen; that row is unreadable (every read filters deleted_at IS NULL).
-	// last_applied_seq is set here too, purely so a row this query created can
-	// still report an accurate watermark if ever inspected outside the
-	// deleted_at IS NULL read path.
+	//
+	// Deliberately no last_applied_seq guard here, unlike Create/Update above:
+	// a delete must apply even when its own seq is *lower* than what's already
+	// landed, e.g. a delete durably received early but stuck on a transient
+	// failure until a sweep retries it, after an update with a higher seq
+	// already applied live. A full in-order rebuild of the same history would
+	// apply the delete first and then reject that update via its own
+	// deleted_at IS NULL guard (see 6.1) - the frontend's handleDeleted
+	// (ingredient-list-projection.ts) confirms this: it hard-deletes the row,
+	// so a later-processed update in the same rebuild just no-ops against a
+	// row that no longer exists. Guarding this delete on last_applied_seq
+	// would make this projection diverge from that outcome instead of
+	// converging to it - the seq comparison the guard would perform is exactly
+	// backwards for a terminal write. last_applied_seq is still set here (to
+	// at_seq, unconditionally) purely so a row this query creates or touches
+	// reports an accurate watermark if ever inspected outside the normal
+	// deleted_at IS NULL read path; no future guard check ever consults it
+	// again once deleted_at is set, since deleted_at IS NULL is already the
+	// universal gate ahead of it on every other write.
 	DeleteToDoList(ctx context.Context, arg DeleteToDoListParams) error
 	// An invite is active if it hasn't been revoked and hasn't expired as of
 	// sqlc.arg(now) - the caller passes the current time rather than this query
@@ -51,16 +67,20 @@ type Querier interface {
 	// sync-pull-controller.go) rather than asking for limit+1 here, keeping
 	// this query's shape identical to what it returns.
 	GetEventsSince(ctx context.Context, arg GetEventsSinceParams) ([]GetEventsSinceRow, error)
-	// Which of a set of lists' events this server has durably processed - the
-	// reconcile self-heal endpoint's query. Keyed by list_id rather than
-	// aggregate_id: aggregate_id is the ingredient id for ingredient.* events,
-	// so a single list can span arbitrarily many aggregate_ids, but always has
-	// exactly one list_id.
+	// Which of a set of lists' events this server has durably received - the
+	// reconcile self-heal endpoint's query. seq IS NOT NULL as of migration
+	// 00006-events-seq-at-insert means "durably inserted", not "projection
+	// applied" - an event whose handler is still stuck (or permanently failed)
+	// is "known" here just the same, since the client only needs confirmation
+	// the server has it, not that the backend's own todo_lists projection
+	// reflects it yet. Keyed by list_id rather than aggregate_id: aggregate_id
+	// is the ingredient id for ingredient.* events, so a single list can span
+	// arbitrarily many aggregate_ids, but always has exactly one list_id.
 	GetKnownEventIdsByList(ctx context.Context, listIds []uuid.UUID) ([]uuid.UUID, error)
 	// The latest (list_id, seq, id) per requested list - "what's the most
-	// recent event you have for this list". Lists with zero processed events
-	// simply produce no row; the controller fills in the seq=0 head itself so
-	// every requested id still appears in the response.
+	// recent event you have for this list". Lists with zero durably received
+	// events simply produce no row; the controller fills in the seq=0 head
+	// itself so every requested id still appears in the response.
 	GetListHeads(ctx context.Context, listIds []uuid.UUID) ([]GetListHeadsRow, error)
 	GetListInviteById(ctx context.Context, id uuid.UUID) (ListInvite, error)
 	GetListInviteByTokenHash(ctx context.Context, tokenHash string) (ListInvite, error)
