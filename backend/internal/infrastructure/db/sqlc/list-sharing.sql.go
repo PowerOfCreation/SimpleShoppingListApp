@@ -65,6 +65,43 @@ func (q *Queries) ClaimListOwnership(ctx context.Context, arg ClaimListOwnership
 	return list_id, err
 }
 
+const getAccessibleListIDs = `-- name: GetAccessibleListIDs :many
+SELECT list_id
+FROM list_members
+WHERE list_id = ANY($1::uuid[]) AND user_id = $2
+`
+
+type GetAccessibleListIDsParams struct {
+	ListIds []uuid.UUID `db:"list_ids" json:"list_ids"`
+	UserID  string      `db:"user_id" json:"user_id"`
+}
+
+// Which of the given list ids the caller is a member (owner or member) of -
+// the filter behind every read path (ListAccessService.FilterAccessible).
+// Deliberately returns a subset rather than erroring on a list the caller
+// has no access to: a batch read (e.g. /sync/head) must not turn into an
+// enumeration oracle that tells a caller "that id exists but isn't yours"
+// vs. "that id doesn't exist" - both simply come back missing.
+func (q *Queries) GetAccessibleListIDs(ctx context.Context, arg GetAccessibleListIDsParams) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, getAccessibleListIDs, arg.ListIds, arg.UserID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var list_id uuid.UUID
+		if err := rows.Scan(&list_id); err != nil {
+			return nil, err
+		}
+		items = append(items, list_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getActiveListInvites = `-- name: GetActiveListInvites :many
 SELECT id, list_id, token_hash, created_by, created_at, expires_at, revoked_at
 FROM list_invites
@@ -103,6 +140,37 @@ func (q *Queries) GetActiveListInvites(ctx context.Context, arg GetActiveListInv
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const getClaimedListIDs = `-- name: GetClaimedListIDs :many
+SELECT DISTINCT list_id
+FROM list_members
+WHERE list_id = ANY($1::uuid[])
+`
+
+// Which of the given list ids already have at least one member, regardless
+// of who - the pre-check behind ListAccessService.AuthorizeWrite's claim
+// phase. Distinguishes "nobody has pushed to this list yet" (eligible for
+// ClaimOwnershipIfUnowned) from "someone else already owns it" (must be
+// rejected) without granting access or claiming anything itself.
+func (q *Queries) GetClaimedListIDs(ctx context.Context, listIds []uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, getClaimedListIDs, listIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var list_id uuid.UUID
+		if err := rows.Scan(&list_id); err != nil {
+			return nil, err
+		}
+		items = append(items, list_id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

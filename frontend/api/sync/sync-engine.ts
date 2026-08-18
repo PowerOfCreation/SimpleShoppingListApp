@@ -1,10 +1,12 @@
 import { OutboxRepository } from "@/database/outbox-repository"
 import { EventRepository } from "@/database/event-repository"
 import { SyncCursorRepository } from "@/database/sync-cursor-repository"
+import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
 import { SyncClient } from "@/api/sync/sync-client"
 import { EventApplier } from "@/api/sync/event-applier"
 import { createLogger } from "@/api/common/logger"
-import { SYNCABLE_EVENT_TYPES } from "@/types/DomainEvent"
+import { notifySyncListsChanged } from "@/api/sync/sync-events"
+import { DomainEventRow, SYNCABLE_EVENT_TYPES } from "@/types/DomainEvent"
 
 const logger = createLogger("SyncEngine")
 
@@ -20,6 +22,32 @@ function chunk<T>(items: T[], size: number): T[][] {
     chunks.push(items.slice(i, i + size))
   }
   return chunks
+}
+
+/**
+ * Groups events by list_id, preserving each group's relative order - the
+ * unit flush() actually sends over the wire. Grouping (rather than one
+ * sendEvents call per outbox page) is what keeps one list's rejected batch
+ * from blocking every other list's events that happened to share a page
+ * (see EventController.AuthorizeWrite on the backend: it authorizes and
+ * enqueues a whole POST /events batch atomically, so mixing lists in one
+ * call means one forbidden list fails the lot). Events with no list_id
+ * (older rows, or one that never resolved - see DomainEventRow.list_id)
+ * form their own group under the `null` key.
+ */
+function groupByListId(
+  events: DomainEventRow[]
+): Map<string | null, DomainEventRow[]> {
+  const groups = new Map<string | null, DomainEventRow[]>()
+  for (const event of events) {
+    const group = groups.get(event.list_id)
+    if (group) {
+      group.push(event)
+    } else {
+      groups.set(event.list_id, [event])
+    }
+  }
+  return groups
 }
 
 // Safety valve so one flush() call can't be starved by an unbounded
@@ -43,6 +71,7 @@ export class SyncEngine {
     private readonly client: SyncClient,
     private readonly cursorRepository: SyncCursorRepository,
     private readonly eventApplier: EventApplier,
+    private readonly listSyncSettingsRepository: ListSyncSettingsRepository,
     private readonly batchLimit: number = DEFAULT_BATCH_LIMIT,
     private readonly pullPageLimit: number = DEFAULT_PULL_PAGE_LIMIT
   ) {}
@@ -51,9 +80,13 @@ export class SyncEngine {
    * Drains the outbox via getPending's keyset pagination, not a naive
    * `while (pending.length > 0)` loop - rows never leave "pending" as a
    * side effect of sending, only via ack/reconcile, so the keyset cursor
-   * (not row status) is what proves progress. Stops on a short page, a
-   * send failure, or after MAX_DRAIN_BATCHES pages. See
-   * sync-design-decisions.md.
+   * (not row status) is what proves progress. Each page is sent one
+   * list_id-group at a time (see groupByListId) and, on a non-retryable
+   * rejection, that list is given up on (giveUpOnGroup) rather than left to
+   * retry forever - a group failing never stops the rest of the page or the
+   * next page from being tried, so a single unsyncable list can no longer
+   * block every other list behind it in the outbox. Stops on a short page
+   * or after MAX_DRAIN_BATCHES pages. See sync-design-decisions.md.
    */
   async flush(): Promise<void> {
     if (this.flushing) {
@@ -87,43 +120,23 @@ export class SyncEngine {
         after = page[page.length - 1].event_id
 
         const pending = page.filter((row) => !this.inFlight.has(row.event_id))
-        if (pending.length === 0) {
-          continue
-        }
-
-        const eventIds = pending.map((row) => row.event_id)
-        const eventsResult = await this.eventRepository.getByEventIds(eventIds)
-        if (!eventsResult.success) {
-          logger.error(
-            "Failed to load events for pending outbox rows",
-            eventsResult.getError()
-          )
-          return
-        }
-        const events = eventsResult.getValue()!
-        if (events.length === 0) {
-          continue
-        }
-
-        eventIds.forEach((id) => this.inFlight.add(id))
-        let sendFailed = false
-        try {
-          const sendResult = await this.client.sendEvents(events)
-          const now = Date.now()
-          for (const id of eventIds) {
-            await this.outboxRepository.bumpAttempt(id, now)
+        if (pending.length > 0) {
+          const eventIds = pending.map((row) => row.event_id)
+          const eventsResult =
+            await this.eventRepository.getByEventIds(eventIds)
+          if (!eventsResult.success) {
+            logger.error(
+              "Failed to load events for pending outbox rows",
+              eventsResult.getError()
+            )
+            return
           }
-          if (!sendResult.success) {
-            logger.warn("Failed to send events", sendResult.getError())
-            sendFailed = true
+          const events = eventsResult.getValue()!
+          for (const [listId, group] of groupByListId(events)) {
+            await this.sendGroup(listId, group)
           }
-        } finally {
-          eventIds.forEach((id) => this.inFlight.delete(id))
         }
 
-        if (sendFailed) {
-          return
-        }
         if (page.length < this.batchLimit) {
           // Short page - nothing more to drain right now.
           return
@@ -132,6 +145,83 @@ export class SyncEngine {
     } finally {
       this.flushing = false
     }
+  }
+
+  /** Sends one list_id-group of events and bumps their attempt count, regardless of outcome - a non-retryable rejection gives up on the group instead of leaving it pending forever. */
+  private async sendGroup(
+    listId: string | null,
+    group: DomainEventRow[]
+  ): Promise<void> {
+    const eventIds = group.map((event) => event.event_id)
+    eventIds.forEach((id) => this.inFlight.add(id))
+    try {
+      const sendResult = await this.client.sendEvents(group)
+      const now = Date.now()
+      for (const id of eventIds) {
+        await this.outboxRepository.bumpAttempt(id, now)
+      }
+      if (!sendResult.success) {
+        const error = sendResult.getError()
+        logger.warn(
+          `Failed to send events for list ${listId ?? "(none)"}`,
+          error
+        )
+        if (!error.retryable) {
+          await this.giveUpOnGroup(listId, eventIds)
+        }
+      }
+    } finally {
+      eventIds.forEach((id) => this.inFlight.delete(id))
+    }
+  }
+
+  /**
+   * A non-retryable rejection (see SyncClient.nonRetryableError) means
+   * resending this exact group can never succeed - most commonly, a 403
+   * because this device lost access to listId (removed as a member,
+   * account switch on a device with stale local lists). Rather than leave
+   * it pending forever, drop it: if listId is known, disable sync for the
+   * whole list (not just this group - a fresh push next time would just
+   * repeat the same 403) and cancel whatever else of it is still queued;
+   * otherwise (list_id never resolved locally - see DomainEventRow.list_id)
+   * there's no list-level setting to flip, so just drop these specific rows.
+   */
+  private async giveUpOnGroup(
+    listId: string | null,
+    eventIds: string[]
+  ): Promise<void> {
+    if (listId === null) {
+      const cancelResult = await this.outboxRepository.cancelEventIds(eventIds)
+      if (!cancelResult.success) {
+        logger.error(
+          "Failed to cancel permanently rejected outbox rows without a list_id",
+          cancelResult.getError()
+        )
+      }
+      return
+    }
+
+    logger.warn(
+      `List ${listId} was permanently rejected by the server - disabling sync for it locally`
+    )
+    const disableResult = await this.listSyncSettingsRepository.setEnabled(
+      listId,
+      false
+    )
+    if (!disableResult.success) {
+      logger.error(
+        `Failed to disable sync for list ${listId} after a permanent rejection`,
+        disableResult.getError()
+      )
+    }
+    const cancelResult = await this.outboxRepository.cancelForList(listId)
+    if (!cancelResult.success) {
+      logger.error(
+        `Failed to cancel pending outbox rows for list ${listId}`,
+        cancelResult.getError()
+      )
+    }
+    notifySyncListsChanged()
   }
 
   /**
@@ -168,6 +258,16 @@ export class SyncEngine {
    * because seq === null is also the normal state of a just-acked,
    * not-yet-pulled event). Keyed by list_id, not aggregate_id - see
    * sync-design-decisions.md.
+   *
+   * A list this device has lost access to (removed as a member, account
+   * switch on a device with stale local lists) looks like "server is
+   * missing everything" here, since /sync/state can't tell "not yours" from
+   * "you have nothing yet" (see ListAccessService.FilterAccessible - no
+   * enumeration oracle). reconcileBatch still requeues it every call, but
+   * that's not an infinite loop in practice: the flush() below always
+   * attempts to push whatever was just requeued, and sendGroup's 403
+   * handling (giveUpOnGroup) disables sync for the list on that attempt -
+   * removing it from the enabled set future reconcile calls iterate over.
    */
   async reconcile(listIds: string[]): Promise<void> {
     if (listIds.length === 0) {

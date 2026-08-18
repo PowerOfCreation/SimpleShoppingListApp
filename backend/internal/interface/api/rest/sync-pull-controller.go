@@ -1,12 +1,14 @@
 package rest
 
 import (
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/interfaces"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/rest/dto/mapper"
@@ -22,29 +24,36 @@ const (
 type SyncPullController struct {
 	logger    *slog.Logger
 	eventRepo repositories.EventRepository
+	access    interfaces.ListAccessService
 }
 
 func NewSyncPullController(
 	e *echo.Echo,
 	logger *slog.Logger,
 	eventRepo repositories.EventRepository,
+	access interfaces.ListAccessService,
 	authMW echo.MiddlewareFunc,
 ) *SyncPullController {
-	controller := &SyncPullController{logger: logger, eventRepo: eventRepo}
+	controller := &SyncPullController{logger: logger, eventRepo: eventRepo, access: access}
 	e.POST("/api/v1/sync/head", controller.GetHead, authMW)
 	e.GET("/api/v1/sync/events", controller.GetEvents, authMW)
 	return controller
 }
 
-// GetHead reports, for each requested list, the server's current pull
-// cursor (seq + latest event id). The client compares this against its own
-// locally stored cursor to decide whether to pull, push, or do nothing
-// (see the frontend's SyncEngine.pull decision table). POST rather than
-// GET so the list of ids doesn't have to fit in a query string - maxPullLimit's
-// sibling cap (maxSyncListIDs, defined in sync-state-controller.go) applies
-// here too, reused rather than duplicated since both endpoints bound the
-// same kind of request.
+// GetHead reports, for each requested list the caller is a member of, the
+// server's current pull cursor (seq + latest event id). The client compares
+// this against its own locally stored cursor to decide whether to pull,
+// push, or do nothing (see the frontend's SyncEngine.pull decision table).
+// POST rather than GET so the list of ids doesn't have to fit in a query
+// string - maxPullLimit's sibling cap (maxSyncListIDs, defined in
+// sync-state-controller.go) applies here too, reused rather than duplicated
+// since both endpoints bound the same kind of request.
 func (spc *SyncPullController) GetHead(c echo.Context) error {
+	userID, ok := middleware.UserIDFromContext(c)
+	if !ok {
+		return unauthorized(c)
+	}
+
 	var req request.SyncHeadRequest
 	if err := c.Bind(&req); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{
@@ -58,9 +67,18 @@ func (spc *SyncPullController) GetHead(c echo.Context) error {
 		})
 	}
 
-	heads, err := spc.eventRepo.FindListHeads(c.Request().Context(), req.ListIDs)
+	ctx := c.Request().Context()
+	accessibleIDs, err := spc.access.FilterAccessible(ctx, userID, req.ListIDs)
 	if err != nil {
-		middleware.RequestScopedLogger(spc.logger, c).Error("failed to look up list heads", "list_ids", req.ListIDs, "error", err)
+		middleware.RequestScopedLogger(spc.logger, c).Error("failed to filter accessible lists", "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to look up list heads",
+		})
+	}
+
+	heads, err := spc.eventRepo.FindListHeads(ctx, accessibleIDs)
+	if err != nil {
+		middleware.RequestScopedLogger(spc.logger, c).Error("failed to look up list heads", "list_ids", accessibleIDs, "error", err)
 		return c.JSON(http.StatusInternalServerError, map[string]string{
 			"error": "Failed to look up list heads",
 		})
@@ -71,11 +89,23 @@ func (spc *SyncPullController) GetHead(c echo.Context) error {
 		byListID[h.ListID] = h
 	}
 
-	// Every requested id gets an entry, even a list the server has never
-	// heard of (seq 0, event_id nil) - otherwise the client can't tell
-	// "unknown to the server" from "the response happened to omit it".
+	accessible := make(map[uuid.UUID]struct{}, len(accessibleIDs))
+	for _, id := range accessibleIDs {
+		accessible[id] = struct{}{}
+	}
+
+	// Every requested id still gets an entry, so the client can't tell "the
+	// server forgot to answer" from "not accessible". A list the caller
+	// isn't a member of is indistinguishable here from one the server has
+	// never heard of (both resolve to seq 0, event_id nil) - deliberately:
+	// this is a read path and must not become an oracle for "that id
+	// exists but isn't yours" (see ListAccessService.FilterAccessible).
 	responseHeads := make([]response.ListHeadResponse, len(req.ListIDs))
 	for i, listID := range req.ListIDs {
+		if _, ok := accessible[listID]; !ok {
+			responseHeads[i] = response.ListHeadResponse{ListID: listID, Seq: 0, EventID: nil}
+			continue
+		}
 		if h, ok := byListID[listID]; ok {
 			eventID := h.EventID
 			responseHeads[i] = response.ListHeadResponse{ListID: listID, Seq: h.Seq, EventID: &eventID}
@@ -91,12 +121,32 @@ func (spc *SyncPullController) GetHead(c echo.Context) error {
 // by seq and starting after since_seq - the pull endpoint proper. Push
 // (POST /api/v1/events) and pull share the exact same wire event shape
 // (see mapper.ToSyncEventResponse), so the frontend's apply path doesn't
-// need two parsers.
+// need two parsers. Unlike GetHead, a single list_id here is a normal
+// parameter, not a batch to filter - a caller who isn't a member gets 403
+// outright, since there's no ambiguity across other ids to hide behind.
 func (spc *SyncPullController) GetEvents(c echo.Context) error {
+	userID, ok := middleware.UserIDFromContext(c)
+	if !ok {
+		return unauthorized(c)
+	}
+
 	listID, err := uuid.Parse(c.QueryParam("list_id"))
 	if err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{
 			"error": "list_id is required and must be a valid uuid",
+		})
+	}
+
+	ctx := c.Request().Context()
+	if err := spc.access.RequireRead(ctx, userID, listID); err != nil {
+		if errors.Is(err, interfaces.ErrListAccessDenied) {
+			return c.JSON(http.StatusForbidden, map[string]string{
+				"error": "caller does not have access to this list",
+			})
+		}
+		middleware.RequestScopedLogger(spc.logger, c).Error("failed to authorize list read", "list_id", listID, "error", err)
+		return c.JSON(http.StatusInternalServerError, map[string]string{
+			"error": "Failed to load events",
 		})
 	}
 
@@ -124,7 +174,7 @@ func (spc *SyncPullController) GetEvents(c echo.Context) error {
 		limit = maxPullLimit
 	}
 
-	events, err := spc.eventRepo.FindEventsSince(c.Request().Context(), listID, sinceSeq, limit)
+	events, err := spc.eventRepo.FindEventsSince(ctx, listID, sinceSeq, limit)
 	if err != nil {
 		middleware.RequestScopedLogger(spc.logger, c).Error(
 			"failed to load events", "list_id", listID, "since_seq", sinceSeq, "error", err,

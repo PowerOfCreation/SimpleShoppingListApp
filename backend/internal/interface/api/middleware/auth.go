@@ -35,8 +35,9 @@ func Passthrough(next echo.HandlerFunc) echo.HandlerFunc {
 // the issuer is unreachable, this returns an error instead of falling back
 // to no auth - callers should treat that as fatal.
 //
-// Does not scope data to a user yet (see sync-design-decisions.md): any
-// valid token can still read/write any known list id.
+// Verifying the token is only step one: it proves *who* the caller is, not
+// *what* they may touch. List-level access (list_members) is enforced
+// separately, by ListAccessService - see sync-sharing-target.md §2.
 func NewKeycloakAuth(ctx context.Context, logger *slog.Logger) (echo.MiddlewareFunc, error) {
 	issuer := os.Getenv(envKeycloakIssuer)
 	clientID := os.Getenv(envKeycloakClientID)
@@ -103,7 +104,7 @@ func NewKeycloakAuth(ctx context.Context, logger *slog.Logger) (echo.MiddlewareF
 // by NewKeycloakAuth. ok=false means the request never passed real auth
 // (e.g. middleware.Passthrough in tests) - handlers must reject rather than
 // fall back to an empty user, which would otherwise claim ownership of an
-// unowned list (see ListSharingService.claimOrRequireMember).
+// unowned list (see ListAccessService.AuthorizeWrite).
 func UserIDFromContext(c echo.Context) (string, bool) {
 	userID, ok := c.Get(userIDContextKey).(string)
 	if !ok || userID == "" {

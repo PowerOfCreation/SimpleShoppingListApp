@@ -99,9 +99,10 @@ export class NotImplementedError extends AppError {
 
 /**
  * Backend sync error. `retryable` distinguishes "try again later" failures
- * (network hiccup, 5xx, timeout) from ones a retry can't fix (401 - the
- * outbox row must stay pending and wait for reconcile/re-auth rather than
- * being hammered every flush).
+ * (network hiccup, 5xx, timeout) from ones a retry can't fix (400/401/403 -
+ * a resend of the exact same request/outbox row can never succeed, so
+ * SyncEngine.flush gives up on it instead of retrying forever; see
+ * SyncClient.nonRetryableError).
  */
 export class SyncError extends AppError {
   constructor(

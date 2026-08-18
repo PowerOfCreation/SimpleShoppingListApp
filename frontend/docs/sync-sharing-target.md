@@ -44,7 +44,7 @@ Es gibt genau zwei Rollen, beide in list_members.role: owner und member.
 ¹ nur wenn kein anderer Nutzer mehr Mitglied ist — siehe 4.4
 ² todo_list.deleted ist ein normales Domain-Event und heute nicht rollenbeschränkt. Bewusste Lücke, siehe 7.4.
 
-**Ownership entsteht beim Anlegen**, nicht beim Teilen: beim Ingest von todo_list.created schreibt der Server eine owner-Zeile aus dem verifizierten JWT-sub. Das „Claim-on-first-invite" in ListSharingService ist danach nur noch ein Legacy-Pfad für Listen, die vor dieser Regel entstanden sind.
+**Ownership entsteht beim ersten Push**, nicht beim Teilen: `EventController` prüft synchron vor dem Enqueuen — der asynchrone `EventIngestor` hat keinen Request-Context, siehe 7.1 — und beansprucht eine noch mitgliederlose Liste für den verifizierten JWT-sub (`ListAccessService.AuthorizeWrite`). „Claim-on-first-invite" in `ListSharingService` ist entfernt: `CreateInvite` verlangt jetzt einen bestehenden Owner, statt selbst einen zu erzeugen.
 
 ## 4. Lebenszyklus einer Liste
 
@@ -62,9 +62,11 @@ Liste existiert nur in der lokalen SQLite. Kein Server kennt sie. Alle Events li
 
 ### 4.2 Sync einschalten
 
-Geräte-lokale Einstellung (list_sync_settings.enabled = 1) plus einmaliges Einreihen der gesamten syncbaren Historie der Liste in die Outbox. Serverseitig entsteht dadurch die todo_lists-Zeile und der Owner-Eintrag.
+Geräte-lokale Einstellung (list_sync_settings.enabled = 1) plus einmaliges Einreihen der gesamten syncbaren Historie der Liste in die Outbox. Serverseitig entsteht dadurch zuerst der Owner-Eintrag (list_members, synchron beim ersten Push, siehe 3 und 7.1) und — sobald der Ingestor das erste Event asynchron verarbeitet hat — die todo_lists-Zeile.
 
 **Für den Server bedeutet „ist synchronisiert" genau: es existiert eine todo_lists-Zeile.** Der Server kann nicht wissen, ob ein bestimmtes Gerät synct — das ist per Definition geräte-lokal. Die Produktregel „nur eine synchronisierte Liste kann geteilt werden" ist deshalb identisch mit dem requireList-Check im ListSharingService. Sie braucht keine eigene Prüfung.
+
+Das ist bewusst ein anderer Moment als „ist beansprucht": list_members bekommt seine Zeile synchron im Push-Handler, bevor der Ingestor überhaupt läuft; todo_lists entsteht erst danach, asynchron. `CreateInvite`/`FindActiveInvites` prüfen deshalb beides — `requireList` (todo_lists existiert) *und* `access.RequireOwner` (list_members-Zeile mit role=owner) — nicht austauschbar, auch wenn sie im Normalfall im selben Moment wahr werden.
 
 ### 4.3 Teilen
 
@@ -80,7 +82,7 @@ Erlaubt **nur** dem Owner und **nur**, wenn list_members genau eine Zeile hat (e
 
 „Allein" heißt dabei: **kein anderer Nutzer**. Eigene weitere Geräte werden nicht mitgezählt — list_members ist auf (list_id, user_id) geschlüsselt, und client_id ist bewusst die Keycloak-sub und keine Geräte-ID (siehe sync-design-decisions.md). Der Owner ist eine Person, die diese Aktion bewusst auslöst.
 
-Das Entsyncen ist ein **autorisierter REST-Befehl, kein Domain-Event** (siehe die erste Folgerung aus Abschnitt 2). Es löscht serverseitig **hart**: die todo_lists-Zeile, ihre Einladungen und Mitgliedschaften (ON DELETE CASCADE) sowie die domain_events der Liste. Letztere **explizit** — `events.list_id` referenziert `todo_lists` ohne Fremdschlüssel (nullable Spalte, siehe Migration `00004`), das Cascade greift nur für `list_invites`/`list_members` (Migration `00005`). Kein Soft-Delete — ein Tombstone würde die Liste dauerhaft unsyncbar machen (siehe Invariante 6.2).
+Das Entsyncen ist ein **autorisierter REST-Befehl, kein Domain-Event** (siehe die erste Folgerung aus Abschnitt 2). Es löscht serverseitig **hart**: die todo_lists-Zeile, ihre Einladungen, ihre Mitgliedschaften und die domain_events der Liste — **alle vier explizit**, kein Cascade. Seit Migration `00007` referenzieren `list_members.list_id`/`list_invites.list_id` `todo_lists` ohne Fremdschlüssel (dieselbe Begründung wie bei `events.list_id` seit Migration `00004`: die Zugriffstabelle muss unabhängig von der — rebuildbaren — Projektion existieren können, siehe 7.1). Kein Soft-Delete — ein Tombstone würde die Liste dauerhaft unsyncbar machen (siehe Invariante 6.2).
 
 Nicht von diesem Cascade abgedeckt: `todos.todo_list_id` referenziert `todo_lists(id)` ohne
 `ON DELETE` (Migration `00001`). Ein `DELETE FROM todo_lists` würde daran scheitern, sobald je eine
@@ -131,6 +133,8 @@ Alle Routen mit authMW. Es gibt **keine** CRUD-Endpunkte für Listen; Listeninha
 | GET | /api/v1/todo-lists/:id/membership | Eigene Rolle + Mitgliederzahl | ⬜ offen |
 | DELETE | /api/v1/todo-lists/:id/members/me | Verlassen (member) | ⬜ offen |
 | DELETE | /api/v1/todo-lists/:id/sync | Entsyncen (owner, nur allein) | ⬜ offen |
+
+Alle ✅-Routen sind seit 7.1 zugriffsgeprüft, nicht nur erreichbar: `/events` und `GET /sync/events` lehnen mit 403 ab, wer kein Mitglied ist; `/sync/head` und `/sync/state` filtern nicht zugängliche Listen-IDs still aus der Antwort statt zu 403en (kein Enumerations-Orakel); `/sync/ws` routet Acks über den verifizierten user_id, nicht den unverifizierten client_id-Query-Parameter, und subscribe filtert list_ids genauso wie die Lesepfade.
 
 GET .../membership ist Vorbedingung für die UI: ohne sie kann das Frontend weder Owner- von Member-Ansicht unterscheiden noch den Entsync-Button korrekt sperren.
 
@@ -194,37 +198,25 @@ tiefer: an der Log-Position selbst statt nur am Ack.
 
 ## 7. Offene Entscheidungen
 
-**7.1 Enforcement-Zeitpunkt.** Heute darf jeder gültige Token jede bekannte Listen-UUID lesen und schreiben — list_members existiert, wird auf /events und /sync/* aber nicht geprüft. Plan: Owner beim created-Ingest aus dem JWT-sub setzen, Bestandslisten einmalig nachtragen, **direkt danach** Enforcement scharfschalten. Setzt voraus, dass es keine echten Nutzerdaten gibt — vor dem Umlegen verifizieren.
+**7.1 Enforcement-Zeitpunkt. ✅ Erledigt.** `/events` und jede `/sync/*`-Route prüfen list_members jetzt synchron, auf jeder Anfrage.
 
-*Woher der Owner beim Ingest kommt, ist noch offen.* Der `EventIngestor` läuft auf einer
-Hintergrund-Goroutine ohne HTTP-Request-Context — `middleware.UserIDFromContext` (der verifizierte
-JWT-sub) ist dort nicht erreichbar, auch nicht rückwirkend beim `sweepUnprocessed`-Replay aus der DB.
-Das einzige heute auf `StoredEvent`/`events` vorhandene Identitätsfeld ist `client_id`, und das ist
-unverifizierte Client-Eingabe aus dem Request-Body (`dto/request/sync-events-request.go`) — als
-Ownership-Quelle ungeeignet. „Owner beim created-Ingest setzen" braucht also entweder ein neues,
-serverseitig verifiziertes Feld auf `StoredEvent` *und* der `events`-Tabelle (vom Push-Handler gesetzt,
-der den Request-Context noch hat, nicht vom Ingestor-Worker), oder Ownership entsteht stattdessen am
-Push-Endpunkt statt beim asynchronen Dispatch.
+Gelöst wurde das Ingest-Problem, indem Ownership **nicht** beim `EventIngestor` entsteht, sondern am Push-Endpunkt: `EventController.SyncEvents` liest den verifizierten JWT-sub via `middleware.UserIDFromContext` (der Request-Context existiert dort noch), sammelt die distinkten `list_id`s des Batches und ruft `ListAccessService.AuthorizeWrite` **vor** dem Enqueuen auf — der asynchrone Ingestor-Worker selbst bleibt ohne Identität, wie ursprünglich befürchtet, aber er braucht sie jetzt auch nicht mehr. `events.user_id` (Migration `00007`, vom Push-Handler gesetzt, nie vom Client) hängt die verifizierte Identität zusätzlich an die Zeile — nicht weil der Ack-Pfad sie bräuchte (`PublishAck` läuft ausschließlich in `EventIngestor.process`, mit dem In-Memory-`StoredEvent`, dessen `UserID` schon vom Push-Handler gesetzt ist; `sweepUnprocessed` ruft nur `apply` auf, das gar nicht mehr ackt, seit #247/#248 die Ack- von der Projektions-Semantik entkoppelt haben), sondern als forensisches Feld auf der Zeile selbst („wer hat dieses Event geschrieben") und als Grundlage für einen künftigen Discovery-Endpunkt („meine Listen"), der eine verifizierte Identität pro Zeile braucht.
 
-*Woher der Bestandslisten-Backfill seine Daten nimmt, ist ebenfalls offen.* Es gibt keine
-vertrauenswürdige Quelle dafür, wem eine vor diesem Feature entstandene Liste gehört — die einzige
-existierende Spur ist wieder `client_id`. Entweder der Backfill vertraut diesem Feld explizit (mit den
-Konsequenzen aus 7.2/7.5, falls ein `client_id`-Wert erraten oder gefälscht wurde), oder es gibt vor
-dem Scharfschalten keine echten Bestandsdaten zu migrieren (siehe „Setzt voraus, dass es keine echten
-Nutzerdaten gibt" oben) und der Backfill entfällt. Diese Entscheidung muss vor der Umsetzung von 7.1
-getroffen werden, nicht währenddessen.
+Der Bestandslisten-Backfill entfällt: es gab keine echten Nutzerdaten zu migrieren, Enforcement wurde deshalb ohne Backfill hart scharfgeschaltet. Events, die vor `00007` eingegangen sind, haben `user_id = NULL`, gehören also keiner Mitgliedschaft und sind seither für niemanden mehr über `/sync/*` erreichbar — bewusste Konsequenz, nicht übersehen.
 
-**7.2 Ownership-Squatting.** Solange „Claim-on-first-invite" existiert, wird der erste Aufrufer von CreateInvite auf einer mitgliederlosen Liste deren Owner. Wer eine fremde UUID kennt, kann damit den echten Besitzer dauerhaft vom Teilen aussperren — es gibt keinen Kick-, Transfer- oder Admin-Pfad zurück. Der Owner-Backfill aus 7.1 schließt das; bis dahin offen.
+**7.2 Ownership-Squatting. ✅ Geschlossen für bereits beanspruchte Listen.** „Claim-on-first-invite" existiert in `ListSharingService` nicht mehr; Claiming passiert ausschließlich in `ListAccessService.AuthorizeWrite`, beim ersten Push. `CreateInvite` verlangt jetzt einen bestehenden Owner (`RequireOwner`, kein Claim) — wer eine fremde, bereits von jemand anderem beanspruchte UUID kennt, kann sie über keinen Pfad mehr an sich reißen. Strukturell unverändert bleibt: „beanspruchen, wer zuerst pusht" ist das Bootstrap-Modell selbst (Listen-IDs sind client-generierte UUIDs, es gibt keine serverseitige Vergabe) — wer eine UUID errät, bevor ihr eigentlicher Besitzer sie je gepusht hat, wird genauso ihr Owner wie vorher. Das ist keine neue Lücke, nur keine, die dieser PR schließen konnte, ohne das Bootstrap-Modell selbst zu ändern.
 
 **7.3 list_members.invite_id hat kein ON DELETE.** Ausreichend, solange Invites nur widerrufen und nie gelöscht werden. Ein künftiger „abgelaufene Invites aufräumen"-Job würde daran scheitern; ON DELETE SET NULL wäre dann die richtige Semantik — eine gelöschte Einladung darf die Mitgliedschaft nicht mitnehmen.
 
 **7.4 todo_list.deleted ist nicht rollenbeschränkt.** Ein Mitglied kann die Liste für alle löschen. Ob das gewollt ist (geteilter Haushalt) oder auf den Owner beschränkt gehört, ist nicht entschieden.
 
-**7.5 Tombstone-Squatting.** Der Tombstone-Upsert von `DeleteToDoList` legt eine `todo_lists`-Zeile für Listen-UUIDs an, die der Server nie gesehen hat (vorher: Fehler, aber keine Zeile). Zusammen mit **6.2** (terminal) und **7.1** (kein Enforcement auf `/events`) heißt das: wer eine fremde UUID rät und ein `todo_list.deleted` pusht, macht die Liste für ihren echten Besitzer **dauerhaft unsyncbar** — `CreateToDoList` prallt am Tombstone ab, und „synchronisiert" ist laut **4.2** genau „es existiert eine `todo_lists`-Zeile". Selbe Klasse wie 7.2, aber irreversibel. Schließt sich mit dem Owner-Backfill aus 7.1; bis dahin offen.
+**7.5 Tombstone-Squatting. ✅ Geschlossen für bereits beanspruchte Listen.** Der Tombstone-Upsert von `DeleteToDoList` legt weiterhin eine `todo_lists`-Zeile für ungesehene UUIDs an, aber ein `todo_list.deleted` für eine fremde, bereits beanspruchte UUID erreicht diesen Pfad jetzt gar nicht mehr: `AuthorizeWrite` lehnt den Push mit 403 ab, sobald die Liste schon einen anderen Owner hat. Der irreversible Fall aus der ursprünglichen Beschreibung — beliebiger Token macht eine *fremde, bereits existierende* Liste dauerhaft unsyncbar — ist damit ausgeschlossen. Wer stattdessen eine noch nie gepushte UUID errät und dafür sofort ein `deleted` sendet, wird formal ihr Owner (siehe 7.2) und tombstoned damit nur seine eigene, gerade erst beanspruchte Liste — derselbe strukturelle Restfall wie in 7.2, keine eigene Lücke mehr.
+
+**7.6 WS-Subscriptions werden nach dem Aufbau nicht neu geprüft. Bekannte Einschränkung.** `Hub.subscribe` filtert die angeforderten `list_id`s einmal, beim Verbindungsaufbau bzw. beim nächsten `subscribe`-Frame, durch `ListAccessFilter`. Verliert ein Nutzer danach den Zugriff (verlässt eine Liste, wird entfernt) bleibt die bestehende Subscription bis zum nächsten `subscribe`/Reconnect aktiv — `PublishListEvent` prüft beim Zustellen selbst nicht erneut. Der Leak ist eng begrenzt: `{"type":"event","list_id":...,"seq":...}` verrät nur eine Listen-ID und Position, die der Client ohnehin schon kannte, nie Inhalte, und der folgende Pull-Versuch bekommt korrekt 403. Zu beheben, falls das je zum Problem wird: `subscribe` bei jedem `todo_list.member_removed`/„left"-Event neu anstoßen, statt nur beim Verbindungsaufbau.
 
 ## 8. Bewusst nicht gebaut
 
-- **„Meine Listen nach Neuinstallation wiederherstellen."** Pull läuft nur für Listen, die lokal bereits bekannt und sync-aktiv sind. Nach einer Neuinstallation ist die lokale DB leer, es gibt also nichts zu pullen. Ein Discovery-Endpunkt („gib mir alle Listen dieses Accounts") ist ein eigenes, größeres Feature und braucht 7.1.
+- **„Meine Listen nach Neuinstallation wiederherstellen."** Pull läuft nur für Listen, die lokal bereits bekannt und sync-aktiv sind. Nach einer Neuinstallation ist die lokale DB leer, es gibt also nichts zu pullen. Ein Discovery-Endpunkt („gib mir alle Listen dieses Accounts") ist ein eigenes, größeres Feature — 7.1 (jetzt erledigt) war nur seine Voraussetzung, nicht seine Umsetzung.
 - **Direkteinladung an eine Person / Freundesliste.** Nur mehrfach nutzbare Links.
 - **Mitglieder entfernen (Kick).** Nur Selbst-Verlassen.
 - **Ownership übertragen.**

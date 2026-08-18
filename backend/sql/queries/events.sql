@@ -9,8 +9,8 @@
 -- back that one, not a freshly burned one (nextval() is still evaluated
 -- for the value list on a conflicting insert - a harmless gap, since seq's
 -- only contract is monotonic-and-unique, not contiguous).
-INSERT INTO events (id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id, seq)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, nextval('events_seq_seq'))
+INSERT INTO events (id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id, seq, user_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, nextval('events_seq_seq'), $9)
 ON CONFLICT (id) DO UPDATE SET id = events.id
 RETURNING processed_at, seq, list_id;
 
@@ -30,7 +30,7 @@ WHERE id = $1 AND processed_at IS NULL;
 -- position relative to one that arrived after it. received_at ordering
 -- (pre migration 00006) had neither property: it wasn't unique, and it no
 -- longer tracked seq order once seq could be assigned later than insert.
-SELECT id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id, seq
+SELECT id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id, seq, user_id
 FROM events
 WHERE processed_at IS NULL
 ORDER BY seq ASC;

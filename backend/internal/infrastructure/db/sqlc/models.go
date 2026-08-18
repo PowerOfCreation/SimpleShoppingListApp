@@ -21,6 +21,7 @@ type Event struct {
 	ProcessedAt   pgtype.Timestamptz `db:"processed_at" json:"processed_at"`
 	ListID        pgtype.UUID        `db:"list_id" json:"list_id"`
 	Seq           pgtype.Int8        `db:"seq" json:"seq"`
+	UserID        pgtype.Text        `db:"user_id" json:"user_id"`
 }
 
 type ListInvite struct {

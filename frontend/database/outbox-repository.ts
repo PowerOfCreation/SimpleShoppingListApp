@@ -161,6 +161,29 @@ export class OutboxRepository extends BaseRepository {
   }
 
   /**
+   * Permanently gives up on specific outbox rows - deletes them rather than
+   * leaving them pending, for a send failure that resending can never fix
+   * (see SyncClient.nonRetryableError) but that can't be attributed to one
+   * list (e.g. an event whose list_id never resolved locally). cancelForList
+   * is the list-scoped equivalent used for the normal case where the list is
+   * known.
+   */
+  async cancelEventIds(
+    eventIds: string[]
+  ): Promise<Result<void, DbQueryError>> {
+    if (eventIds.length === 0) {
+      return Result.ok(undefined)
+    }
+    return this._executeTransaction(async () => {
+      const placeholders = eventIds.map(() => "?").join(", ")
+      await this.db.runAsync(
+        `DELETE FROM event_outbox WHERE event_id IN (${placeholders})`,
+        ...eventIds
+      )
+    }, "cancelEventIds")
+  }
+
+  /**
    * Cancels every still-pending outbox row belonging to a list - its own
    * todo_list.* rows (aggregate_id = listId) as well as every ingredient.*
    * row for ingredients in that list. Used when sync is turned off for a

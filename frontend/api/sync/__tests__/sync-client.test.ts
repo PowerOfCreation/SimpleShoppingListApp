@@ -68,8 +68,28 @@ describe("SyncClient", () => {
       expect(fetchMock).not.toHaveBeenCalled()
     })
 
+    it("treats a 400 as non-retryable", async () => {
+      const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 400 })
+      const client = new SyncClient(fetchMock)
+
+      const result = await client.sendEvents([makeEvent()])
+
+      expect(result.success).toBe(false)
+      expect(result.getError().retryable).toBe(false)
+    })
+
     it("treats a 401 as non-retryable", async () => {
       const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 401 })
+      const client = new SyncClient(fetchMock)
+
+      const result = await client.sendEvents([makeEvent()])
+
+      expect(result.success).toBe(false)
+      expect(result.getError().retryable).toBe(false)
+    })
+
+    it("treats a 403 as non-retryable", async () => {
+      const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 403 })
       const client = new SyncClient(fetchMock)
 
       const result = await client.sendEvents([makeEvent()])
@@ -170,6 +190,16 @@ describe("SyncClient", () => {
       expect(result.getError().retryable).toBe(true)
       expect(fetchMock).not.toHaveBeenCalled()
     })
+
+    it("treats a 403 as non-retryable", async () => {
+      const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 403 })
+      const client = new SyncClient(fetchMock)
+
+      const result = await client.getKnownEventIds(["list-1"])
+
+      expect(result.success).toBe(false)
+      expect(result.getError().retryable).toBe(false)
+    })
   })
 
   describe("getListHeads", () => {
@@ -221,6 +251,16 @@ describe("SyncClient", () => {
 
       expect(result.success).toBe(false)
       expect(result.getError().retryable).toBe(true)
+    })
+
+    it("treats a 403 as non-retryable", async () => {
+      const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 403 })
+      const client = new SyncClient(fetchMock)
+
+      const result = await client.getListHeads(["list-1"])
+
+      expect(result.success).toBe(false)
+      expect(result.getError().retryable).toBe(false)
     })
 
     it("treats being signed out as non-retryable, without fetching", async () => {
@@ -322,6 +362,16 @@ describe("SyncClient", () => {
 
       expect(result.success).toBe(false)
       expect(result.getError().retryable).toBe(true)
+    })
+
+    it("treats a 403 as non-retryable", async () => {
+      const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 403 })
+      const client = new SyncClient(fetchMock)
+
+      const result = await client.getEventsSince("list-1", 0)
+
+      expect(result.success).toBe(false)
+      expect(result.getError().retryable).toBe(false)
     })
 
     it("treats being signed out as non-retryable, without fetching", async () => {

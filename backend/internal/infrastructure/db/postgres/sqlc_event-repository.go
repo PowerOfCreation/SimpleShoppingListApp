@@ -32,6 +32,7 @@ func (r *SqlcEventRepository) Insert(
 		Payload:       []byte(event.Payload),
 		OccurredAt:    timestamptzFromTime(event.OccurredAt),
 		ClientID:      event.ClientID,
+		UserID:        pgtypeTextFromString(event.UserID),
 	})
 	if err != nil {
 		return false, 0, nil, err
@@ -70,6 +71,7 @@ func (r *SqlcEventRepository) FindUnprocessed(
 			OccurredAt:    timeFromTimestamptz(row.OccurredAt),
 			ClientID:      row.ClientID,
 			Seq:           row.Seq.Int64,
+			UserID:        stringFromPgtypeText(row.UserID),
 		}
 	}
 	return events, nil

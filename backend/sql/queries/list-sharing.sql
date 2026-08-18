@@ -55,3 +55,24 @@ ON CONFLICT (list_id, user_id) DO NOTHING;
 SELECT list_id, user_id, role, joined_at, invite_id
 FROM list_members
 WHERE list_id = $1 AND user_id = $2;
+
+-- name: GetClaimedListIDs :many
+-- Which of the given list ids already have at least one member, regardless
+-- of who - the pre-check behind ListAccessService.AuthorizeWrite's claim
+-- phase. Distinguishes "nobody has pushed to this list yet" (eligible for
+-- ClaimOwnershipIfUnowned) from "someone else already owns it" (must be
+-- rejected) without granting access or claiming anything itself.
+SELECT DISTINCT list_id
+FROM list_members
+WHERE list_id = ANY(sqlc.arg(list_ids)::uuid[]);
+
+-- name: GetAccessibleListIDs :many
+-- Which of the given list ids the caller is a member (owner or member) of -
+-- the filter behind every read path (ListAccessService.FilterAccessible).
+-- Deliberately returns a subset rather than erroring on a list the caller
+-- has no access to: a batch read (e.g. /sync/head) must not turn into an
+-- enumeration oracle that tells a caller "that id exists but isn't yours"
+-- vs. "that id doesn't exist" - both simply come back missing.
+SELECT list_id
+FROM list_members
+WHERE list_id = ANY(sqlc.arg(list_ids)::uuid[]) AND user_id = sqlc.arg(user_id);

@@ -43,6 +43,7 @@ describe("SyncCoordinator", () => {
         {} as never,
         {} as never,
         {} as never,
+        {} as never,
         {} as never
       ),
       new MockListSyncSettingsRepository({} as never)

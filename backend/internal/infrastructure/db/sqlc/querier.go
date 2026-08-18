@@ -56,11 +56,24 @@ type Querier interface {
 	// again once deleted_at is set, since deleted_at IS NULL is already the
 	// universal gate ahead of it on every other write.
 	DeleteToDoList(ctx context.Context, arg DeleteToDoListParams) error
+	// Which of the given list ids the caller is a member (owner or member) of -
+	// the filter behind every read path (ListAccessService.FilterAccessible).
+	// Deliberately returns a subset rather than erroring on a list the caller
+	// has no access to: a batch read (e.g. /sync/head) must not turn into an
+	// enumeration oracle that tells a caller "that id exists but isn't yours"
+	// vs. "that id doesn't exist" - both simply come back missing.
+	GetAccessibleListIDs(ctx context.Context, arg GetAccessibleListIDsParams) ([]uuid.UUID, error)
 	// An invite is active if it hasn't been revoked and hasn't expired as of
 	// sqlc.arg(now) - the caller passes the current time rather than this query
 	// using NOW() so results are reproducible in tests.
 	GetActiveListInvites(ctx context.Context, arg GetActiveListInvitesParams) ([]ListInvite, error)
 	GetAllToDos(ctx context.Context) ([]GetAllToDosRow, error)
+	// Which of the given list ids already have at least one member, regardless
+	// of who - the pre-check behind ListAccessService.AuthorizeWrite's claim
+	// phase. Distinguishes "nobody has pushed to this list yet" (eligible for
+	// ClaimOwnershipIfUnowned) from "someone else already owns it" (must be
+	// rejected) without granting access or claiming anything itself.
+	GetClaimedListIDs(ctx context.Context, listIds []uuid.UUID) ([]uuid.UUID, error)
 	// Pull page: every event for one list with seq strictly greater than
 	// since_seq, oldest-first, capped at limit_count. The controller requests
 	// limit_count+0 rows and treats a full page as "there may be more" (see

@@ -54,7 +54,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
       eventRepository,
       new SyncClient(),
       cursorRepository,
-      eventApplier
+      eventApplier,
+      new ListSyncSettingsRepository(db)
     )
   }, [])
 

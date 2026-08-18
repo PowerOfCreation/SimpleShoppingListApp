@@ -21,6 +21,7 @@ type ListSharingService struct {
 	invites   repositories.ListInviteRepository
 	members   repositories.ListMemberRepository
 	todoLists repositories.ToDoListRepository
+	access    interfaces.ListAccessService
 }
 
 func NewListSharingService(
@@ -28,47 +29,15 @@ func NewListSharingService(
 	invites repositories.ListInviteRepository,
 	members repositories.ListMemberRepository,
 	todoLists repositories.ToDoListRepository,
+	access interfaces.ListAccessService,
 ) interfaces.ListSharingService {
 	return &ListSharingService{
 		logger:    logger,
 		invites:   invites,
 		members:   members,
 		todoLists: todoLists,
+		access:    access,
 	}
-}
-
-// claimOrRequireOwner bootstraps the caller as owner if the list has no
-// members yet (claim-on-first-invite - the only place ownership is ever
-// claimed, so merely listing or revoking invites can't grant it), then
-// requires the caller to actually be the owner - sharing (creating invites)
-// is an owner-only action, not something any member can do once joined.
-func (s *ListSharingService) claimOrRequireOwner(ctx context.Context, listID uuid.UUID, userID string, now time.Time) error {
-	claimed, err := s.members.ClaimOwnershipIfUnowned(ctx, listID, userID, now)
-	if err != nil {
-		return err
-	}
-	if claimed {
-		return nil
-	}
-	return s.requireOwner(ctx, listID, userID)
-}
-
-// requireOwner checks the caller is the list's owner without claiming
-// ownership. Distinguishes "not a member at all" from "a member, but not
-// the owner" since only the latter is really about the owner-only action
-// being attempted.
-func (s *ListSharingService) requireOwner(ctx context.Context, listID uuid.UUID, userID string) error {
-	member, err := s.members.FindByListAndUser(ctx, listID, userID)
-	if err != nil {
-		return err
-	}
-	if member == nil {
-		return interfaces.ErrNotAListMember
-	}
-	if member.Role != entities.RoleOwner {
-		return interfaces.ErrNotListOwner
-	}
-	return nil
 }
 
 func (s *ListSharingService) requireList(ctx context.Context, listID uuid.UUID) (*entities.ToDoList, error) {
@@ -92,11 +61,14 @@ func (s *ListSharingService) CreateInvite(ctx context.Context, cmd *command.Crea
 		return nil, err
 	}
 
-	now := time.Now().UTC()
-	if err := s.claimOrRequireOwner(ctx, cmd.ListID, cmd.UserID, now); err != nil {
+	// Ownership is claimed on the first push of a new list (see
+	// ListAccessService.AuthorizeWrite), never here - sharing is an
+	// owner-only action, not a way to become owner.
+	if err := s.access.RequireOwner(ctx, cmd.UserID, cmd.ListID); err != nil {
 		return nil, err
 	}
 
+	now := time.Now().UTC()
 	invite, token, err := entities.NewListInvite(cmd.ListID, cmd.UserID, ttl, now)
 	if err != nil {
 		return nil, err
@@ -119,7 +91,7 @@ func (s *ListSharingService) FindActiveInvites(ctx context.Context, qry *query.G
 
 	// Read-only: must not claim ownership of an unowned list just because
 	// someone asked to list its invites.
-	if err := s.requireOwner(ctx, qry.ListID, qry.UserID); err != nil {
+	if err := s.access.RequireOwner(ctx, qry.UserID, qry.ListID); err != nil {
 		return nil, err
 	}
 

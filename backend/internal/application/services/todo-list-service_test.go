@@ -217,8 +217,11 @@ func TestEventIngestor_ToDoListUpdated_ForUnknownList_IsMarkedProcessedAndAcked(
 
 	require.NoError(t, ingestor.Enqueue(ctx, event))
 
-	require.Eventually(t, func() bool { return ack.has(event.EventID) }, time.Second, time.Millisecond)
-	assert.True(t, eventRepo.isProcessed(event.EventID))
+	// Wait on isProcessed, not on the ack: since seq is assigned at insert,
+	// process() acks before apply() dispatches and marks the event - the ack
+	// no longer implies the projection ran.
+	require.Eventually(t, func() bool { return eventRepo.isProcessed(event.EventID) }, time.Second, time.Millisecond)
+	assert.True(t, ack.has(event.EventID))
 }
 
 // TestToDoListService_CreateAndUpdate_EmptyNameIsAPermanentError asserts
@@ -286,8 +289,11 @@ func TestEventIngestor_ToDoListCreated_EmptyName_IsMarkedProcessedAndAcked(t *te
 
 	require.NoError(t, ingestor.Enqueue(ctx, event))
 
-	require.Eventually(t, func() bool { return ack.has(event.EventID) }, time.Second, time.Millisecond)
-	assert.True(t, eventRepo.isProcessed(event.EventID))
+	// Wait on isProcessed, not on the ack: since seq is assigned at insert,
+	// process() acks before apply() dispatches and marks the event - the ack
+	// no longer implies the projection ran.
+	require.Eventually(t, func() bool { return eventRepo.isProcessed(event.EventID) }, time.Second, time.Millisecond)
+	assert.True(t, ack.has(event.EventID))
 
 	// The permanent error means the list was never actually created either -
 	// only the event's fate (processed, acked) changed, not CreateToDoList's
@@ -334,6 +340,9 @@ func TestEventIngestor_ToDoListCreated_MalformedPayload_IsMarkedProcessedAndAcke
 
 	require.NoError(t, ingestor.Enqueue(ctx, event))
 
-	require.Eventually(t, func() bool { return ack.has(event.EventID) }, time.Second, time.Millisecond)
-	assert.True(t, eventRepo.isProcessed(event.EventID))
+	// Wait on isProcessed, not on the ack: since seq is assigned at insert,
+	// process() acks before apply() dispatches and marks the event - the ack
+	// no longer implies the projection ran.
+	require.Eventually(t, func() bool { return eventRepo.isProcessed(event.EventID) }, time.Second, time.Millisecond)
+	assert.True(t, ack.has(event.EventID))
 }

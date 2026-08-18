@@ -12,6 +12,7 @@ import (
 	"github.com/labstack/echo/v4"
 	"github.com/stretchr/testify/assert"
 
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/interfaces"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
 )
@@ -59,22 +60,34 @@ func (s *stubEventRepository) FindKnownEventIDsByList(
 	return s.findKnownEventIDsByList(ctx, listIDs)
 }
 
-func TestSyncStateController_ReturnsKnownEventIDsForRequestedLists(t *testing.T) {
+func newTestSyncStateController(repo repositories.EventRepository, access interfaces.ListAccessService, authMW echo.MiddlewareFunc) *echo.Echo {
+	e := echo.New()
+	NewSyncStateController(e, testLogger(), repo, access, authMW)
+	return e
+}
+
+func TestSyncStateController_ReturnsKnownEventIDsForAccessibleLists(t *testing.T) {
 	knownList := uuid.New()
 	knownEvent := uuid.New()
-	unknownList := uuid.New()
+	foreignList := uuid.New()
 
 	repo := &stubEventRepository{
 		findKnownEventIDsByList: func(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error) {
-			assert.ElementsMatch(t, []uuid.UUID{knownList, unknownList}, listIDs)
+			// foreignList was filtered out by FilterAccessible - the
+			// repository is never even asked about it.
+			assert.ElementsMatch(t, []uuid.UUID{knownList}, listIDs)
 			return []uuid.UUID{knownEvent}, nil
 		},
 	}
+	access := &stubListAccessService{
+		filterAccessible: func(ctx context.Context, userID string, listIDs []uuid.UUID) ([]uuid.UUID, error) {
+			return []uuid.UUID{knownList}, nil
+		},
+	}
 
-	e := echo.New()
-	NewSyncStateController(e, testLogger(), repo, middleware.Passthrough)
+	e := newTestSyncStateController(repo, access, withUserID("user-1"))
 
-	body := fmt.Sprintf(`{"list_ids":["%s","%s"]}`, knownList, unknownList)
+	body := fmt.Sprintf(`{"list_ids":["%s","%s"]}`, knownList, foreignList)
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/state", strings.NewReader(body))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()
@@ -85,10 +98,20 @@ func TestSyncStateController_ReturnsKnownEventIDsForRequestedLists(t *testing.T)
 	assert.JSONEq(t, fmt.Sprintf(`{"known_event_ids":["%s"]}`, knownEvent), rec.Body.String())
 }
 
+func TestSyncStateController_NoIdentityReturns401(t *testing.T) {
+	e := newTestSyncStateController(&stubEventRepository{}, &stubListAccessService{}, middleware.Passthrough)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/state", strings.NewReader(`{"list_ids":[]}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
 func TestSyncStateController_MalformedBodyReturns400(t *testing.T) {
-	repo := &stubEventRepository{}
-	e := echo.New()
-	NewSyncStateController(e, testLogger(), repo, middleware.Passthrough)
+	e := newTestSyncStateController(&stubEventRepository{}, &stubListAccessService{}, withUserID("user-1"))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/state", strings.NewReader(`{not valid`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -100,9 +123,7 @@ func TestSyncStateController_MalformedBodyReturns400(t *testing.T) {
 }
 
 func TestSyncStateController_TooManyListIDsReturns400(t *testing.T) {
-	repo := &stubEventRepository{}
-	e := echo.New()
-	NewSyncStateController(e, testLogger(), repo, middleware.Passthrough)
+	e := newTestSyncStateController(&stubEventRepository{}, &stubListAccessService{}, withUserID("user-1"))
 
 	ids := make([]string, maxSyncListIDs+1)
 	for i := range ids {
@@ -125,8 +146,8 @@ func TestSyncStateController_RepositoryErrorReturns500(t *testing.T) {
 			return nil, assert.AnError
 		},
 	}
-	e := echo.New()
-	NewSyncStateController(e, testLogger(), repo, middleware.Passthrough)
+
+	e := newTestSyncStateController(repo, allowAllAccess(), withUserID("user-1"))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/state", strings.NewReader(`{"list_ids":[]}`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
@@ -143,8 +164,8 @@ func TestSyncStateController_EmptyListIDsReturnsEmptyList(t *testing.T) {
 			return nil, nil
 		},
 	}
-	e := echo.New()
-	NewSyncStateController(e, testLogger(), repo, middleware.Passthrough)
+
+	e := newTestSyncStateController(repo, allowAllAccess(), withUserID("user-1"))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/sync/state", strings.NewReader(`{"list_ids":[]}`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)

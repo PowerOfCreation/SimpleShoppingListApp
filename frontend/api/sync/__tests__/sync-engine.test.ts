@@ -2,6 +2,7 @@ import { SyncEngine, MAX_DRAIN_BATCHES } from "../sync-engine"
 import { OutboxRepository } from "@/database/outbox-repository"
 import { EventRepository } from "@/database/event-repository"
 import { SyncCursorRepository } from "@/database/sync-cursor-repository"
+import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
 import { SyncClient } from "@/api/sync/sync-client"
 import { EventApplier } from "@/api/sync/event-applier"
 import { Result } from "@/api/common/result"
@@ -12,6 +13,7 @@ import { flushMicrotasks } from "../test-helpers"
 jest.mock("@/database/outbox-repository")
 jest.mock("@/database/event-repository")
 jest.mock("@/database/sync-cursor-repository")
+jest.mock("@/database/list-sync-settings-repository")
 jest.mock("@/api/sync/sync-client")
 jest.mock("@/api/sync/event-applier")
 
@@ -24,6 +26,10 @@ const MockEventRepository = EventRepository as jest.MockedClass<
 const MockSyncCursorRepository = SyncCursorRepository as jest.MockedClass<
   typeof SyncCursorRepository
 >
+const MockListSyncSettingsRepository =
+  ListSyncSettingsRepository as jest.MockedClass<
+    typeof ListSyncSettingsRepository
+  >
 const MockSyncClient = SyncClient as jest.MockedClass<typeof SyncClient>
 const MockEventApplier = EventApplier as jest.MockedClass<typeof EventApplier>
 
@@ -56,6 +62,7 @@ describe("SyncEngine", () => {
   let outbox: jest.Mocked<OutboxRepository>
   let events: jest.Mocked<EventRepository>
   let cursor: jest.Mocked<SyncCursorRepository>
+  let listSyncSettings: jest.Mocked<ListSyncSettingsRepository>
   let client: jest.Mocked<SyncClient>
   let applier: jest.Mocked<EventApplier>
   let engine: SyncEngine
@@ -68,7 +75,8 @@ describe("SyncEngine", () => {
       markSynced: jest.fn().mockResolvedValue(Result.ok(undefined)),
       bumpAttempt: jest.fn().mockResolvedValue(Result.ok(undefined)),
       resetToPending: jest.fn().mockResolvedValue(Result.ok(undefined)),
-      cancelForList: jest.fn(),
+      cancelForList: jest.fn().mockResolvedValue(Result.ok(undefined)),
+      cancelEventIds: jest.fn().mockResolvedValue(Result.ok(undefined)),
       enqueue: jest.fn(),
     } as unknown as jest.Mocked<OutboxRepository>
 
@@ -84,6 +92,10 @@ describe("SyncEngine", () => {
       clear: jest.fn().mockResolvedValue(Result.ok(undefined)),
     } as unknown as jest.Mocked<SyncCursorRepository>
 
+    listSyncSettings = {
+      setEnabled: jest.fn().mockResolvedValue(Result.ok(undefined)),
+    } as unknown as jest.Mocked<ListSyncSettingsRepository>
+
     client = {
       sendEvents: jest.fn().mockResolvedValue(Result.ok(undefined)),
       getKnownEventIds: jest.fn().mockResolvedValue(Result.ok([])),
@@ -98,10 +110,18 @@ describe("SyncEngine", () => {
     MockOutboxRepository.mockImplementation(() => outbox)
     MockEventRepository.mockImplementation(() => events)
     MockSyncCursorRepository.mockImplementation(() => cursor)
+    MockListSyncSettingsRepository.mockImplementation(() => listSyncSettings)
     MockSyncClient.mockImplementation(() => client)
     MockEventApplier.mockImplementation(() => applier)
 
-    engine = new SyncEngine(outbox, events, client, cursor, applier)
+    engine = new SyncEngine(
+      outbox,
+      events,
+      client,
+      cursor,
+      applier,
+      listSyncSettings
+    )
   })
 
   describe("flush", () => {
@@ -170,6 +190,7 @@ describe("SyncEngine", () => {
         client,
         cursor,
         applier,
+        listSyncSettings,
         1
       )
       outbox.getPending
@@ -202,6 +223,7 @@ describe("SyncEngine", () => {
         client,
         cursor,
         applier,
+        listSyncSettings,
         1
       )
       // Every page is exactly at the batch limit, so the "short page"
@@ -218,13 +240,16 @@ describe("SyncEngine", () => {
       expect(client.sendEvents).toHaveBeenCalledTimes(MAX_DRAIN_BATCHES)
     })
 
-    it("stops draining (without querying further pages) once a send fails", async () => {
+    it("keeps draining subsequent pages after a send fails, rather than stopping the whole flush", async () => {
+      // A dead batch/list must not block everything queued behind it - see
+      // the PR #249 review on the original all-or-nothing flush().
       const engineWithSmallBatch = new SyncEngine(
         outbox,
         events,
         client,
         cursor,
         applier,
+        listSyncSettings,
         1
       )
       outbox.getPending
@@ -239,8 +264,84 @@ describe("SyncEngine", () => {
 
       await engineWithSmallBatch.flush()
 
-      expect(client.sendEvents).toHaveBeenCalledTimes(1)
-      expect(outbox.getPending).toHaveBeenCalledTimes(1)
+      expect(client.sendEvents).toHaveBeenCalledTimes(2)
+      // A 3rd call comes back empty (the base mock's default) - that's what
+      // actually stops the drain, not the earlier failures.
+      expect(outbox.getPending).toHaveBeenCalledTimes(3)
+    })
+
+    it("sends each list's events as its own request, so one list's rejection can't fail another list's events in the same page", async () => {
+      outbox.getPending.mockResolvedValue(
+        Result.ok([makeOutboxRow("e1"), makeOutboxRow("e2")])
+      )
+      events.getByEventIds.mockResolvedValue(
+        Result.ok([
+          makeEvent({ event_id: "e1", list_id: "list-1" }),
+          makeEvent({ event_id: "e2", list_id: "list-2" }),
+        ])
+      )
+      client.sendEvents.mockImplementation(async (evts) =>
+        evts[0].list_id === "list-1"
+          ? Result.fail(new SyncError("Forbidden", false))
+          : Result.ok(undefined)
+      )
+
+      await engine.flush()
+
+      expect(client.sendEvents).toHaveBeenCalledTimes(2)
+      expect(client.sendEvents).toHaveBeenCalledWith([
+        expect.objectContaining({ event_id: "e1", list_id: "list-1" }),
+      ])
+      expect(client.sendEvents).toHaveBeenCalledWith([
+        expect.objectContaining({ event_id: "e2", list_id: "list-2" }),
+      ])
+      // list-2's send succeeded even though list-1's failed non-retryably.
+      expect(outbox.bumpAttempt).toHaveBeenCalledWith("e2", expect.any(Number))
+    })
+
+    it("disables sync and drops the remaining outbox backlog for a list that's permanently rejected (e.g. 403 - no longer a member)", async () => {
+      outbox.getPending.mockResolvedValue(Result.ok([makeOutboxRow("e1")]))
+      events.getByEventIds.mockResolvedValue(
+        Result.ok([makeEvent({ event_id: "e1", list_id: "list-1" })])
+      )
+      client.sendEvents.mockResolvedValue(
+        Result.fail(new SyncError("Forbidden", false))
+      )
+
+      await engine.flush()
+
+      expect(listSyncSettings.setEnabled).toHaveBeenCalledWith("list-1", false)
+      expect(outbox.cancelForList).toHaveBeenCalledWith("list-1")
+    })
+
+    it("does not touch list_sync_settings for a retryable failure", async () => {
+      outbox.getPending.mockResolvedValue(Result.ok([makeOutboxRow("e1")]))
+      events.getByEventIds.mockResolvedValue(
+        Result.ok([makeEvent({ event_id: "e1", list_id: "list-1" })])
+      )
+      client.sendEvents.mockResolvedValue(
+        Result.fail(new SyncError("network down", true))
+      )
+
+      await engine.flush()
+
+      expect(listSyncSettings.setEnabled).not.toHaveBeenCalled()
+      expect(outbox.cancelForList).not.toHaveBeenCalled()
+    })
+
+    it("drops the specific rows (rather than disabling a list) when a permanently rejected event has no list_id", async () => {
+      outbox.getPending.mockResolvedValue(Result.ok([makeOutboxRow("e1")]))
+      events.getByEventIds.mockResolvedValue(
+        Result.ok([makeEvent({ event_id: "e1", list_id: null })])
+      )
+      client.sendEvents.mockResolvedValue(
+        Result.fail(new SyncError("Bad request", false))
+      )
+
+      await engine.flush()
+
+      expect(outbox.cancelEventIds).toHaveBeenCalledWith(["e1"])
+      expect(listSyncSettings.setEnabled).not.toHaveBeenCalled()
     })
 
     it("excludes rows already in flight from a concurrent call", async () => {
