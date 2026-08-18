@@ -220,6 +220,47 @@ func TestSqlcEventRepository_FindUnprocessed_RoundTripsFields(t *testing.T) {
 	assert.WithinDuration(t, event.OccurredAt, got.OccurredAt.UTC(), 0)
 }
 
+// TestSqlcEventRepository_Insert_RoundTripsUserID and
+// TestSqlcEventRepository_FindUnprocessed_RoundTripsUserID are the
+// regression tests for a review finding: events.user_id existed in the
+// schema (migration 00007) and on StoredEvent, but InsertEvent's column
+// list never included it and GetUnprocessedEvents never selected it - the
+// column was silently always NULL.
+func TestSqlcEventRepository_Insert_RoundTripsUserID(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcEventRepository(NewQueries(testDB.Conn))
+	ctx := context.Background()
+	event := makeStoredEvent()
+	event.UserID = "alice"
+
+	_, _, _, err := repo.Insert(ctx, event)
+	require.NoError(t, err)
+
+	unprocessed, err := repo.FindUnprocessed(ctx)
+	require.NoError(t, err)
+	require.Len(t, unprocessed, 1)
+	assert.Equal(t, "alice", unprocessed[0].UserID)
+}
+
+func TestSqlcEventRepository_FindUnprocessed_RoundTripsUserID(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcEventRepository(NewQueries(testDB.Conn))
+	ctx := context.Background()
+	// UserID left unset ("") - the pre-00007 / async-worker case, which
+	// must round-trip as "" (NULL in the DB), not "alice" or an error.
+	event := makeStoredEvent()
+
+	_, _, _, err := repo.Insert(ctx, event)
+	require.NoError(t, err)
+
+	unprocessed, err := repo.FindUnprocessed(ctx)
+	require.NoError(t, err)
+	require.Len(t, unprocessed, 1)
+	assert.Equal(t, "", unprocessed[0].UserID)
+}
+
 // TestSqlcEventRepository_FindKnownEventIDsByList_ReturnsAllDurablyReceivedEventsForRequestedLists
 // exercises invariant 6.8: "known" (seq IS NOT NULL) means durably
 // received, not "projection applied" - stillUnprocessedForRequested was

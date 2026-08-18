@@ -48,6 +48,25 @@ func uuidPtrFromPgtype(id pgtype.UUID) *uuid.UUID {
 	return &value
 }
 
+// pgtypeTextFromString converts a domain string, where "" means "not set"
+// (e.g. StoredEvent.UserID for events accepted before access enforcement
+// existed), into pgx's nullable text type - "" becomes NULL rather than a
+// stored empty string.
+func pgtypeTextFromString(s string) pgtype.Text {
+	if s == "" {
+		return pgtype.Text{}
+	}
+	return pgtype.Text{String: s, Valid: true}
+}
+
+// stringFromPgtypeText is the inverse of pgtypeTextFromString.
+func stringFromPgtypeText(t pgtype.Text) string {
+	if !t.Valid {
+		return ""
+	}
+	return t.String
+}
+
 func numericFromFloat64(f float64) pgtype.Numeric {
 	var n pgtype.Numeric
 	// Convert float64 to string first, then scan

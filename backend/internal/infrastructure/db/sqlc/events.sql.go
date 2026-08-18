@@ -150,7 +150,7 @@ func (q *Queries) GetListHeads(ctx context.Context, listIds []uuid.UUID) ([]GetL
 }
 
 const getUnprocessedEvents = `-- name: GetUnprocessedEvents :many
-SELECT id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id, seq
+SELECT id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id, seq, user_id
 FROM events
 WHERE processed_at IS NULL
 ORDER BY seq ASC
@@ -166,6 +166,7 @@ type GetUnprocessedEventsRow struct {
 	OccurredAt    pgtype.Timestamptz `db:"occurred_at" json:"occurred_at"`
 	ClientID      string             `db:"client_id" json:"client_id"`
 	Seq           pgtype.Int8        `db:"seq" json:"seq"`
+	UserID        pgtype.Text        `db:"user_id" json:"user_id"`
 }
 
 // The startup/periodic sweep's replay set - ordered by seq (unique,
@@ -192,6 +193,7 @@ func (q *Queries) GetUnprocessedEvents(ctx context.Context) ([]GetUnprocessedEve
 			&i.OccurredAt,
 			&i.ClientID,
 			&i.Seq,
+			&i.UserID,
 		); err != nil {
 			return nil, err
 		}
@@ -204,8 +206,8 @@ func (q *Queries) GetUnprocessedEvents(ctx context.Context) ([]GetUnprocessedEve
 }
 
 const insertEvent = `-- name: InsertEvent :one
-INSERT INTO events (id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id, seq)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, nextval('events_seq_seq'))
+INSERT INTO events (id, event_type, aggregate_id, aggregate_type, list_id, payload, occurred_at, client_id, seq, user_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, nextval('events_seq_seq'), $9)
 ON CONFLICT (id) DO UPDATE SET id = events.id
 RETURNING processed_at, seq, list_id
 `
@@ -219,6 +221,7 @@ type InsertEventParams struct {
 	Payload       []byte             `db:"payload" json:"payload"`
 	OccurredAt    pgtype.Timestamptz `db:"occurred_at" json:"occurred_at"`
 	ClientID      string             `db:"client_id" json:"client_id"`
+	UserID        pgtype.Text        `db:"user_id" json:"user_id"`
 }
 
 type InsertEventRow struct {
@@ -247,6 +250,7 @@ func (q *Queries) InsertEvent(ctx context.Context, arg InsertEventParams) (Inser
 		arg.Payload,
 		arg.OccurredAt,
 		arg.ClientID,
+		arg.UserID,
 	)
 	var i InsertEventRow
 	err := row.Scan(&i.ProcessedAt, &i.Seq, &i.ListID)
