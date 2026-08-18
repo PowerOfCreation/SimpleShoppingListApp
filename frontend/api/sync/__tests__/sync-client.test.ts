@@ -68,6 +68,16 @@ describe("SyncClient", () => {
       expect(fetchMock).not.toHaveBeenCalled()
     })
 
+    it("treats a 400 as non-retryable", async () => {
+      const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 400 })
+      const client = new SyncClient(fetchMock)
+
+      const result = await client.sendEvents([makeEvent()])
+
+      expect(result.success).toBe(false)
+      expect(result.getError().retryable).toBe(false)
+    })
+
     it("treats a 401 as non-retryable", async () => {
       const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 401 })
       const client = new SyncClient(fetchMock)

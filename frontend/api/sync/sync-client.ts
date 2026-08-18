@@ -94,14 +94,19 @@ export type EventsPage = {
 export type FetchLike = typeof fetch
 
 /**
- * 401 and 403 both mean retrying the exact same request is pointless: the
- * token is invalid/expired (401), or the caller has lost access to
+ * 400, 401 and 403 all mean retrying the exact same request is pointless:
+ * the request itself is malformed in a way that will never parse/validate
+ * (400 - e.g. an event missing list_id, see EventController.distinctListIDs),
+ * the token is invalid/expired (401), or the caller has lost access to
  * something in the request - a list they were removed from, or a list_id
  * they were never a member of (403, enforced server-side by
  * ListAccessService - see sync-sharing-target.md §2). Anything else is
  * treated as possibly transient.
  */
 function nonRetryableError(response: Response): SyncError | null {
+  if (response.status === 400) {
+    return new SyncError("Bad request", false)
+  }
   if (response.status === 401) {
     return new SyncError("Unauthorized", false)
   }
