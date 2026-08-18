@@ -147,6 +147,37 @@ func (q *Queries) GetActiveListInvites(ctx context.Context, arg GetActiveListInv
 	return items, nil
 }
 
+const getClaimedListIDs = `-- name: GetClaimedListIDs :many
+SELECT DISTINCT list_id
+FROM list_members
+WHERE list_id = ANY($1::uuid[])
+`
+
+// Which of the given list ids already have at least one member, regardless
+// of who - the pre-check behind ListAccessService.AuthorizeWrite's claim
+// phase. Distinguishes "nobody has pushed to this list yet" (eligible for
+// ClaimOwnershipIfUnowned) from "someone else already owns it" (must be
+// rejected) without granting access or claiming anything itself.
+func (q *Queries) GetClaimedListIDs(ctx context.Context, listIds []uuid.UUID) ([]uuid.UUID, error) {
+	rows, err := q.db.Query(ctx, getClaimedListIDs, listIds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []uuid.UUID{}
+	for rows.Next() {
+		var list_id uuid.UUID
+		if err := rows.Scan(&list_id); err != nil {
+			return nil, err
+		}
+		items = append(items, list_id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getListInviteById = `-- name: GetListInviteById :one
 SELECT id, list_id, token_hash, created_by, created_at, expires_at, revoked_at
 FROM list_invites

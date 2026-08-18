@@ -25,4 +25,11 @@ type ListMemberRepository interface {
 	// of - the filter behind every read path. Omission, not an error, is
 	// how "not yours" is reported (see GetAccessibleListIDs).
 	FindAccessibleListIDs(ctx context.Context, userID string, listIDs []uuid.UUID) ([]uuid.UUID, error)
+	// FindClaimedListIDs returns the subset of listIDs that already have at
+	// least one member, regardless of who - the pre-check
+	// ListAccessService.AuthorizeWrite uses to tell "nobody has pushed to
+	// this list yet" apart from "someone else already owns it" before
+	// claiming anything, so a batch that's ultimately rejected can't leave
+	// a still-unowned list claimed as a side effect.
+	FindClaimedListIDs(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error)
 }

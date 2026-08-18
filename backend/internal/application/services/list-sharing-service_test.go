@@ -149,6 +149,28 @@ func (f *fakeListMemberRepo) FindAccessibleListIDs(ctx context.Context, userID s
 	return accessible, nil
 }
 
+func (f *fakeListMemberRepo) FindClaimedListIDs(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	requested := make(map[uuid.UUID]struct{}, len(listIDs))
+	for _, listID := range listIDs {
+		requested[listID] = struct{}{}
+	}
+	seen := make(map[uuid.UUID]struct{})
+	var claimed []uuid.UUID
+	for key := range f.members {
+		if _, ok := requested[key.listID]; !ok {
+			continue
+		}
+		if _, ok := seen[key.listID]; ok {
+			continue
+		}
+		seen[key.listID] = struct{}{}
+		claimed = append(claimed, key.listID)
+	}
+	return claimed, nil
+}
+
 // fakeToDoListRepo implements repositories.ToDoListRepository, but this
 // suite only ever exercises FindById - every other method panics so an
 // accidental call surfaces immediately instead of silently no-oping.

@@ -97,3 +97,13 @@ func (r *SqlcListMemberRepository) FindAccessibleListIDs(
 		UserID:  userID,
 	})
 }
+
+func (r *SqlcListMemberRepository) FindClaimedListIDs(
+	ctx context.Context,
+	listIDs []uuid.UUID,
+) ([]uuid.UUID, error) {
+	if len(listIDs) == 0 {
+		return nil, nil
+	}
+	return r.queries.GetClaimedListIDs(ctx, listIDs)
+}

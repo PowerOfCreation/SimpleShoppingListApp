@@ -68,6 +68,12 @@ type Querier interface {
 	// using NOW() so results are reproducible in tests.
 	GetActiveListInvites(ctx context.Context, arg GetActiveListInvitesParams) ([]ListInvite, error)
 	GetAllToDos(ctx context.Context) ([]GetAllToDosRow, error)
+	// Which of the given list ids already have at least one member, regardless
+	// of who - the pre-check behind ListAccessService.AuthorizeWrite's claim
+	// phase. Distinguishes "nobody has pushed to this list yet" (eligible for
+	// ClaimOwnershipIfUnowned) from "someone else already owns it" (must be
+	// rejected) without granting access or claiming anything itself.
+	GetClaimedListIDs(ctx context.Context, listIds []uuid.UUID) ([]uuid.UUID, error)
 	// Pull page: every event for one list with seq strictly greater than
 	// since_seq, oldest-first, capped at limit_count. The controller requests
 	// limit_count+0 rows and treats a full page as "there may be more" (see

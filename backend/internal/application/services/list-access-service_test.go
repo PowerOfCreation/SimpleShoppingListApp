@@ -75,6 +75,25 @@ func TestListAccessService_AuthorizeWrite_RejectsTheWholeBatchOnFirstDeniedList(
 	assert.ErrorIs(t, err, interfaces.ErrListAccessDenied)
 }
 
+// TestListAccessService_AuthorizeWrite_RejectsWithoutClaimingAnUnownedList
+// guards the fix for the review finding on PR #249: a batch of
+// [unowned, foreign] must not claim the unowned list before failing on the
+// foreign one - the whole batch is a single all-or-nothing decision, claims
+// included.
+func TestListAccessService_AuthorizeWrite_RejectsWithoutClaimingAnUnownedList(t *testing.T) {
+	access, members := newAccessTestService()
+	unownedList := uuid.New()
+	foreignList := uuid.New()
+	seedOwner(t, members, foreignList, "mallory")
+
+	err := access.AuthorizeWrite(context.Background(), "alice", []uuid.UUID{unownedList, foreignList})
+
+	require.ErrorIs(t, err, interfaces.ErrListAccessDenied)
+	member, err := members.FindByListAndUser(context.Background(), unownedList, "alice")
+	require.NoError(t, err)
+	assert.Nil(t, member, "a rejected batch must not claim any of its lists, unowned or not")
+}
+
 func TestListAccessService_FilterAccessible_OmitsListsTheCallerIsNotAMemberOf(t *testing.T) {
 	access, members := newAccessTestService()
 	own := uuid.New()

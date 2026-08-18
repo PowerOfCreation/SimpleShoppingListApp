@@ -195,3 +195,39 @@ func TestSqlcListMemberRepository_FindAccessibleListIDs_EmptyInputReturnsNil(t *
 	require.NoError(t, err)
 	assert.Empty(t, accessible)
 }
+
+// TestSqlcListMemberRepository_FindClaimedListIDs_ReturnsListsWithAnyMemberRegardlessOfWho
+// is the repository-level coverage behind ListAccessService.AuthorizeWrite's
+// claim pre-check (see PR #249 review): it must report a list as "claimed"
+// even when the caller asking isn't the member who claimed it, since that's
+// exactly the distinction the pre-check needs ("nobody's pushed yet" vs.
+// "someone else already owns it").
+func TestSqlcListMemberRepository_FindClaimedListIDs_ReturnsListsWithAnyMemberRegardlessOfWho(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
+	ctx := context.Background()
+
+	claimedByOther := createTestToDoList(t, testDB)
+	unclaimed := createTestToDoList(t, testDB)
+
+	claimed, err := repo.ClaimOwnershipIfUnowned(ctx, claimedByOther, "mallory", time.Now().UTC())
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	result, err := repo.FindClaimedListIDs(ctx, []uuid.UUID{claimedByOther, unclaimed})
+
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []uuid.UUID{claimedByOther}, result)
+}
+
+func TestSqlcListMemberRepository_FindClaimedListIDs_EmptyInputReturnsNil(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
+
+	result, err := repo.FindClaimedListIDs(context.Background(), nil)
+
+	require.NoError(t, err)
+	assert.Empty(t, result)
+}
