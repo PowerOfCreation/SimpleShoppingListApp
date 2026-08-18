@@ -5,8 +5,10 @@
 -- push time (EventController), before any todo_lists row can exist, so an
 -- owner row must be insertable for a list_id todo_lists has never seen.
 -- Dropping these FKs (not the columns) is what makes that possible; the
--- ON DELETE CASCADE they carried is superseded by DELETE .../sync (see
--- sync-sharing-target.md 4.4) explicitly deleting members/invites itself.
+-- ON DELETE CASCADE they carried is meant to be superseded by the planned
+-- DELETE .../sync (see sync-sharing-target.md §4.4/§5, currently ⬜ open)
+-- explicitly deleting members/invites itself - there is no hard-delete
+-- path today, so nothing relies on that CASCADE yet either way.
 ALTER TABLE list_members DROP CONSTRAINT list_members_list_id_fkey;
 ALTER TABLE list_invites DROP CONSTRAINT list_invites_list_id_fkey;
 
