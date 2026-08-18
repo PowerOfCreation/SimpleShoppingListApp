@@ -85,6 +85,55 @@ describe("IngredientProjection", () => {
       })
     })
 
+    it("skips (doesn't throw) when the payload is not valid JSON", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation()
+
+      await expect(
+        projection.handleCreated(db, makeEvent({ payload: "{not json" }))
+      ).resolves.toBeUndefined()
+
+      const row = await db.getFirstAsync(`SELECT id FROM ingredients`)
+      expect(row).toBeNull()
+      expect(warnSpy).toHaveBeenCalled()
+      warnSpy.mockRestore()
+    })
+
+    it("skips (doesn't throw) when a required field is missing", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation()
+
+      await expect(
+        projection.handleCreated(db, makeEvent({ payload: "{}" }))
+      ).resolves.toBeUndefined()
+
+      const row = await db.getFirstAsync(`SELECT id FROM ingredients`)
+      expect(row).toBeNull()
+      expect(warnSpy).toHaveBeenCalled()
+      warnSpy.mockRestore()
+    })
+
+    // The server authorizes writes on the envelope's list_id, not anything
+    // inside payload - a payload-carried listId must never be trusted, or a
+    // member of list Y could push an event authorized for Y that lands in
+    // list X locally.
+    it("uses the envelope's list_id, ignoring a divergent payload.listId", async () => {
+      await projection.handleCreated(
+        db,
+        makeEvent({
+          list_id: "list-Y",
+          payload: JSON.stringify({
+            name: "Milk",
+            listId: "list-X",
+            completed: false,
+          }),
+        })
+      )
+
+      const row = await db.getFirstAsync<{ list_id: string }>(
+        `SELECT list_id FROM ingredients WHERE id = 'ing-1'`
+      )
+      expect(row?.list_id).toBe("list-Y")
+    })
+
     it("is idempotent: applying the same created event twice updates in place instead of throwing", async () => {
       await projection.handleCreated(db, makeEvent())
 
@@ -427,6 +476,77 @@ describe("IngredientProjection", () => {
         `SELECT id FROM ingredients WHERE id = 'ing-1'`
       )
       expect(row).not.toBeNull()
+    })
+
+    // Regression test for the poison-pill bug: a corrupt event mid-history
+    // used to throw out of rebuildForList, out of EventApplier's
+    // transaction, and leave the pull cursor stuck forever on this list.
+    // With totality, the bad event is skipped and every valid event either
+    // side of it still applies.
+    it("skips a corrupt event mid-history instead of aborting the whole rebuild", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation()
+
+      await expect(
+        projection.rebuildForList(db, "list-1", [
+          makeEvent({
+            event_id: "e1",
+            event_type: EventTypes.INGREDIENT_CREATED,
+            aggregate_id: "a",
+            seq: 1,
+            payload: JSON.stringify({ name: "Apples", completed: false }),
+          }),
+          makeEvent({
+            event_id: "e2",
+            event_type: EventTypes.INGREDIENT_CREATED,
+            aggregate_id: "b",
+            seq: 2,
+            payload: "{not valid json",
+          }),
+          makeEvent({
+            event_id: "e3",
+            event_type: EventTypes.INGREDIENT_CREATED,
+            aggregate_id: "c",
+            seq: 3,
+            payload: JSON.stringify({ name: "Butter", completed: false }),
+          }),
+        ])
+      ).resolves.toBeUndefined()
+
+      const rows = await db.getAllAsync<{ id: string }>(
+        `SELECT id FROM ingredients ORDER BY id`
+      )
+      // a and c (valid) both applied; only the corrupt b in between was
+      // skipped.
+      expect(rows.map((r) => r.id)).toEqual(["a", "c"])
+      expect(warnSpy).toHaveBeenCalled()
+
+      warnSpy.mockRestore()
+    })
+
+    // Task 3: skipped events must be diagnosable through the same path as
+    // the existing drift case, not just a per-event log line - see
+    // SyncEngine.repairList.
+    it("warns with a repairList pointer summarizing how many events were skipped", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation()
+
+      await projection.rebuildForList(db, "list-1", [
+        makeEvent({ event_id: "e1", seq: 1 }),
+        makeEvent({
+          event_id: "e2",
+          event_type: EventTypes.INGREDIENT_PRIORITY_SET,
+          aggregate_id: "ing-1",
+          payload: "{}",
+          seq: 2,
+        }),
+      ])
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /skipped 1 unreadable event.*SyncEngine\.repairList/
+        )
+      )
+
+      warnSpy.mockRestore()
     })
   })
 })

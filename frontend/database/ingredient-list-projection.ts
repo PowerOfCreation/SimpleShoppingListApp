@@ -8,8 +8,56 @@ import { createLogger } from "@/api/common/logger"
 
 const logger = createLogger("IngredientListProjection")
 
+type NamePayload = { name: string }
+
+function isNamePayload(value: unknown): value is NamePayload {
+  return (
+    typeof value === "object" &&
+    value !== null &&
+    typeof (value as Record<string, unknown>).name === "string"
+  )
+}
+
 export class IngredientListProjection {
   constructor(private readonly db: SQLiteDatabase) {}
+
+  // R4 (see frontend/docs/sync-server-registry-roadmap.md): a projection
+  // must never throw on a bad event - an unparseable/malformed payload from
+  // another device or client version is skipped and logged, not fatal.
+  // onSkip is optional and purely additive - it lets rebuildForList tally
+  // how many events it skipped without handle* methods having to change
+  // their (tested) void-resolving, never-throwing return contract.
+  private parsePayload<T>(
+    event: DomainEventRow,
+    isValid: (value: unknown) => value is T,
+    onSkip?: () => void
+  ): T | null {
+    let value: unknown
+    try {
+      value = JSON.parse(event.payload)
+    } catch {
+      this.logSkipped(event, "payload is not valid JSON", onSkip)
+      return null
+    }
+    if (!isValid(value)) {
+      this.logSkipped(event, "payload is missing a required field", onSkip)
+      return null
+    }
+    return value
+  }
+
+  private logSkipped(
+    event: DomainEventRow,
+    reason: string,
+    onSkip?: () => void
+  ): void {
+    logger.warn("Skipping event while rebuilding list projection", {
+      event_id: event.event_id,
+      event_type: event.event_type,
+      reason,
+    })
+    onSkip?.()
+  }
 
   /**
    * Upsert rather than a plain INSERT: rebuildForList/rebuild always DELETE
@@ -21,14 +69,16 @@ export class IngredientListProjection {
    */
   async handleCreated(
     db: SQLiteDatabase,
-    event: DomainEventRow
+    event: DomainEventRow,
+    onSkip?: () => void
   ): Promise<void> {
-    const { name } = JSON.parse(event.payload)
+    const payload = this.parsePayload(event, isNamePayload, onSkip)
+    if (!payload) return
     await db.runAsync(
       `INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES (?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET name = excluded.name, updated_at = excluded.updated_at`,
       event.aggregate_id,
-      name,
+      payload.name,
       event.occurred_at,
       event.occurred_at
     )
@@ -36,12 +86,14 @@ export class IngredientListProjection {
 
   async handleUpdated(
     db: SQLiteDatabase,
-    event: DomainEventRow
+    event: DomainEventRow,
+    onSkip?: () => void
   ): Promise<void> {
-    const { name } = JSON.parse(event.payload)
+    const payload = this.parsePayload(event, isNamePayload, onSkip)
+    if (!payload) return
     await db.runAsync(
       `UPDATE ingredient_lists SET name = ?, updated_at = ? WHERE id = ?`,
-      name,
+      payload.name,
       event.occurred_at,
       event.aggregate_id
     )
@@ -91,18 +143,22 @@ export class IngredientListProjection {
       )
     }
 
+    let skippedCount = 0
     for (const event of ordered) {
-      switch (event.event_type) {
-        case EventTypes.TODO_LIST_CREATED:
-          await this.handleCreated(db, event)
-          break
-        case EventTypes.TODO_LIST_UPDATED:
-          await this.handleUpdated(db, event)
-          break
-        case EventTypes.TODO_LIST_DELETED:
-          await this.handleDeleted(db, event)
-          break
+      if (await this.applyEvent(db, event)) {
+        skippedCount++
       }
+    }
+
+    // Same diagnosability pattern as the no-todo_list.created warning above:
+    // a rebuild that skipped events can't fix itself, but naming the repair
+    // path here keeps this discoverable through SyncEngine.repairList - the
+    // same place drift recovery already lives - instead of only a per-event
+    // log line.
+    if (skippedCount > 0) {
+      logger.warn(
+        `List ${listId} skipped ${skippedCount} unreadable event(s) during rebuild - see SyncEngine.repairList to re-derive it from the server`
+      )
     }
   }
 
@@ -111,18 +167,44 @@ export class IngredientListProjection {
       await this.db.runAsync(`DELETE FROM ingredient_lists`)
       const ordered = [...events].sort(byServerSeqThenLocal)
       for (const event of ordered) {
-        switch (event.event_type) {
-          case EventTypes.TODO_LIST_CREATED:
-            await this.handleCreated(this.db, event)
-            break
-          case EventTypes.TODO_LIST_UPDATED:
-            await this.handleUpdated(this.db, event)
-            break
-          case EventTypes.TODO_LIST_DELETED:
-            await this.handleDeleted(this.db, event)
-            break
-        }
+        await this.applyEvent(this.db, event)
       }
     })
+  }
+
+  // Belt-and-suspenders on top of parsePayload's field validation: any
+  // handler that still throws (e.g. an unforeseen bad shape) must not take
+  // the rest of the rebuild down with it - R4 applies to the whole dispatch,
+  // not just JSON parsing. Returns whether the event was skipped, so callers
+  // can tally it (see rebuildForList's aggregate warning above).
+  private async applyEvent(
+    db: SQLiteDatabase,
+    event: DomainEventRow
+  ): Promise<boolean> {
+    let skipped = false
+    const onSkip = () => {
+      skipped = true
+    }
+    try {
+      switch (event.event_type) {
+        case EventTypes.TODO_LIST_CREATED:
+          await this.handleCreated(db, event, onSkip)
+          break
+        case EventTypes.TODO_LIST_UPDATED:
+          await this.handleUpdated(db, event, onSkip)
+          break
+        case EventTypes.TODO_LIST_DELETED:
+          await this.handleDeleted(db, event)
+          break
+      }
+    } catch (error) {
+      logger.warn("Skipping event that failed to apply to list projection", {
+        event_id: event.event_id,
+        event_type: event.event_type,
+        reason: error,
+      })
+      skipped = true
+    }
+    return skipped
   }
 }
