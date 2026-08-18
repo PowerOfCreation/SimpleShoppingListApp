@@ -226,11 +226,11 @@ export class IngredientProjection {
     })
   }
 
-  // Belt-and-suspenders on top of parsePayload's field validation: any
-  // handler that still throws (e.g. an unforeseen bad shape) must not take
-  // the rest of the rebuild down with it - R4 applies to the whole dispatch,
-  // not just JSON parsing. Returns whether the event was skipped, so callers
-  // can tally it (see rebuildForList's aggregate warning above).
+  // R4 only covers content we can't read - parsePayload already skips that.
+  // db.runAsync is the one remaining throw source here, and that's a write
+  // failure (locked/full/aborted/constraint), not a bad payload: it must
+  // propagate so EventApplier.apply's transaction rolls back and the cursor
+  // doesn't advance past events that never actually applied.
   private async applyEvent(
     db: SQLiteDatabase,
     event: DomainEventRow
@@ -239,34 +239,22 @@ export class IngredientProjection {
     const onSkip = () => {
       skipped = true
     }
-    try {
-      switch (event.event_type) {
-        case EventTypes.INGREDIENT_CREATED:
-          await this.handleCreated(db, event, onSkip)
-          break
-        case EventTypes.INGREDIENT_UPDATED:
-          await this.handleUpdated(db, event, onSkip)
-          break
-        case EventTypes.INGREDIENT_PRIORITY_SET:
-          await this.handlePrioritySet(db, event, onSkip)
-          break
-        case EventTypes.INGREDIENT_PRIORITY_CLEARED:
-          await this.handlePriorityCleared(db, event)
-          break
-        case EventTypes.INGREDIENT_DELETED:
-          await this.handleDeleted(db, event)
-          break
-      }
-    } catch (error) {
-      logger.warn(
-        "Skipping event that failed to apply to ingredient projection",
-        {
-          event_id: event.event_id,
-          event_type: event.event_type,
-          reason: error,
-        }
-      )
-      skipped = true
+    switch (event.event_type) {
+      case EventTypes.INGREDIENT_CREATED:
+        await this.handleCreated(db, event, onSkip)
+        break
+      case EventTypes.INGREDIENT_UPDATED:
+        await this.handleUpdated(db, event, onSkip)
+        break
+      case EventTypes.INGREDIENT_PRIORITY_SET:
+        await this.handlePrioritySet(db, event, onSkip)
+        break
+      case EventTypes.INGREDIENT_PRIORITY_CLEARED:
+        await this.handlePriorityCleared(db, event)
+        break
+      case EventTypes.INGREDIENT_DELETED:
+        await this.handleDeleted(db, event)
+        break
     }
     return skipped
   }

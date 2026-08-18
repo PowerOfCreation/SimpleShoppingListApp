@@ -548,5 +548,32 @@ describe("IngredientProjection", () => {
 
       warnSpy.mockRestore()
     })
+
+    // A DB write failure is infrastructure, not unreadable content - unlike
+    // a bad payload (skipped above), it must propagate out of rebuildForList
+    // so EventApplier.apply's transaction rolls back and the cursor doesn't
+    // advance past an event that never actually applied.
+    it("propagates a genuine db write failure instead of swallowing it like a bad payload", async () => {
+      const dbError = new Error("SQLITE_BUSY: database is locked")
+      const originalRunAsync = db.runAsync.bind(db)
+      let callCount = 0
+      jest
+        .spyOn(db, "runAsync")
+        .mockImplementation((...args: Parameters<typeof db.runAsync>) => {
+          callCount++
+          // 1st call is rebuildForList's own DELETE; 2nd is handleCreated's
+          // INSERT - fail that one specifically.
+          if (callCount === 2) {
+            return Promise.reject(dbError)
+          }
+          return originalRunAsync(...args)
+        })
+
+      await expect(
+        projection.rebuildForList(db, "list-1", [makeEvent()])
+      ).rejects.toThrow(dbError)
+
+      jest.restoreAllMocks()
+    })
   })
 })
