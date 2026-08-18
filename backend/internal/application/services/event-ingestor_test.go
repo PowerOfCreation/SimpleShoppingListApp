@@ -283,12 +283,14 @@ func TestEventIngestor_ProcessesAndAcksAFreshEvent(t *testing.T) {
 	event := makeIngestorTestEvent("todo_list.created")
 	require.NoError(t, ingestor.Enqueue(ctx, event))
 
+	// See the note in todo-list-service_test.go: the ack lands before apply
+	// runs, so isProcessed is the signal that covers both.
 	require.Eventually(t, func() bool {
-		return ack.has(event.EventID)
+		return repo.isProcessed(event.EventID)
 	}, time.Second, time.Millisecond)
 
 	assert.Equal(t, 1, handler.callCount())
-	assert.True(t, repo.isProcessed(event.EventID))
+	assert.True(t, ack.has(event.EventID))
 }
 
 func TestEventIngestor_PublishesAListEventWithTheAssignedSeqAfterProcessing(t *testing.T) {
@@ -459,7 +461,10 @@ func TestEventIngestor_StuckEventKeepsItsLogPositionAheadOfLaterEvents(t *testin
 	require.NoError(t, ingestor.Enqueue(ctx, stuck))
 	require.NoError(t, ingestor.Enqueue(ctx, later))
 
-	require.Eventually(t, func() bool { return ack.has(later.EventID) }, time.Second, time.Millisecond)
+	// Waiting on later's apply (not just its ack) also pins down stuck's:
+	// one worker, strict FIFO, so stuck's failed apply is already behind us.
+	require.Eventually(t, func() bool { return repo.isProcessed(later.EventID) }, time.Second, time.Millisecond)
+	require.True(t, ack.has(later.EventID))
 	require.True(t, ack.has(stuck.EventID))
 
 	assert.Less(t, ack.seqOf(stuck.EventID), ack.seqOf(later.EventID))
