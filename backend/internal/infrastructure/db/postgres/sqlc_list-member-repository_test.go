@@ -18,7 +18,7 @@ func TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_FirstCallClaimsOwnersh
 	defer testDB.Close(t)
 	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
 	ctx := context.Background()
-	listID := createTestToDoList(t, testDB)
+	listID := registerTestList(t, testDB)
 
 	claimed, err := repo.ClaimOwnershipIfUnowned(ctx, listID, "alice", time.Now().UTC())
 	require.NoError(t, err)
@@ -36,7 +36,7 @@ func TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_SecondCallDoesNotClaim
 	defer testDB.Close(t)
 	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
 	ctx := context.Background()
-	listID := createTestToDoList(t, testDB)
+	listID := registerTestList(t, testDB)
 
 	claimed, err := repo.ClaimOwnershipIfUnowned(ctx, listID, "alice", time.Now().UTC())
 	require.NoError(t, err)
@@ -60,7 +60,7 @@ func TestSqlcListMemberRepository_Add_InsertsMemberWithInviteID(t *testing.T) {
 	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
 	inviteRepo := NewSqlcListInviteRepository(NewQueries(testDB.Conn))
 	ctx := context.Background()
-	listID := createTestToDoList(t, testDB)
+	listID := registerTestList(t, testDB)
 
 	// list_members.invite_id has an FK to list_invites(id), so the invite
 	// referenced here must actually exist.
@@ -89,7 +89,7 @@ func TestSqlcListMemberRepository_Add_TwiceIsANoOpWithoutError(t *testing.T) {
 	defer testDB.Close(t)
 	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
 	ctx := context.Background()
-	listID := createTestToDoList(t, testDB)
+	listID := registerTestList(t, testDB)
 
 	first, err := entities.NewListMember(listID, "bob", entities.RoleMember, time.Now().UTC().Truncate(time.Millisecond), nil)
 	require.NoError(t, err)
@@ -111,7 +111,7 @@ func TestSqlcListMemberRepository_FindByListAndUser_UnknownReturnsNilWithoutErro
 	testDB := testhelpers.SetupTestDB(t)
 	defer testDB.Close(t)
 	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
-	listID := createTestToDoList(t, testDB)
+	listID := registerTestList(t, testDB)
 
 	found, err := repo.FindByListAndUser(context.Background(), listID, "nobody")
 
@@ -131,7 +131,7 @@ func TestSqlcListMemberRepository_FindByListAndUser_CorruptRoleReturnsError(t *t
 	defer testDB.Close(t)
 	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
 	ctx := context.Background()
-	listID := createTestToDoList(t, testDB)
+	listID := registerTestList(t, testDB)
 
 	_, err := testDB.Conn.Exec(ctx, "ALTER TABLE list_members DROP CONSTRAINT list_members_role_check")
 	require.NoError(t, err)
@@ -169,8 +169,8 @@ func TestSqlcListMemberRepository_FindAccessibleListIDs_ReturnsOnlyListsTheUserI
 	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
 	ctx := context.Background()
 
-	own := createTestToDoList(t, testDB)
-	foreign := createTestToDoList(t, testDB)
+	own := registerTestList(t, testDB)
+	foreign := registerTestList(t, testDB)
 	unknown := uuid.New()
 
 	claimed, err := repo.ClaimOwnershipIfUnowned(ctx, own, "alice", time.Now().UTC())
@@ -208,8 +208,8 @@ func TestSqlcListMemberRepository_FindClaimedListIDs_ReturnsListsWithAnyMemberRe
 	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
 	ctx := context.Background()
 
-	claimedByOther := createTestToDoList(t, testDB)
-	unclaimed := createTestToDoList(t, testDB)
+	claimedByOther := registerTestList(t, testDB)
+	unclaimed := registerTestList(t, testDB)
 
 	claimed, err := repo.ClaimOwnershipIfUnowned(ctx, claimedByOther, "mallory", time.Now().UTC())
 	require.NoError(t, err)
@@ -230,4 +230,57 @@ func TestSqlcListMemberRepository_FindClaimedListIDs_EmptyInputReturnsNil(t *tes
 
 	require.NoError(t, err)
 	assert.Empty(t, result)
+}
+
+// The real push path claims a list the registry has never seen - that's the
+// whole point of claim-on-first-push. Registering it has to happen in the
+// same statement as the claim, or the foreign key added in 00008 makes the
+// claim fail outright and a list could never be created at all.
+func TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_RegistersAnUnknownList(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
+	registry := NewSqlcSyncedListRepository(NewQueries(testDB.Conn))
+	ctx := context.Background()
+
+	listID := uuid.New()
+	known, err := registry.Exists(ctx, listID)
+	require.NoError(t, err)
+	require.False(t, known, "precondition: the server has never seen this list")
+
+	claimed, err := repo.ClaimOwnershipIfUnowned(ctx, listID, "alice", time.Now().UTC())
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	known, err = registry.Exists(ctx, listID)
+	require.NoError(t, err)
+	assert.True(t, known, "claiming a list must register it in the same statement")
+}
+
+// A claim that loses the race writes no membership - and must not leave a
+// registry row behind either way, since the list is registered exactly when
+// someone owns it.
+func TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_LosingClaimKeepsTheRegistryConsistent(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
+	registry := NewSqlcSyncedListRepository(NewQueries(testDB.Conn))
+	ctx := context.Background()
+
+	listID := uuid.New()
+	claimed, err := repo.ClaimOwnershipIfUnowned(ctx, listID, "alice", time.Now().UTC())
+	require.NoError(t, err)
+	require.True(t, claimed)
+
+	claimed, err = repo.ClaimOwnershipIfUnowned(ctx, listID, "mallory", time.Now().UTC())
+	require.NoError(t, err)
+	require.False(t, claimed, "the list already has an owner")
+
+	known, err := registry.Exists(ctx, listID)
+	require.NoError(t, err)
+	assert.True(t, known, "the registry row stays - it belongs to alice's claim")
+
+	member, err := repo.FindByListAndUser(ctx, listID, "mallory")
+	require.NoError(t, err)
+	assert.Nil(t, member)
 }

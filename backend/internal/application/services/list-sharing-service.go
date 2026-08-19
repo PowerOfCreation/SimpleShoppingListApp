@@ -17,38 +17,41 @@ import (
 )
 
 type ListSharingService struct {
-	logger    *slog.Logger
-	invites   repositories.ListInviteRepository
-	members   repositories.ListMemberRepository
-	todoLists repositories.ToDoListRepository
-	access    interfaces.ListAccessService
+	logger  *slog.Logger
+	invites repositories.ListInviteRepository
+	members repositories.ListMemberRepository
+	lists   repositories.SyncedListRepository
+	access  interfaces.ListAccessService
 }
 
 func NewListSharingService(
 	logger *slog.Logger,
 	invites repositories.ListInviteRepository,
 	members repositories.ListMemberRepository,
-	todoLists repositories.ToDoListRepository,
+	lists repositories.SyncedListRepository,
 	access interfaces.ListAccessService,
 ) interfaces.ListSharingService {
 	return &ListSharingService{
-		logger:    logger,
-		invites:   invites,
-		members:   members,
-		todoLists: todoLists,
-		access:    access,
+		logger:  logger,
+		invites: invites,
+		members: members,
+		lists:   lists,
+		access:  access,
 	}
 }
 
-func (s *ListSharingService) requireList(ctx context.Context, listID uuid.UUID) (*entities.ToDoList, error) {
-	list, err := s.todoLists.FindById(ctx, listID)
+// requireList asks the registry, not a content projection: "synchronized"
+// means the server holds a log for this list, nothing more. It returns no
+// entity because there is none to return - the server has no list content.
+func (s *ListSharingService) requireList(ctx context.Context, listID uuid.UUID) error {
+	exists, err := s.lists.Exists(ctx, listID)
 	if err != nil {
-		return nil, err
+		return err
 	}
-	if list == nil {
-		return nil, interfaces.ErrListNotFound
+	if !exists {
+		return interfaces.ErrListNotFound
 	}
-	return list, nil
+	return nil
 }
 
 func (s *ListSharingService) CreateInvite(ctx context.Context, cmd *command.CreateListInviteCommand) (*command.CreateListInviteCommandResult, error) {
@@ -57,7 +60,7 @@ func (s *ListSharingService) CreateInvite(ctx context.Context, cmd *command.Crea
 		return nil, fmt.Errorf("%w: %s", interfaces.ErrInvalidInviteTTL, cmd.TTLKey)
 	}
 
-	if _, err := s.requireList(ctx, cmd.ListID); err != nil {
+	if err := s.requireList(ctx, cmd.ListID); err != nil {
 		return nil, err
 	}
 
@@ -85,7 +88,7 @@ func (s *ListSharingService) CreateInvite(ctx context.Context, cmd *command.Crea
 }
 
 func (s *ListSharingService) FindActiveInvites(ctx context.Context, qry *query.GetListInvitesQuery) (*query.GetListInvitesQueryResult, error) {
-	if _, err := s.requireList(ctx, qry.ListID); err != nil {
+	if err := s.requireList(ctx, qry.ListID); err != nil {
 		return nil, err
 	}
 
@@ -143,10 +146,12 @@ func (s *ListSharingService) RedeemInvite(ctx context.Context, cmd *command.Rede
 		return nil, interfaces.ErrInviteNotFound
 	}
 
-	// The list may have been deleted since this invite was created; a
-	// deleted list can't be joined.
-	list, err := s.requireList(ctx, invite.ListID)
-	if err != nil {
+	// Only that the server still holds a log for this list. Whether that log
+	// ends in todo_list.deleted is not something the server can know - it
+	// doesn't read payloads - so redeeming an invite to an already-deleted
+	// list succeeds here and the client discovers the deletion on its first
+	// pull, when it rebuilds the list from full history.
+	if err := s.requireList(ctx, invite.ListID); err != nil {
 		return nil, err
 	}
 
@@ -160,7 +165,6 @@ func (s *ListSharingService) RedeemInvite(ctx context.Context, cmd *command.Rede
 	} else if existing != nil {
 		return &command.RedeemListInviteCommandResult{
 			ListID:        invite.ListID,
-			ListName:      list.Name,
 			Role:          existing.Role,
 			AlreadyMember: true,
 		}, nil
@@ -185,7 +189,6 @@ func (s *ListSharingService) RedeemInvite(ctx context.Context, cmd *command.Rede
 
 	return &command.RedeemListInviteCommandResult{
 		ListID:        invite.ListID,
-		ListName:      list.Name,
 		Role:          entities.RoleMember,
 		AlreadyMember: false,
 	}, nil

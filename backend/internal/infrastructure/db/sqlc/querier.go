@@ -15,11 +15,17 @@ type Querier interface {
 	// already on (including the invite you just claimed ownership with) is a
 	// safe no-op rather than a primary key violation.
 	AddListMember(ctx context.Context, arg AddListMemberParams) error
-	// Adds the caller as owner only if listID has no members yet at all - the
-	// bootstrap for lists that predate this feature and never had an owner
-	// recorded anywhere. NOT EXISTS and the INSERT run as one statement so the
-	// common case doesn't need two round-trips. :one + zero rows (pgx.ErrNoRows)
-	// means the list already had members and nothing was written.
+	// Adds the caller as owner only if listID has no members yet at all, and
+	// registers the list in the same statement. :one + zero rows
+	// (pgx.ErrNoRows) means the list already had members and no membership was
+	// written.
+	//
+	// The registry insert is a data-modifying CTE rather than a second
+	// round-trip so the two can't diverge: Postgres runs it exactly once and to
+	// completion, and list_members' foreign key is checked after the whole
+	// statement, by which point the parent row exists. A member row without a
+	// registry row is therefore not representable - which is what makes the
+	// foreign key added in 00008 truthful rather than aspirational.
 	ClaimListOwnership(ctx context.Context, arg ClaimListOwnershipParams) (uuid.UUID, error)
 	CreateToDo(ctx context.Context, arg CreateToDoParams) (Todo, error)
 	// Projection, not an aggregate: a re-delivered created may update an
@@ -129,6 +135,10 @@ type Querier interface {
 	// revocation time - ListSharingService treats both as success either way,
 	// but this keeps the first revocation timestamp authoritative.
 	RevokeListInvite(ctx context.Context, arg RevokeListInviteParams) error
+	// "Does the server hold a log for this list" - the registry replacement for
+	// the old todo_lists existence check. Deliberately returns no content: the
+	// server has none to return.
+	SyncedListExists(ctx context.Context, id uuid.UUID) (bool, error)
 	UpdateToDo(ctx context.Context, arg UpdateToDoParams) error
 	// Missing or already-deleted row: zero rows affected, not an error - the
 	// row is a rebuildable projection, not the authority. last_applied_seq
