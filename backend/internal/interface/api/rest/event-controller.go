@@ -33,28 +33,18 @@ const (
 	maxBatchPayloadBytes = 64 * 1024
 
 	// todoListEventTypePrefix marks events whose aggregate *is* the list
-	// (see events.EventTypeCreateToDoList and friends) - only for these is
-	// an aggregate_id addressing a different list a structural error.
+	// ("todo_list.created" and friends) - only for these is an aggregate_id
+	// addressing a different list a structural error. Matched as a prefix,
+	// not against a known-type list: an unknown todo_list.* type is still
+	// accepted and relayed (R2), it just has to address its own list.
 	todoListEventTypePrefix = "todo_list."
 )
-
-// realtimePublisher is what SyncEvents needs from the realtime layer: ack
-// the sender, and notify anyone subscribed to a list that just got a new
-// event. A single combined interface rather than two constructor
-// parameters, since in practice one hub (internal/infrastructure/realtime)
-// implements both and there's never a reason to wire them independently.
-// Moved here from the now-deleted EventIngestor, which used to be the only
-// caller.
-type realtimePublisher interface {
-	interfaces.AckPublisher
-	interfaces.ListEventPublisher
-}
 
 type EventController struct {
 	logger    *slog.Logger
 	eventRepo repositories.EventRepository
 	access    interfaces.ListAccessService
-	publisher realtimePublisher
+	publisher interfaces.ListEventPublisher
 }
 
 func NewEventController(
@@ -62,7 +52,7 @@ func NewEventController(
 	logger *slog.Logger,
 	eventRepo repositories.EventRepository,
 	access interfaces.ListAccessService,
-	publisher realtimePublisher,
+	publisher interfaces.ListEventPublisher,
 	authMW echo.MiddlewareFunc,
 ) *EventController {
 	controller := &EventController{logger: logger, eventRepo: eventRepo, access: access, publisher: publisher}
@@ -77,7 +67,14 @@ func NewEventController(
 // event - once appended it is a fact (R1, see
 // frontend/docs/sync-server-registry-roadmap.md); there is no background
 // worker left that could still say no, so unlike the old enqueue-and-202
-// model this genuinely means "stored", not "accepted for later attempt".
+// model this genuinely means "stored", not "accepted for later attempt" -
+// hence 200, not 202.
+//
+// The response body is therefore the confirmation: Acked carries every
+// event's assigned seq, and nothing is delivered over the WebSocket about
+// the caller's own push. A lost response is self-healing rather than
+// tracked - the row stays pending client-side, the next flush re-pushes,
+// and AppendToList (idempotent on event_id) echoes the same seq back.
 //
 // Authorization and structural validation both stay whole-batch/fail-closed
 // (a rejected list must not have some of its events silently accepted just
@@ -140,7 +137,6 @@ func (ec *EventController) SyncEvents(c echo.Context) error {
 		}
 
 		for _, event := range listEvents {
-			ec.publisher.PublishAck(event.UserID, event.EventID, event.Seq)
 			acked = append(acked, response.SyncEventAckResponse{EventID: event.EventID, Seq: event.Seq})
 		}
 		// Only notify subscribers if this batch actually added something -
@@ -154,7 +150,7 @@ func (ec *EventController) SyncEvents(c echo.Context) error {
 		}
 	}
 
-	return c.JSON(http.StatusAccepted, response.SyncEventsPushResponse{
+	return c.JSON(http.StatusOK, response.SyncEventsPushResponse{
 		Queued: len(events),
 		Acked:  acked,
 	})

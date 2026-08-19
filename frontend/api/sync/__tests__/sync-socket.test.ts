@@ -7,9 +7,6 @@ import { getValidAccessToken } from "@/api/auth/auth-service"
 jest.mock("@/api/auth/auth-service", () => ({
   getValidAccessToken: jest.fn(),
 }))
-jest.mock("@/api/common/client-id", () => ({
-  getClientId: jest.fn(() => "client-1"),
-}))
 const mockGetValidAccessToken = getValidAccessToken as jest.Mock
 
 class FakeSocket {
@@ -40,7 +37,6 @@ class FakeSocket {
 describe("SyncSocket", () => {
   let createdSockets: FakeSocket[]
   let createSocket: jest.Mock
-  let onAck: jest.Mock
   let onConnected: jest.Mock
   let onListEvent: jest.Mock
 
@@ -52,7 +48,6 @@ describe("SyncSocket", () => {
       createdSockets.push(socket)
       return socket as unknown as WebSocket
     })
-    onAck = jest.fn()
     onConnected = jest.fn()
     onListEvent = jest.fn()
     mockGetValidAccessToken.mockResolvedValue(Result.ok("token-1"))
@@ -64,16 +59,17 @@ describe("SyncSocket", () => {
   })
 
   function makeSocket() {
-    return new SyncSocket(onAck, onConnected, onListEvent, createSocket)
+    return new SyncSocket(onConnected, onListEvent, createSocket)
   }
 
-  it("connects with the client id in the URL and the token as a bearer header", async () => {
+  it("connects with the token as a bearer header", async () => {
     const socket = makeSocket()
     await socket.connect()
 
     expect(createSocket).toHaveBeenCalledTimes(1)
     const [url, headers] = createSocket.mock.calls[0]
-    expect(url).toContain("client_id=client-1")
+    // Identity comes from the verified token, never a query parameter.
+    expect(url).not.toContain("client_id")
     expect(url).toContain("/api/v1/sync/ws")
     expect(headers).toEqual({ Authorization: "Bearer token-1" })
   })
@@ -143,7 +139,9 @@ describe("SyncSocket", () => {
     expect(fake.closeCalls).toBe(1)
   })
 
-  it("calls onAck with the event id from an ack message", async () => {
+  // The server stopped sending these when the push response became the
+  // confirmation; a stray one from an older server must do nothing.
+  it("ignores an ack message", async () => {
     const socket = makeSocket()
     await socket.connect()
     createdSockets[0].triggerMessage({
@@ -152,31 +150,7 @@ describe("SyncSocket", () => {
       seq: 7,
     })
 
-    expect(onAck).toHaveBeenCalledWith("evt-123")
-  })
-
-  it("calls onAck even with a malformed seq - seq has exactly one writer, the pull path, and is no longer read from an ack", async () => {
-    const socket = makeSocket()
-    await socket.connect()
-    createdSockets[0].triggerMessage({
-      type: "ack",
-      event_id: "evt-123",
-      seq: "not-a-number",
-    })
-
-    expect(onAck).toHaveBeenCalledWith("evt-123")
-  })
-
-  it("ignores an ack message with a malformed event_id", async () => {
-    const socket = makeSocket()
-    await socket.connect()
-    createdSockets[0].triggerMessage({
-      type: "ack",
-      event_id: 123,
-      seq: 7,
-    })
-
-    expect(onAck).not.toHaveBeenCalled()
+    expect(onListEvent).not.toHaveBeenCalled()
   })
 
   it("calls onListEvent with the list id and seq from an event message", async () => {
@@ -288,7 +262,7 @@ describe("SyncSocket", () => {
     const fake = createdSockets[0]
 
     expect(() => fake.onmessage?.({ data: "not json" })).not.toThrow()
-    expect(onAck).not.toHaveBeenCalled()
+    expect(onListEvent).not.toHaveBeenCalled()
   })
 
   it("reconnects after a close with exponential backoff, capped", async () => {

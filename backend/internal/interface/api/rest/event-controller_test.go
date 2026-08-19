@@ -81,20 +81,15 @@ func (f *fakeEventRepo) FindEventsSince(
 	return nil, nil
 }
 
-type fakeRealtimePublisher struct {
-	acked    map[uuid.UUID]bool
+type fakeListEventPublisher struct {
 	notified map[uuid.UUID]int64
 }
 
-func newFakeRealtimePublisher() *fakeRealtimePublisher {
-	return &fakeRealtimePublisher{acked: map[uuid.UUID]bool{}, notified: map[uuid.UUID]int64{}}
+func newFakeListEventPublisher() *fakeListEventPublisher {
+	return &fakeListEventPublisher{notified: map[uuid.UUID]int64{}}
 }
 
-func (f *fakeRealtimePublisher) PublishAck(userID string, eventID uuid.UUID, seq int64) {
-	f.acked[eventID] = true
-}
-
-func (f *fakeRealtimePublisher) PublishListEvent(listID uuid.UUID, seq int64) {
+func (f *fakeListEventPublisher) PublishListEvent(listID uuid.UUID, seq int64) {
 	f.notified[listID] = seq
 }
 
@@ -152,16 +147,16 @@ func allowAllAccess() *stubListAccessService {
 	}
 }
 
-func newTestEventController(t *testing.T, access interfaces.ListAccessService, authMW echo.MiddlewareFunc) (*echo.Echo, *fakeEventRepo, *fakeRealtimePublisher) {
+func newTestEventController(t *testing.T, access interfaces.ListAccessService, authMW echo.MiddlewareFunc) (*echo.Echo, *fakeEventRepo, *fakeListEventPublisher) {
 	repo := newFakeEventRepo()
-	publisher := newFakeRealtimePublisher()
+	publisher := newFakeListEventPublisher()
 
 	e := echo.New()
 	NewEventController(e, testLogger(), repo, access, publisher, authMW)
 	return e, repo, publisher
 }
 
-func TestEventController_SyncEvents_AppendsEventsAndReturns202(t *testing.T) {
+func TestEventController_SyncEvents_AppendsEventsAndReturns200(t *testing.T) {
 	e, _, publisher := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
 
 	eventID := uuid.New()
@@ -184,14 +179,15 @@ func TestEventController_SyncEvents_AppendsEventsAndReturns202(t *testing.T) {
 
 	e.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusAccepted, rec.Code)
+	assert.Equal(t, http.StatusOK, rec.Code)
+	// The body is the confirmation - there is no second delivery over the
+	// WebSocket for the caller's own push.
 	assert.JSONEq(t, `{"queued":1,"acked":[{"event_id":"`+eventID.String()+`","seq":1}]}`, rec.Body.String())
-	assert.True(t, publisher.acked[eventID], "event should have been acked synchronously")
 	assert.Equal(t, int64(1), publisher.notified[listID], "list subscribers should have been notified")
 }
 
 func TestEventController_SyncEvents_SetsUserIDFromVerifiedContextNotClientSuppliedField(t *testing.T) {
-	e, repo, publisher := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
+	e, repo, _ := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
 
 	eventID := uuid.New()
 	listID := uuid.New()
@@ -211,9 +207,9 @@ func TestEventController_SyncEvents_SetsUserIDFromVerifiedContextNotClientSuppli
 	rec := httptest.NewRecorder()
 
 	e.ServeHTTP(rec, req)
-	require.Equal(t, http.StatusAccepted, rec.Code)
+	require.Equal(t, http.StatusOK, rec.Code)
 
-	assert.True(t, publisher.acked[eventID])
+	assert.JSONEq(t, `{"queued":1,"acked":[{"event_id":"`+eventID.String()+`","seq":1}]}`, rec.Body.String())
 	assert.Equal(t, "user-1", repo.seen[eventID].UserID)
 }
 
@@ -229,7 +225,7 @@ func TestEventController_SyncEvents_MalformedBodyReturns400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
-func TestEventController_SyncEvents_EmptyBatchReturns202WithZeroQueued(t *testing.T) {
+func TestEventController_SyncEvents_EmptyBatchReturns200WithZeroQueued(t *testing.T) {
 	e, _, _ := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
 
 	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(`[]`))
@@ -238,7 +234,7 @@ func TestEventController_SyncEvents_EmptyBatchReturns202WithZeroQueued(t *testin
 
 	e.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusAccepted, rec.Code)
+	assert.Equal(t, http.StatusOK, rec.Code)
 	assert.JSONEq(t, `{"queued":0,"acked":[]}`, rec.Body.String())
 }
 
@@ -472,7 +468,7 @@ func TestEventController_SyncEvents_OneStructurallyBrokenEventRejectsWholeBatch(
 // with a 400 - the frontend treats 400 as non-retryable and disables sync
 // for the whole list on it (see sync-client.ts's nonRetryableError).
 func TestEventController_SyncEvents_UnknownEventTypeIsAcceptedAndRelayed(t *testing.T) {
-	e, _, publisher := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
+	e, _, _ := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
 
 	eventID := uuid.New()
 	aggregateID := uuid.New()
@@ -485,8 +481,8 @@ func TestEventController_SyncEvents_UnknownEventTypeIsAcceptedAndRelayed(t *test
 
 	e.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusAccepted, rec.Code)
-	assert.True(t, publisher.acked[eventID])
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t, `{"queued":1,"acked":[{"event_id":"`+eventID.String()+`","seq":1}]}`, rec.Body.String())
 }
 
 // TestEventController_SyncEvents_EmptyNameToDoListCreatedIsAccepted
@@ -495,7 +491,7 @@ func TestEventController_SyncEvents_UnknownEventTypeIsAcceptedAndRelayed(t *test
 // payload is valid JSON, sizes are in bounds), never semantics. An empty
 // name is a client-side concern to harden separately.
 func TestEventController_SyncEvents_EmptyNameToDoListCreatedIsAccepted(t *testing.T) {
-	e, _, publisher := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
+	e, _, _ := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
 
 	eventID := uuid.New()
 	listID := uuid.New()
@@ -507,8 +503,8 @@ func TestEventController_SyncEvents_EmptyNameToDoListCreatedIsAccepted(t *testin
 
 	e.ServeHTTP(rec, req)
 
-	assert.Equal(t, http.StatusAccepted, rec.Code)
-	assert.True(t, publisher.acked[eventID])
+	assert.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t, `{"queued":1,"acked":[{"event_id":"`+eventID.String()+`","seq":1}]}`, rec.Body.String())
 }
 
 // TestEventController_SyncEvents_RedeliveredEventDoesNotRenotifySubscribers
@@ -534,7 +530,10 @@ func TestEventController_SyncEvents_RedeliveredEventDoesNotRenotifySubscribers(t
 	rec2 := httptest.NewRecorder()
 	e.ServeHTTP(rec2, req2)
 
-	assert.Equal(t, http.StatusAccepted, rec2.Code)
-	assert.True(t, publisher.acked[eventID], "a redelivered event must still be acked")
+	assert.Equal(t, http.StatusOK, rec2.Code)
+	// A redelivery is still confirmed, with the seq the event got the first
+	// time - that is what lets a client whose original response was lost
+	// self-heal by simply re-pushing.
+	assert.JSONEq(t, `{"queued":1,"acked":[{"event_id":"`+eventID.String()+`","seq":1}]}`, rec2.Body.String())
 	assert.NotContains(t, publisher.notified, listID, "a pure-echo batch must not renotify subscribers")
 }

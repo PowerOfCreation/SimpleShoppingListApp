@@ -114,16 +114,21 @@ export class OutboxRepository extends BaseRepository {
   }
 
   /**
-   * Marks a row as synced. A no-op (not an error) when the row is already
-   * gone: an ack can race a toggle-sync-off that already deleted the
-   * pending row via cancelForList, and that must not surface as a
-   * failure.
+   * Marks the rows the server confirmed as synced, in one transaction - a
+   * push confirms its whole batch at once (see SyncClient.sendEvents), so
+   * there is no single-row variant. A row that's already gone is a no-op,
+   * not an error: a confirmation can race a toggle-sync-off that already
+   * deleted the pending row via cancelForList.
    */
-  async markSynced(eventId: string): Promise<Result<void, DbQueryError>> {
+  async markSynced(eventIds: string[]): Promise<Result<void, DbQueryError>> {
+    if (eventIds.length === 0) {
+      return Result.ok(undefined)
+    }
     return this._executeTransaction(async () => {
+      const placeholders = eventIds.map(() => "?").join(", ")
       await this.db.runAsync(
-        `UPDATE event_outbox SET status = 'synced' WHERE event_id = ?`,
-        eventId
+        `UPDATE event_outbox SET status = 'synced' WHERE event_id IN (${placeholders})`,
+        ...eventIds
       )
     }, "markSynced")
   }

@@ -47,28 +47,29 @@ type ListAccessFilter interface {
 	FilterAccessible(ctx context.Context, userID string, listIDs []uuid.UUID) ([]uuid.UUID, error)
 }
 
-// Hub fans out acks (by userID) and list-event notifications (by list_id,
-// via subscribe) to connections. Both are access-checked at the point a
-// caller could learn something: PublishAck only ever reaches connections
-// registered under the verified user_id that pushed the event (see
-// EventController.SyncEvents), and subscribe (below) filters requested list_ids through
-// ListAccessFilter before a connection is added to a list's subscriber set.
+// Hub fans out list-event notifications to the connections subscribed to
+// that list. That is the whole job: confirming a caller's own push is the
+// push response's business (see EventController.SyncEvents), so nothing
+// here is routed by user identity any more and no connection registry keyed
+// by user_id exists.
 //
-// Client registration is keyed by user_id -> set of connections, and
-// unregistration removes a connection by pointer identity, not just by
-// user_id: a dying connection's cleanup can run *after* a new connection
-// for the same user_id has already registered, and keying by user_id alone
-// would delete the new connection instead of the dead one. List
-// subscriptions follow the same by-pointer discipline for the same reason.
+// Access is checked at the one point a caller could learn something:
+// subscribe (below) filters requested list_ids through ListAccessFilter
+// before a connection joins a list's subscriber set, so publishing to a
+// list's subscribers can never reach a non-member.
+//
+// Bookkeeping removes a connection by pointer identity, never by user_id: a
+// dying connection's cleanup can run *after* a new connection for the same
+// user has already subscribed, and anything coarser would tear down the
+// live connection's subscriptions instead of the dead one's.
 type Hub struct {
-	logger  *slog.Logger
-	access  ListAccessFilter
-	mu      sync.RWMutex
-	clients map[string]map[*connection]struct{}
+	logger *slog.Logger
+	access ListAccessFilter
+	mu     sync.RWMutex
 	// subscriptions maps list_id -> the connections subscribed to it.
 	subscriptions map[uuid.UUID]map[*connection]struct{}
 	// subscribedLists is the reverse index (per connection, which lists it
-	// subscribed to) - needed so unregister/resubscribe can remove exactly
+	// subscribed to) - needed so cleanup/resubscribe can remove exactly
 	// this connection's entries from `subscriptions` without scanning it.
 	subscribedLists map[*connection]map[uuid.UUID]struct{}
 }
@@ -77,31 +78,14 @@ func NewHub(logger *slog.Logger, access ListAccessFilter) *Hub {
 	return &Hub{
 		logger:          logger,
 		access:          access,
-		clients:         make(map[string]map[*connection]struct{}),
 		subscriptions:   make(map[uuid.UUID]map[*connection]struct{}),
 		subscribedLists: make(map[*connection]map[uuid.UUID]struct{}),
 	}
 }
 
-func (h *Hub) register(userID string, conn *connection) {
+func (h *Hub) unregister(conn *connection) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
-	if h.clients[userID] == nil {
-		h.clients[userID] = make(map[*connection]struct{})
-	}
-	h.clients[userID][conn] = struct{}{}
-}
-
-func (h *Hub) unregister(userID string, conn *connection) {
-	h.mu.Lock()
-	defer h.mu.Unlock()
-	conns, ok := h.clients[userID]
-	if ok {
-		delete(conns, conn)
-		if len(conns) == 0 {
-			delete(h.clients, userID)
-		}
-	}
 	h.unsubscribeAllLocked(conn)
 }
 
@@ -146,17 +130,6 @@ func (h *Hub) unsubscribeAllLocked(conn *connection) {
 	delete(h.subscribedLists, conn)
 }
 
-func (h *Hub) connectionsFor(userID string) []*connection {
-	h.mu.RLock()
-	defer h.mu.RUnlock()
-	conns := h.clients[userID]
-	out := make([]*connection, 0, len(conns))
-	for c := range conns {
-		out = append(out, c)
-	}
-	return out
-}
-
 func (h *Hub) subscribersFor(listID uuid.UUID) []*connection {
 	h.mu.RLock()
 	defer h.mu.RUnlock()
@@ -168,49 +141,50 @@ func (h *Hub) subscribersFor(listID uuid.UUID) []*connection {
 	return out
 }
 
-// PublishAck implements interfaces.AckPublisher. userID is the verified
-// Keycloak sub that pushed the event (StoredEvent.UserID), not client_id -
-// this is what keeps an ack from being deliverable to a connection that
-// merely guessed someone else's client_id. Best-effort: if no connection
-// is registered for userID (offline, or never connected), this is a silent
-// no-op - the client's reconcile pass is the source of truth, not the ack.
-func (h *Hub) PublishAck(userID string, eventID uuid.UUID, seq int64) {
-	msg := map[string]any{"type": "ack", "event_id": eventID.String(), "seq": seq}
-	for _, conn := range h.connectionsFor(userID) {
-		if err := conn.writeJSON(msg); err != nil {
-			// Warn, not Error: a client that disconnected mid-send is
-			// expected, not a server fault.
-			h.logger.Warn("failed to send ack", "user_id", userID, "event_id", eventID, "error", err)
-		}
-	}
-}
-
-// PublishListEvent implements interfaces.ListEventPublisher. Best-effort,
-// same as PublishAck: no subscriber is a silent no-op - a client's own
-// periodic pull (and its next connect/foreground pull) is the fallback if
-// this notification never arrives or is missed while disconnected. Safe to
-// reach every subscriber unconditionally - subscribe already access-checked
-// membership before adding anyone to this list's set.
+// PublishListEvent implements interfaces.ListEventPublisher. Returns as
+// soon as the subscriber set is snapshotted; the writes themselves run
+// detached, so a peer that has stopped reading can only stall its own
+// delivery (up to writeDeadline) and never the HTTP push that triggered
+// this. Safe to reach every subscriber unconditionally - subscribe already
+// access-checked membership before adding anyone to this list's set.
+//
+// Best-effort and deliberately unordered: the notification is a pull
+// trigger, not an ordering token. The client reads only list_id from it and
+// debounces a pull of that list (see SyncCoordinator), so a late, duplicate
+// or dropped notification costs at most a redundant pull, or one deferred
+// to the periodic safety interval.
 func (h *Hub) PublishListEvent(listID uuid.UUID, seq int64) {
-	msg := map[string]any{"type": "event", "list_id": listID.String(), "seq": seq}
-	for _, conn := range h.subscribersFor(listID) {
-		if err := conn.writeJSON(msg); err != nil {
-			h.logger.Warn("failed to send list event", "list_id", listID, "seq", seq, "error", err)
-		}
+	conns := h.subscribersFor(listID)
+	if len(conns) == 0 {
+		return
 	}
+	msg := map[string]any{"type": "event", "list_id": listID.String(), "seq": seq}
+	go func() {
+		for _, conn := range conns {
+			if err := conn.writeJSON(msg); err != nil {
+				// Warn, not Error: a client that disconnected mid-send is
+				// expected, not a server fault.
+				h.logger.Warn("failed to send list event", "list_id", listID, "seq", seq, "error", err)
+			}
+		}
+	}()
 }
 
-// Serve registers the connection and blocks, running its read loop, until
-// the connection closes. Meant to be called from the HTTP handler
-// goroutine that performed the upgrade - it owns the connection for its
-// entire lifetime, and ctx (the still-live request context - the handler
-// hasn't returned yet) is what subscribe uses for its access-filter lookup.
+// Serve blocks, running the connection's read loop, until it closes. Meant
+// to be called from the HTTP handler goroutine that performed the upgrade -
+// it owns the connection for its entire lifetime, and ctx (the still-live
+// request context - the handler hasn't returned yet) is what subscribe uses
+// for its access-filter lookup. userID is the verified Keycloak sub; it is
+// what subscribe access-checks against, never a client-supplied id.
+//
+// A connection the Hub knows nothing about is simply one with no
+// subscriptions: it enters the fan-out only once it subscribes, and
+// unregister on the way out is what removes it again.
 func (h *Hub) Serve(ctx context.Context, userID string, ws *websocket.Conn) {
 	conn := newConnection(ws)
-	h.register(userID, conn)
-	h.logger.Debug("connection registered", "user_id", userID)
+	h.logger.Debug("connection opened", "user_id", userID)
 	defer func() {
-		h.unregister(userID, conn)
+		h.unregister(conn)
 		_ = ws.Close()
 		h.logger.Debug("connection closed", "user_id", userID)
 	}()

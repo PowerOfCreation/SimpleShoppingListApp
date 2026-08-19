@@ -72,73 +72,20 @@ func dial(t *testing.T, server *httptest.Server, userID string) *websocket.Conn 
 	return conn
 }
 
-func TestHub_PublishAck_DeliversToConnectedClient(t *testing.T) {
+// TestHub_ConnectingWithoutSubscribingReceivesNothing is what replaced the
+// ack path: a client's own push is confirmed by the push response, so
+// merely being connected must deliver nothing at all. Only a subscription
+// puts a connection in a fan-out.
+func TestHub_ConnectingWithoutSubscribingReceivesNothing(t *testing.T) {
 	hub := NewHub(testLogger(), newFakeAccessFilter())
 	server := startTestServer(t, hub)
 	conn := dial(t, server, "user-1")
 
-	eventID := uuid.New()
-	require.Eventually(t, func() bool {
-		return len(hub.connectionsFor("user-1")) == 1
-	}, time.Second, time.Millisecond)
+	hub.PublishListEvent(uuid.New(), 1)
 
-	hub.PublishAck("user-1", eventID, 42)
-
-	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+	_ = conn.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
 	var msg map[string]any
-	require.NoError(t, conn.ReadJSON(&msg))
-	assert.Equal(t, "ack", msg["type"])
-	assert.Equal(t, eventID.String(), msg["event_id"])
-	assert.Equal(t, float64(42), msg["seq"])
-}
-
-func TestHub_PublishAck_NoConnectedClientIsANoOp(t *testing.T) {
-	hub := NewHub(testLogger(), newFakeAccessFilter())
-
-	assert.NotPanics(t, func() {
-		hub.PublishAck("nobody-home", uuid.New(), 1)
-	})
-}
-
-func TestHub_PublishAck_FansOutToEveryConnectionOfTheSameUser(t *testing.T) {
-	hub := NewHub(testLogger(), newFakeAccessFilter())
-	server := startTestServer(t, hub)
-	connA := dial(t, server, "user-1")
-	connB := dial(t, server, "user-1")
-
-	require.Eventually(t, func() bool {
-		return len(hub.connectionsFor("user-1")) == 2
-	}, time.Second, time.Millisecond)
-
-	eventID := uuid.New()
-	hub.PublishAck("user-1", eventID, 42)
-
-	for _, conn := range []*websocket.Conn{connA, connB} {
-		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
-		var msg map[string]any
-		require.NoError(t, conn.ReadJSON(&msg))
-		assert.Equal(t, eventID.String(), msg["event_id"])
-	}
-}
-
-// TestHub_PublishAck_DoesNotReachAnotherUser guards the reason PublishAck
-// is now routed by verified user_id instead of the client-supplied
-// client_id it used before: a connection registered under a different
-// user_id must never receive an ack it didn't earn.
-func TestHub_PublishAck_DoesNotReachAnotherUser(t *testing.T) {
-	hub := NewHub(testLogger(), newFakeAccessFilter())
-	server := startTestServer(t, hub)
-	other := dial(t, server, "user-2")
-
-	require.Eventually(t, func() bool {
-		return len(hub.connectionsFor("user-2")) == 1
-	}, time.Second, time.Millisecond)
-
-	hub.PublishAck("user-1", uuid.New(), 1)
-
-	_ = other.SetReadDeadline(time.Now().Add(100 * time.Millisecond))
-	var msg map[string]any
-	err := other.ReadJSON(&msg)
+	err := conn.ReadJSON(&msg)
 	assert.Error(t, err, "expected a read timeout, not a delivered message")
 }
 
@@ -155,42 +102,30 @@ func TestHub_PingIsAnsweredWithPong(t *testing.T) {
 	assert.Equal(t, "pong", msg["type"])
 }
 
-// TestHub_ReconnectDoesNotLoseTheNewConnection guards against the
-// register/unregister-by-key race this Hub is specifically designed to
-// avoid: if unregister deleted "the" map entry for a user_id rather than
-// one specific connection by pointer identity, a dying old connection's
-// deferred cleanup - which can run *after* a reconnect has already
-// re-registered - would wipe out the new connection too, and acks would
-// go nowhere until the next reconnect.
-func TestHub_ReconnectDoesNotLoseTheNewConnection(t *testing.T) {
+// TestHub_ReconnectDoesNotLoseTheNewConnectionsSubscriptions guards the
+// by-pointer bookkeeping the Hub is specifically designed for: if cleanup
+// removed "the" entry for a user rather than one specific connection, a
+// dying old connection's deferred cleanup - which can run *after* a
+// reconnect has already resubscribed - would unsubscribe the new
+// connection too, and it would stop hearing about the list until the next
+// reconnect.
+func TestHub_ReconnectDoesNotLoseTheNewConnectionsSubscriptions(t *testing.T) {
 	hub := NewHub(testLogger(), newFakeAccessFilter())
+	listID := uuid.New()
 
 	oldConn := newConnection(&websocket.Conn{})
-	hub.register("user-1", oldConn)
+	hub.subscribe(context.Background(), "user-1", oldConn, []uuid.UUID{listID})
 
 	newConn := newConnection(&websocket.Conn{})
-	hub.register("user-1", newConn)
+	hub.subscribe(context.Background(), "user-1", newConn, []uuid.UUID{listID})
 
 	// Simulate the old connection's read loop finally noticing it died and
 	// running its deferred cleanup, well after the reconnect above.
-	hub.unregister("user-1", oldConn)
+	hub.unregister(oldConn)
 
-	remaining := hub.connectionsFor("user-1")
+	remaining := hub.subscribersFor(listID)
 	require.Len(t, remaining, 1)
 	assert.Same(t, newConn, remaining[0])
-}
-
-func TestHub_UnregisterRemovesTheClientEntryOnceEmpty(t *testing.T) {
-	hub := NewHub(testLogger(), newFakeAccessFilter())
-	conn := newConnection(&websocket.Conn{})
-	hub.register("user-1", conn)
-
-	hub.unregister("user-1", conn)
-
-	hub.mu.RLock()
-	_, exists := hub.clients["user-1"]
-	hub.mu.RUnlock()
-	assert.False(t, exists, "empty client entries should be cleaned up, not leaked")
 }
 
 func TestHub_PublishListEvent_DeliversToASubscriber(t *testing.T) {
@@ -215,6 +150,33 @@ func TestHub_PublishListEvent_DeliversToASubscriber(t *testing.T) {
 	assert.Equal(t, "event", msg["type"])
 	assert.Equal(t, listID.String(), msg["list_id"])
 	assert.Equal(t, float64(42), msg["seq"])
+}
+
+// TestHub_PublishListEvent_DoesNotBlockOnAStalledSubscriber is the reason
+// the fan-out is detached: it runs inside the HTTP push handler, so a peer
+// that has stopped reading must not be able to hold that request open for
+// writeDeadline. A held connection.mu is the stand-in for a write that
+// won't complete - it blocks writeJSON exactly the way a stalled socket
+// does. The lock is deliberately never released: the detached goroutine
+// stays parked for the rest of the test, which is the point.
+func TestHub_PublishListEvent_DoesNotBlockOnAStalledSubscriber(t *testing.T) {
+	hub := NewHub(testLogger(), newFakeAccessFilter())
+	stalled := newConnection(&websocket.Conn{})
+	listID := uuid.New()
+	hub.subscribe(context.Background(), "user-1", stalled, []uuid.UUID{listID})
+	stalled.mu.Lock()
+
+	done := make(chan struct{})
+	go func() {
+		hub.PublishListEvent(listID, 1)
+		close(done)
+	}()
+
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("PublishListEvent blocked on a subscriber that isn't draining its writes")
+	}
 }
 
 func TestHub_PublishListEvent_NoSubscriberIsANoOp(t *testing.T) {
@@ -294,10 +256,9 @@ func TestHub_Unregister_RemovesTheConnectionsSubscriptions(t *testing.T) {
 	hub := NewHub(testLogger(), newFakeAccessFilter())
 	conn := newConnection(&websocket.Conn{})
 	listID := uuid.New()
-	hub.register("user-1", conn)
 	hub.subscribe(context.Background(), "user-1", conn, []uuid.UUID{listID})
 
-	hub.unregister("user-1", conn)
+	hub.unregister(conn)
 
 	assert.Empty(t, hub.subscribersFor(listID))
 	hub.mu.RLock()

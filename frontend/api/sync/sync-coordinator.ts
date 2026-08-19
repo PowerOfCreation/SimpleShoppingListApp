@@ -48,11 +48,6 @@ export class SyncCoordinator {
     private readonly listSyncSettingsRepository: ListSyncSettingsRepository
   ) {
     this.socket = new SyncSocket(
-      (eventId) => {
-        this.engine.handleAck(eventId).catch((error) => {
-          logger.error("Failed to handle ack", error)
-        })
-      },
       () => {
         // Freshly (re)connected is exactly the moment a gap that opened up
         // while disconnected should be caught - both directions: pull

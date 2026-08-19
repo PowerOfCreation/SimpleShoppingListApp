@@ -3,7 +3,7 @@ import { OutboxRepository } from "@/database/outbox-repository"
 import { EventRepository } from "@/database/event-repository"
 import { SyncCursorRepository } from "@/database/sync-cursor-repository"
 import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
-import { SyncClient } from "@/api/sync/sync-client"
+import { PushAck, SyncClient } from "@/api/sync/sync-client"
 import { EventApplier } from "@/api/sync/event-applier"
 import { Result } from "@/api/common/result"
 import { SyncError, DbQueryError } from "@/api/common/error-types"
@@ -97,7 +97,7 @@ describe("SyncEngine", () => {
     } as unknown as jest.Mocked<ListSyncSettingsRepository>
 
     client = {
-      sendEvents: jest.fn().mockResolvedValue(Result.ok(undefined)),
+      sendEvents: jest.fn().mockResolvedValue(Result.ok([])),
       getKnownEventIds: jest.fn().mockResolvedValue(Result.ok([])),
       getListHeads: jest.fn().mockResolvedValue(Result.ok([])),
       getEventsSince: jest.fn(),
@@ -132,10 +132,13 @@ describe("SyncEngine", () => {
       expect(client.sendEvents).not.toHaveBeenCalled()
     })
 
-    it("sends pending events and bumps their attempt count, without marking them synced", async () => {
+    it("sends pending events, bumps their attempt count and marks what the server confirmed", async () => {
       outbox.getPending.mockResolvedValue(Result.ok([makeOutboxRow("e1")]))
       events.getByEventIds.mockResolvedValue(
         Result.ok([makeEvent({ event_id: "e1" })])
+      )
+      client.sendEvents.mockResolvedValue(
+        Result.ok([{ eventId: "e1", seq: 1 }])
       )
 
       await engine.flush()
@@ -144,9 +147,60 @@ describe("SyncEngine", () => {
         makeEvent({ event_id: "e1" }),
       ])
       expect(outbox.bumpAttempt).toHaveBeenCalledWith("e1", expect.any(Number))
-      // A 202 is not a commit confirmation - flush must never call
-      // markSynced on its own.
+      expect(outbox.markSynced).toHaveBeenCalledWith(["e1"])
+    })
+
+    // The push commits before it answers, so anything the response doesn't
+    // confirm has to stay pending - marking a row synced off the bare fact
+    // that a request was sent is exactly the optimism this design rejects.
+    it("does not mark a row synced when the response confirms nothing", async () => {
+      outbox.getPending.mockResolvedValue(Result.ok([makeOutboxRow("e1")]))
+      events.getByEventIds.mockResolvedValue(
+        Result.ok([makeEvent({ event_id: "e1" })])
+      )
+      client.sendEvents.mockResolvedValue(Result.ok([]))
+
+      await engine.flush()
+
+      expect(outbox.markSynced).toHaveBeenCalledWith([])
+    })
+
+    it("ignores a confirmation for an event this group never sent", async () => {
+      outbox.getPending.mockResolvedValue(Result.ok([makeOutboxRow("e1")]))
+      events.getByEventIds.mockResolvedValue(
+        Result.ok([makeEvent({ event_id: "e1" })])
+      )
+      client.sendEvents.mockResolvedValue(
+        Result.ok([
+          { eventId: "e1", seq: 1 },
+          { eventId: "someone-elses-event", seq: 2 },
+        ])
+      )
+
+      await engine.flush()
+
+      expect(outbox.markSynced).toHaveBeenCalledWith(["e1"])
+    })
+
+    // The self-heal for a lost response: the row stayed pending, the next
+    // flush re-pushes it, and the server (idempotent on event_id) answers
+    // with the seq it already assigned. No reconcile pass involved.
+    it("marks a row synced from a redelivery that echoes the original seq", async () => {
+      outbox.getPending.mockResolvedValue(Result.ok([makeOutboxRow("e1")]))
+      events.getByEventIds.mockResolvedValue(
+        Result.ok([makeEvent({ event_id: "e1" })])
+      )
+      client.sendEvents
+        .mockResolvedValueOnce(
+          Result.fail(new SyncError("Network error while sending events", true))
+        )
+        .mockResolvedValueOnce(Result.ok([{ eventId: "e1", seq: 1 }]))
+
+      await engine.flush()
       expect(outbox.markSynced).not.toHaveBeenCalled()
+
+      await engine.flush()
+      expect(outbox.markSynced).toHaveBeenCalledWith(["e1"])
     })
 
     it("still bumps attempts when the send fails, but does not throw", async () => {
@@ -163,7 +217,7 @@ describe("SyncEngine", () => {
     })
 
     it("does not start a second flush while one is already running", async () => {
-      let resolveSend!: (value: Result<void, SyncError>) => void
+      let resolveSend!: (value: Result<PushAck[], SyncError>) => void
       client.sendEvents.mockReturnValue(
         new Promise((resolve) => {
           resolveSend = resolve
@@ -177,7 +231,7 @@ describe("SyncEngine", () => {
       const first = engine.flush()
       const second = engine.flush()
 
-      resolveSend(Result.ok(undefined))
+      resolveSend(Result.ok([]))
       await Promise.all([first, second])
 
       expect(client.sendEvents).toHaveBeenCalledTimes(1)
@@ -283,7 +337,7 @@ describe("SyncEngine", () => {
       client.sendEvents.mockImplementation(async (evts) =>
         evts[0].list_id === "list-1"
           ? Result.fail(new SyncError("Forbidden", false))
-          : Result.ok(undefined)
+          : Result.ok([{ eventId: "e2", seq: 1 }])
       )
 
       await engine.flush()
@@ -345,7 +399,7 @@ describe("SyncEngine", () => {
     })
 
     it("excludes rows already in flight from a concurrent call", async () => {
-      let resolveSend!: (value: Result<void, SyncError>) => void
+      let resolveSend!: (value: Result<PushAck[], SyncError>) => void
       client.sendEvents.mockImplementation(
         () =>
           new Promise((resolve) => {
@@ -361,17 +415,21 @@ describe("SyncEngine", () => {
       // Let the first flush grab e1 and start "sending" before resolving.
       await flushMicrotasks()
 
-      resolveSend(Result.ok(undefined))
+      resolveSend(Result.ok([]))
       await first
       expect(client.sendEvents).toHaveBeenCalledTimes(1)
     })
   })
 
-  describe("handleAck", () => {
-    it("marks the acked event as synced", async () => {
-      await engine.handleAck("e1")
-
-      expect(outbox.markSynced).toHaveBeenCalledWith("e1")
+  describe("push confirmations", () => {
+    beforeEach(() => {
+      outbox.getPending.mockResolvedValue(Result.ok([makeOutboxRow("e1")]))
+      events.getByEventIds.mockResolvedValue(
+        Result.ok([makeEvent({ event_id: "e1" })])
+      )
+      client.sendEvents.mockResolvedValue(
+        Result.ok([{ eventId: "e1", seq: 1 }])
+      )
     })
 
     it("logs but does not throw when marking synced fails", async () => {
@@ -379,19 +437,18 @@ describe("SyncEngine", () => {
         Result.fail(new DbQueryError("boom", "markSynced", "EventOutbox"))
       )
 
-      await expect(engine.handleAck("e1")).resolves.toBeUndefined()
+      await expect(engine.flush()).resolves.toBeUndefined()
     })
 
     // seq has exactly one writer - the pull path (EventRepository.insertRemote)
-    // - so an ack no longer touches domain_events or triggers a rebuild.
-    // Acking events in any order can never affect replay order: the
-    // regression this queue-based test used to guard against (see #227,
-    // "serialize ack processing to preserve seq order") can no longer occur,
-    // because there's nothing left for a second, out-of-band writer to race.
-    it("never looks up the event or rebuilds anything, regardless of ack order", async () => {
-      await Promise.all([engine.handleAck("e1"), engine.handleAck("e2")])
+    // - so a confirmation never touches domain_events or triggers a rebuild.
+    // It carries the assigned seq, but only the pull writes it; that's what
+    // keeps confirmations out of replay ordering entirely (see #227,
+    // "serialize ack processing to preserve seq order" - there is nothing
+    // left for a second, out-of-band writer to race).
+    it("never rebuilds anything, however many events it confirms", async () => {
+      await engine.flush()
 
-      expect(events.getByEventIds).not.toHaveBeenCalled()
       expect(applier.apply).not.toHaveBeenCalled()
     })
   })

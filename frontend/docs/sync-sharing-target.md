@@ -125,7 +125,7 @@ Alle Routen mit authMW. Es gibt **keine** CRUD-Endpunkte für Listen; Listeninha
 | POST | /api/v1/sync/head | Pull-Cursor je Liste | ✅ |
 | GET | /api/v1/sync/events | Pull, eine Seite ab seq | ✅ |
 | POST | /api/v1/sync/state | Reconcile (bekannte Event-IDs) | ✅ |
-| GET | /api/v1/sync/ws | Acks + Listen-Notifications | ✅ |
+| GET | /api/v1/sync/ws | Listen-Notifications | ✅ |
 | POST | /api/v1/todo-lists/:id/invites | Einladung erzeugen (owner) | ✅ |
 | GET | /api/v1/todo-lists/:id/invites | Aktive Einladungen (owner) | ✅ |
 | DELETE | /api/v1/invites/:inviteId | Widerrufen (owner) | ✅ |
@@ -172,7 +172,7 @@ zweifacher Vorwärts-Anwendung derselben Event-Folge (`TestToDoListService_Forwa
 
 **6.3 Kein Schreibweg in todo_lists außer über den Event-Log.**
 
-**6.4 seq hat genau einen Writer: den Pull-Pfad** (EventRepository.insertRemote). Ein WebSocket-Ack markiert nur die Outbox-Zeile als synced, sonst nichts. Damit ist seq IS NULL eindeutig „noch nicht im gesehenen Server-Prefix".
+**6.4 seq hat genau einen Writer: den Pull-Pfad** (EventRepository.insertRemote). Die Bestätigung eines Pushs — heute sein Response-Body, früher ein WebSocket-Ack — markiert nur die Outbox-Zeile als synced, sonst nichts. Damit ist seq IS NULL eindeutig „noch nicht im gesehenen Server-Prefix".
 
 **6.5 Replay-Reihenfolge ist byServerSeqThenLocal, nie occurred_at.** Bestätigter Server-Prefix nach seq, danach die eigenen unbestätigten Events in lokaler Einfügereihenfolge.
 

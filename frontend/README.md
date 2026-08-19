@@ -16,11 +16,12 @@ screen just reports that login is not configured.
   Keycloak (`sso.ops.light-dev-solutions.de`) is used for dev and prod; it runs
   in the K8s cluster and is **never started locally**.
 - **Sync:** bidirectional. Offline mutations (list *and* item changes) are
-  pushed via `POST /api/v1/events` (REST); a WebSocket (`/api/v1/sync/ws`)
-  delivers acks and, for lists the client subscribes to, live "new event"
-  notifications from other devices, so pull doesn't have to poll either.
-  Restoring lists after a reinstall isn't implemented - pull only fetches
-  lists already known and sync-enabled locally.
+  pushed via `POST /api/v1/events` (REST), whose response confirms what
+  landed; a WebSocket (`/api/v1/sync/ws`) delivers, for lists the client
+  subscribes to, live "new event" notifications from other devices, so pull
+  doesn't have to poll either. Restoring lists after a reinstall isn't
+  implemented - pull only fetches lists already known and sync-enabled
+  locally.
 - **Deployment:** backend + Postgres run locally during development and are
   configured elsewhere in prod; env (`EXPO_PUBLIC_API_URL`, `DATABASE_URL`,
   `.env.development`/`.env.production`) picks the target.
@@ -111,10 +112,13 @@ configured URL, or without being signed in, the app works the same as before
 and just never syncs.
 
 Sync works in both directions. Offline mutations (list *and* item events) go
-to `POST /api/v1/events` (accepted in bulk with 202); a WebSocket
-(`/api/v1/sync/ws`) delivers per-event `ack`s after the backend has durably
-committed them, so push doesn't need polling. `/api/v1/sync/state` is the
-reconcile/safety net for lost acks. For pull, `POST /api/v1/sync/head` +
+to `POST /api/v1/events`, which appends them durably before answering 200
+with the `seq` each one was assigned - that response is the confirmation, so
+push needs neither polling nor a second channel. A response lost in transit
+costs nothing: the row stays pending and the next flush re-pushes it, which
+the backend answers idempotently. `/api/v1/sync/state` covers the opposite
+direction - events we believe are synced that the server has no record of.
+For pull, `POST /api/v1/sync/head` +
 `GET /api/v1/sync/events` fetch whatever a sync-enabled list is missing
 locally, and the same WebSocket connection - after sending
 `{"type":"subscribe","list_ids":[...]}` - gets a live `{"type":"event"}`

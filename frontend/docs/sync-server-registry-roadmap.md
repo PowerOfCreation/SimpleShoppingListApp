@@ -319,10 +319,11 @@ Code:
       haben, sie wäre Inhaltsinterpretation. Redeem auf eine gelöschte Liste gelingt serverseitig;
       der Client stellt die Löschung beim ersten Voll-Pull fest, wenn er aus der Historie rebuildet,
       und verwirft die Liste lokal. Kein Datenverlust, nur ein wirkungsloser Beitritt.
-- [ ] **Folgeentscheidung, eigener PR:** Der WS-Ack für *eigene* Events wird durch die synchrone
-      Response überflüssig; die Listen-Notification an *andere* Geräte bleibt nötig. Der Hub behält
-      also `PublishListEvent`, während `PublishAck` und der clientseitige Ack-Pfad (`sync-socket.ts`,
-      Outbox-`synced`-Markierung) entfallen können.
+- [x] **Folgeentscheidung, eigener PR — umgesetzt:** Der WS-Ack für *eigene* Events wird durch die
+      synchrone Response überflüssig; die Listen-Notification an *andere* Geräte bleibt nötig. Der
+      Hub behält `PublishListEvent` (jetzt abgesetzt vom Request-Pfad), `PublishAck` und der
+      clientseitige Ack-Pfad sind entfallen — der Client liest `acked` aus der Push-Response, und
+      der Push antwortet 200 statt 202. Siehe `sync-design-decisions.md`, „WS-Ack entfernt".
 
 ### Schritt 4 — Verifikation
 

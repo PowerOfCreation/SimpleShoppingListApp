@@ -43,8 +43,9 @@ of every list involved, enforced synchronously by `ListAccessService`. See
 ## Sync API
 
 Sync is bidirectional: the frontend pushes offline mutations *and* pulls a
-list's full history back (including changes from other devices); ack +
-reconcile + a live WebSocket nudge mean neither direction has to poll.
+list's full history back (including changes from other devices). A push is
+confirmed by its own response, and a live WebSocket nudge tells a device
+when *another* device wrote, so neither direction has to poll.
 `/api/v1/events` and every `/api/v1/sync/*` route (including the WebSocket
 upgrade) require a bearer token — see [Run locally](#run-locally-dev).
 
@@ -55,11 +56,11 @@ a user's other lists needs its own, separate endpoint. See
 
 | Method | Path | Description |
 |--------|------|-------------|
-| POST | `/api/v1/events` | Accepts a batch of client events (202) for async processing |
+| POST | `/api/v1/events` | Appends a batch of client events durably, then answers 200 with `acked: [{event_id, seq}]` — the response *is* the commit confirmation |
 | POST | `/api/v1/sync/state` | Reconcile: reports which events the server durably has, per list |
 | POST | `/api/v1/sync/head` | Reports each requested list's current pull cursor (seq + latest event id) |
 | GET | `/api/v1/sync/events` | Pull: one page of a list's event history since a given seq |
-| GET | `/api/v1/sync/ws` | WebSocket; pushes per-event `ack`s and, to clients subscribed to a list (`{"type":"subscribe","list_ids":[...]}`), a `{"type":"event"}` notification when that list gets a new event |
+| GET | `/api/v1/sync/ws` | WebSocket; to clients subscribed to a list (`{"type":"subscribe","list_ids":[...]}`), a `{"type":"event"}` notification when that list gets a new event. Nothing about the caller's own push travels here |
 | POST | `/api/v1/todo-lists/:listId/invites` | Create a multi-use invite link with a TTL preset (`1h`\|`24h`\|`7d`\|`30d`); owner-only (see [List sharing](#list-sharing)); returns the plaintext token once |
 | GET | `/api/v1/todo-lists/:listId/invites` | List a list's active (non-expired, non-revoked) invites; only the owner may call this; never returns a token |
 | DELETE | `/api/v1/invites/:inviteId` | Revoke an invite; only the list's owner may call this |
