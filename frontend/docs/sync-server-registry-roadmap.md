@@ -291,9 +291,24 @@ Code:
       `entities/validated-todo-list.go`, `sql/queries/todo-lists.sql`, `sql/queries/todos.sql` +
       zugehörige Tests und die `main.go`-Verdrahtung.
 - [ ] `requireList` in `list-sharing-service.go` liest `synced_lists`.
-- [ ] `GetListHeads` liest `synced_lists.head_seq`; die Head-Response bekommt ein explizites
-      „Liste unbekannt"-Signal (fehlende Zeile) — löst den §4.5/§5-Blocker.
+- [ ] `GetListHeads` liest `synced_lists.head_seq`.
+- [ ] **Kein Existenz-Signal in der Head-Response.** Ursprünglich war hier ein explizites „Liste
+      unbekannt" geplant, um den §4.5/§5-Blocker zu lösen. Das ist falsch: `GetHead` macht
+      „unbekannt" und „nicht zugänglich" *absichtlich* ununterscheidbar, damit der Pfad kein
+      Existenz-Orakel für geratene fremde UUIDs wird (Kommentar in `sync-pull-controller.go`). Das
+      Signal, das §4.5 wirklich braucht, ist ohnehin ein anderes: nicht „kennt der Server die Liste",
+      sondern „bin *ich* noch Mitglied" — nach einem Entsync nimmt das Cascade die Mitgliedszeile
+      mit, und Verlassen (§4.6) sowie Entfernt-werden verlangen dieselbe lokale Reaktion. Eine
+      Pro-Liste-`accessible`-Angabe beantwortet das, ohne irgendetwas über fremde Listen zu verraten
+      (nicht-existent und existiert-aber-nicht-deine liefern beide `false`). Gehört zu
+      `DELETE .../sync`, nicht in diesen Umbau.
 - [ ] `RedeemListInviteCommandResult.ListName` entfernen (inkl. Response-DTO).
+- [ ] **Folge, die dokumentiert werden muss:** `requireList` prüft danach die Registry statt
+      `todo_lists`, und die Registry hat kein `deleted_at`. Die heutige Prüfung „eine gelöschte Liste
+      kann man nicht beitreten" entfällt damit ersatzlos — der Server kann sie nach R2 gar nicht
+      haben, sie wäre Inhaltsinterpretation. Redeem auf eine gelöschte Liste gelingt serverseitig;
+      der Client stellt die Löschung beim ersten Voll-Pull fest, wenn er aus der Historie rebuildet,
+      und verwirft die Liste lokal. Kein Datenverlust, nur ein wirkungsloser Beitritt.
 - [ ] **Folgeentscheidung, eigener PR:** Der WS-Ack für *eigene* Events wird durch die synchrone
       Response überflüssig; die Listen-Notification an *andere* Geräte bleibt nötig. Der Hub behält
       also `PublishListEvent`, während `PublishAck` und der clientseitige Ack-Pfad (`sync-socket.ts`,
