@@ -116,25 +116,31 @@ func startSharedContainer(ctx context.Context) (*postgres.PostgresContainer, err
 	if err != nil {
 		return nil, fmt.Errorf("failed to start postgres container: %w", err)
 	}
+	cleanupOnError := func(cause error) (*postgres.PostgresContainer, error) {
+		if terminateErr := container.Terminate(ctx); terminateErr != nil {
+			return nil, fmt.Errorf("%w (also failed to terminate postgres container after setup failure: %v)", cause, terminateErr)
+		}
+		return nil, cause
+	}
 
 	dsn, err := container.ConnectionString(ctx, "sslmode=disable")
 	if err != nil {
-		return nil, fmt.Errorf("failed to get connection string: %w", err)
+		return cleanupOnError(fmt.Errorf("failed to get connection string: %w", err))
 	}
 
 	migrationsDir, err := findMigrationsDir()
 	if err != nil {
-		return nil, err
+		return cleanupOnError(err)
 	}
 	migrations, err := listUpMigrations(migrationsDir)
 	if err != nil {
-		return nil, err
+		return cleanupOnError(err)
 	}
 
 	for _, file := range migrations {
 		schemaBytes, err := os.ReadFile(filepath.Join(migrationsDir, file))
 		if err != nil {
-			return nil, fmt.Errorf("failed to read migration file %s: %w", file, err)
+			return cleanupOnError(fmt.Errorf("failed to read migration file %s: %w", file, err))
 		}
 
 		// Connect fresh, apply, and disconnect for every migration:
@@ -142,21 +148,21 @@ func startSharedContainer(ctx context.Context) (*postgres.PostgresContainer, err
 		// connection (including this one) is open against the source db.
 		conn, err := pgx.Connect(ctx, dsn)
 		if err != nil {
-			return nil, fmt.Errorf("failed to connect to test database: %w", err)
+			return cleanupOnError(fmt.Errorf("failed to connect to test database: %w", err))
 		}
 		_, err = conn.Exec(ctx, string(schemaBytes))
 		conn.Close(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("failed to execute migration %s: %w", file, err)
+			return cleanupOnError(fmt.Errorf("failed to execute migration %s: %w", file, err))
 		}
 
 		if err := container.Snapshot(ctx, postgres.WithSnapshotName(file)); err != nil {
-			return nil, fmt.Errorf("failed to snapshot after migration %s: %w", file, err)
+			return cleanupOnError(fmt.Errorf("failed to snapshot after migration %s: %w", file, err))
 		}
 	}
 
 	if err := container.Snapshot(ctx, postgres.WithSnapshotName(fullSnapshotName)); err != nil {
-		return nil, fmt.Errorf("failed to snapshot full schema: %w", err)
+		return cleanupOnError(fmt.Errorf("failed to snapshot full schema: %w", err))
 	}
 
 	return container, nil
