@@ -154,11 +154,9 @@ function nonRetryableError(response: Response): SyncError | null {
 
 /**
  * Sends already-persisted events to the backend over HTTP. A successful
- * call only means the server durably received and queued the events (the
- * backend responds 202 before it has actually written them) - it is not
- * confirmation they're committed. That confirmation comes later, out of
- * band, as a WebSocket ack (see sync-socket.ts / sync-engine.ts); this
- * client only ever reports "sent" or "failed to send".
+ * push means committed, not merely received: the backend appends durably
+ * before it answers, and the response names each event's assigned seq (see
+ * sendEvents). There is no out-of-band confirmation to wait for.
  */
 export class SyncClient {
   constructor(private readonly fetchImpl: FetchLike = fetch) {}

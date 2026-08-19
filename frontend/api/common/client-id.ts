@@ -6,9 +6,10 @@ import { getCurrentUserId } from "@/api/auth/auth-service"
 const DEVICE_FALLBACK = Device.deviceName ?? "unknown-device"
 
 /**
- * Identifies who/what produced a domain event, and - once signed in - is
- * also the key the backend uses to route WebSocket acks (see
- * SyncSocket.connect, which sends this as the ?client_id= query param).
+ * Identifies who/what produced a domain event. That is its only job: it
+ * used to double as the backend's WebSocket ack routing key, but pushes
+ * are confirmed by their own response now and the ?client_id= query param
+ * is gone.
  *
  * There is deliberately no separately generated, persisted device id.
  * Sync only ever runs while signed in (SyncProvider gates on
@@ -18,11 +19,8 @@ const DEVICE_FALLBACK = Device.deviceName ?? "unknown-device"
  * inventing a parallel one:
  * - needs no persistence at all (a previous version wrote a random UUID to
  *   app_preferences on first run; that's gone)
- * - lets multiple devices of the same account share one WebSocket routing
- *   key, which is harmless (an ack for an event a given device doesn't
- *   have in its own outbox is a no-op - see outbox-repository.ts's
- *   markSynced) and is what a future "notify my other devices" feature
- *   would want anyway
+ * - is stable across a reinstall, so an event's attribution survives one
+ *   (a locally generated id would not)
  * - is a real identity rather than a self-declared string nobody checks
  *
  * Signed out (or before a session has been restored yet), this falls back

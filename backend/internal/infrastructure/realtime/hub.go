@@ -142,11 +142,18 @@ func (h *Hub) subscribersFor(listID uuid.UUID) []*connection {
 }
 
 // PublishListEvent implements interfaces.ListEventPublisher. Returns as
-// soon as the subscriber set is snapshotted; the writes themselves run
-// detached, so a peer that has stopped reading can only stall its own
-// delivery (up to writeDeadline) and never the HTTP push that triggered
-// this. Safe to reach every subscriber unconditionally - subscribe already
-// access-checked membership before adding anyone to this list's set.
+// soon as the subscriber set is snapshotted, and gives each subscriber its
+// own goroutine - one per connection, not one for the fan-out, so a peer
+// that has stopped reading stalls only its own delivery (up to
+// writeDeadline) and never a healthy subscriber's, let alone the HTTP push
+// that triggered this. Safe to reach every subscriber unconditionally -
+// subscribe already access-checked membership before adding anyone to this
+// list's set.
+//
+// A stalled peer's goroutines pile up on its own connection.mu at the rate
+// that list is written, which is bounded by writeDeadline: the parked write
+// gives up after 10s and the queue drains. msg is shared across them and
+// only ever read.
 //
 // Best-effort and deliberately unordered: the notification is a pull
 // trigger, not an ordering token. The client reads only list_id from it and
@@ -154,20 +161,16 @@ func (h *Hub) subscribersFor(listID uuid.UUID) []*connection {
 // or dropped notification costs at most a redundant pull, or one deferred
 // to the periodic safety interval.
 func (h *Hub) PublishListEvent(listID uuid.UUID, seq int64) {
-	conns := h.subscribersFor(listID)
-	if len(conns) == 0 {
-		return
-	}
 	msg := map[string]any{"type": "event", "list_id": listID.String(), "seq": seq}
-	go func() {
-		for _, conn := range conns {
+	for _, conn := range h.subscribersFor(listID) {
+		go func() {
 			if err := conn.writeJSON(msg); err != nil {
 				// Warn, not Error: a client that disconnected mid-send is
 				// expected, not a server fault.
 				h.logger.Warn("failed to send list event", "list_id", listID, "seq", seq, "error", err)
 			}
-		}
-	}()
+		}()
+	}
 }
 
 // Serve blocks, running the connection's read loop, until it closes. Meant

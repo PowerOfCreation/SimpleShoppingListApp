@@ -28,13 +28,11 @@ func NewSyncWebSocketController(e *echo.Echo, hub *realtime.Hub, authMW echo.Mid
 }
 
 // Connect upgrades to a WebSocket and blocks for the connection's entire
-// lifetime (see Hub.Serve). Routing is keyed by the verified user_id from
-// the Authorization header (checked by authMW before this handler runs),
-// not the client_id query parameter - a query param is client-supplied and
-// unverified, so trusting it as a fan-out key would let a connection
-// receive acks for events it never sent by simply guessing someone else's
-// client_id. The query param is no longer required; if present, it's
-// ignored.
+// lifetime (see Hub.Serve). The verified user_id from the Authorization
+// header (checked by authMW before this handler runs) is what subscribe
+// access-checks list_ids against; nothing is keyed off a client-supplied
+// value. A client_id query parameter is not required and, if present,
+// ignored - the client stopped sending one when the ack path went away.
 func (swc *SyncWebSocketController) Connect(c echo.Context) error {
 	userID, ok := middleware.UserIDFromContext(c)
 	if !ok {
