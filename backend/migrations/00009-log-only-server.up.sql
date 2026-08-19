@@ -2,7 +2,7 @@
 -- events_seq_seq as the source of a list's next seq, row-locked per list
 -- (see AppendToList) instead of depending on "exactly one EventIngestor
 -- goroutine in one process" - the invariant that made running more than one
--- API replica unsafe (see frontend/docs/sync-server-registry-roadmap.md).
+-- API replica unsafe (see 6.4 in frontend/docs/sync-sharing-target.md).
 ALTER TABLE synced_lists ADD COLUMN head_seq BIGINT NOT NULL DEFAULT 0;
 
 -- idx_events_seq enforced global uniqueness of seq - it has to go before

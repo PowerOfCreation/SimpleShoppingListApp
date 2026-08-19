@@ -21,7 +21,7 @@ function isNamePayload(value: unknown): value is NamePayload {
 export class IngredientListProjection {
   constructor(private readonly db: SQLiteDatabase) {}
 
-  // R4 (see frontend/docs/sync-server-registry-roadmap.md): a projection
+  // R4 (see frontend/docs/sync-sharing-target.md §6): a projection
   // must never throw on a bad event - an unparseable/malformed payload from
   // another device or client version is skipped and logged, not fatal.
   // onSkip is optional and purely additive - it lets rebuildForList tally

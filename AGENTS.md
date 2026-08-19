@@ -43,7 +43,7 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
 
 - **Validated types:** repos only accept validated domain types — invalid state unrepresentable at compile time.
 - **sqlc workflow:** edit `sql/queries/*.sql`, run `sqlc generate`, implement in `postgres/`. Never edit `internal/infrastructure/db/sqlc/` manually.
-- **Events:** the server is content-blind — it stores and relays `events` rows without ever parsing `payload` (structure only: envelope shape, JSON validity, size caps in `event-controller.go`). There is no dispatch to a domain handler and no per-type routing; an unknown `event_type` is simply appended like any other, which is what forward compat actually looks like now (see `frontend/docs/sync-server-registry-roadmap.md`).
+- **Events:** the server is content-blind — it stores and relays `events` rows without ever parsing `payload` (structure only: envelope shape, JSON validity, size caps in `event-controller.go`). There is no dispatch to a domain handler and no per-type routing; an unknown `event_type` is simply appended like any other, which is what forward compat actually looks like now (R1/R2 in `frontend/docs/sync-sharing-target.md` §6).
 - **Testing:** real Postgres via testcontainers (`testhelpers.SetupTestDB(t)`), no DB mocking; Docker must be running.
 - **Logging:** structured JSON via `log/slog` (`internal/infrastructure/logging`), stdout, level via `LOG_LEVEL`. Logger is passed by constructor DI — every service/controller that logs takes a `*slog.Logger` param; no `log.Printf`/`fmt.Print*`. `slog.SetDefault` is set once in `main` purely to catch stray stdlib `log` output from dependencies, not as a substitute for DI.
 
@@ -116,8 +116,7 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
 
 ## Relevant docs
 
-- `frontend/docs/sync-sharing-target.md` — Sollzustand Sync & Teilen: Rollen, Lebenszyklus, Invarianten; bei Widerspruch maßgeblich gegenüber dem Entscheidungsprotokoll
-- `frontend/docs/sync-server-registry-roadmap.md` — Umsetzungs-Roadmap: Server vom Content-Projizierer zum append-only Log pro Liste mit geschützter Ref umbauen (löst die `ErrPermanent`-Bugklasse strukturell)
+- `frontend/docs/sync-sharing-target.md` — Sollzustand Sync & Teilen: Rollen, Lebenszyklus, Invarianten (§6 inkl. R1–R4: Annahme synchron, Server parst nie einen Payload, Registry ist die Ref, Projektionen sind total); bei Widerspruch maßgeblich gegenüber dem Entscheidungsprotokoll
 - `frontend/docs/project-overview.md`
 - `frontend/docs/sync-design-decisions.md`
 - `backend/README.md` (run/sync details)

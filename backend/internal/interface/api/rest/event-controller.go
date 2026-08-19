@@ -64,8 +64,8 @@ func NewEventController(
 // event is durably in the log: authorize the whole batch (403), validate
 // its structure (400), then append it, one transaction per list (see
 // EventRepository.AppendToList). Nothing past this point can reject an
-// event - once appended it is a fact (R1, see
-// frontend/docs/sync-server-registry-roadmap.md); there is no background
+// event - once appended it is a fact (R1 in
+// frontend/docs/sync-sharing-target.md); there is no background
 // worker left that could still say no, so unlike the old enqueue-and-202
 // model this genuinely means "stored", not "accepted for later attempt" -
 // hence 200, not 202.

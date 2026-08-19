@@ -2,7 +2,7 @@
 -- with no content whatsoever. It replaces todo_lists as the answer to "does
 -- the server know this list" - a question the content projection was only
 -- ever incidentally able to answer, and could get wrong whenever its
--- dispatch failed (see frontend/docs/sync-server-registry-roadmap.md).
+-- dispatch failed (R3, see frontend/docs/sync-sharing-target.md).
 CREATE TABLE synced_lists (
     id         UUID PRIMARY KEY,
     created_at TIMESTAMP WITH TIME ZONE NOT NULL

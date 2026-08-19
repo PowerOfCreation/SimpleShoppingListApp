@@ -29,7 +29,7 @@ function isPrioritySetPayload(value: unknown): value is { priority: number } {
 export class IngredientProjection {
   constructor(private readonly db: SQLiteDatabase) {}
 
-  // R4 (see frontend/docs/sync-server-registry-roadmap.md): a projection
+  // R4 (see frontend/docs/sync-sharing-target.md §6): a projection
   // must never throw on a bad event - an unparseable/malformed payload from
   // another device or client version is skipped and logged, not fatal.
   // onSkip is optional and purely additive - it lets rebuildForList tally
@@ -78,7 +78,7 @@ export class IngredientProjection {
     // enforced server-side on the envelope's list_id, so trusting a
     // payload-carried listId would let a member of list Y push an event
     // that's authorized for Y but lands in list X locally (see
-    // sync-server-registry-roadmap.md).
+    // sync-sharing-target.md §6, R2).
     if (event.list_id === null) {
       this.logSkipped(event, "event has no list_id on its envelope", onSkip)
       return
