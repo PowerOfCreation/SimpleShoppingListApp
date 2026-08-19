@@ -32,6 +32,13 @@ jobs:
 
       - name: 🧱 Build Android APK locally (no Expo cloud)
         working-directory: ./frontend
+        env:
+          # The emulator below only ever runs x86_64, so building the other three
+          # ABIs is pure wasted CMake/NDK time. Restricting to what's actually
+          # tested cuts the native-build portion of this step to roughly a
+          # quarter without changing what the release-build path (unaffected
+          # by this var) produces.
+          CI_ANDROID_ARCH: x86_64
         run: |
           set -eux
           pnpm expo prebuild --platform android --clean --non-interactive
