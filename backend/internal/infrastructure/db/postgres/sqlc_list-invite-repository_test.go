@@ -13,9 +13,6 @@ import (
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/testhelpers"
 )
 
-// registerTestList inserts a minimal todo_lists row so list_invites/
-// list_members FK constraints are satisfied - shared by every test in this
-// package that needs a real list to attach sharing data to.
 // registerTestList makes a list id known to the server the way the real push
 // path does - a registry row, no content. Invites and memberships hang off
 // this row via the foreign keys added in 00008.
