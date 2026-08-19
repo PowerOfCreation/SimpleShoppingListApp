@@ -10,8 +10,8 @@ const logger = createLogger("IngredientProjection")
 
 type CreatedPayload = {
   name: string
-  completed?: unknown
-  completedAt?: unknown
+  completed?: boolean
+  completedAt?: number | null
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -19,7 +19,14 @@ function isRecord(value: unknown): value is Record<string, unknown> {
 }
 
 function isCreatedPayload(value: unknown): value is CreatedPayload {
-  return isRecord(value) && typeof value.name === "string"
+  return (
+    isRecord(value) &&
+    typeof value.name === "string" &&
+    (value.completed === undefined || typeof value.completed === "boolean") &&
+    (value.completedAt === undefined ||
+      value.completedAt === null ||
+      typeof value.completedAt === "number")
+  )
 }
 
 function isPrioritySetPayload(value: unknown): value is { priority: number } {
@@ -105,7 +112,7 @@ export class IngredientProjection {
       event.list_id,
       event.occurred_at,
       event.occurred_at,
-      (payload.completedAt as number | null | undefined) ?? null
+      payload.completedAt ?? null
     )
   }
 
@@ -128,11 +135,23 @@ export class IngredientProjection {
         event.aggregate_id
       )
     } else {
+      if (
+        typeof payload.completed !== "boolean" ||
+        (payload.completedAt !== null &&
+          typeof payload.completedAt !== "number")
+      ) {
+        this.logSkipped(
+          event,
+          "payload.completed/completedAt has the wrong type",
+          onSkip
+        )
+        return
+      }
       await db.runAsync(
         `UPDATE ingredients SET completed = ?, updated_at = ?, completed_at = ? WHERE id = ?`,
         payload.completed ? 1 : 0,
         event.occurred_at,
-        (payload.completedAt as number | null | undefined) ?? null,
+        payload.completedAt,
         event.aggregate_id
       )
     }
