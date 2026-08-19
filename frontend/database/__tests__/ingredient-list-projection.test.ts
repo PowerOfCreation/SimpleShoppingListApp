@@ -55,6 +55,36 @@ describe("IngredientListProjection", () => {
       expect(row).not.toBeNull()
     })
 
+    it("skips (doesn't throw) when the payload is not valid JSON", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation()
+
+      await expect(
+        projection.handleCreated(db, makeEvent({ payload: "{not json" }))
+      ).resolves.toBeUndefined()
+
+      const row = await db.getFirstAsync(
+        `SELECT id FROM ingredient_lists WHERE id = 'list-1'`
+      )
+      expect(row).toBeNull()
+      expect(warnSpy).toHaveBeenCalled()
+      warnSpy.mockRestore()
+    })
+
+    it("skips (doesn't throw) when a required field is missing", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation()
+
+      await expect(
+        projection.handleCreated(db, makeEvent({ payload: "{}" }))
+      ).resolves.toBeUndefined()
+
+      const row = await db.getFirstAsync(
+        `SELECT id FROM ingredient_lists WHERE id = 'list-1'`
+      )
+      expect(row).toBeNull()
+      expect(warnSpy).toHaveBeenCalled()
+      warnSpy.mockRestore()
+    })
+
     it("upserts rather than throwing on a duplicate/echoed created event", async () => {
       await projection.handleCreated(db, makeEvent())
 
@@ -230,6 +260,99 @@ describe("IngredientListProjection", () => {
 
       expect(warnSpy).not.toHaveBeenCalled()
       warnSpy.mockRestore()
+    })
+
+    // Regression test for the poison-pill bug: a corrupt event mid-history
+    // used to throw out of rebuildForList, out of EventApplier's
+    // transaction, and leave the pull cursor stuck forever on this list.
+    // With totality, the bad event is skipped and every valid event either
+    // side of it still applies.
+    it("skips a corrupt event mid-history instead of aborting the whole rebuild", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation()
+
+      await expect(
+        projection.rebuildForList(db, "list-1", [
+          makeEvent({
+            event_id: "e1",
+            event_type: EventTypes.TODO_LIST_CREATED,
+            seq: 1,
+          }),
+          makeEvent({
+            event_id: "e2",
+            event_type: EventTypes.TODO_LIST_UPDATED,
+            payload: "{not valid json",
+            seq: 2,
+          }),
+          makeEvent({
+            event_id: "e3",
+            event_type: EventTypes.TODO_LIST_UPDATED,
+            payload: JSON.stringify({ name: "Lidl" }),
+            seq: 3,
+          }),
+        ])
+      ).resolves.toBeUndefined()
+
+      const row = await db.getFirstAsync<{ name: string }>(
+        `SELECT name FROM ingredient_lists WHERE id = 'list-1'`
+      )
+      // e1 (create) and e3 (rename to Lidl) both applied; only the corrupt
+      // e2 in between was skipped.
+      expect(row?.name).toBe("Lidl")
+      expect(warnSpy).toHaveBeenCalled()
+
+      warnSpy.mockRestore()
+    })
+
+    // Task 3: skipped events must be diagnosable through the same path as
+    // the existing drift case, not just a per-event log line - see
+    // SyncEngine.repairList.
+    it("warns with a repairList pointer summarizing how many events were skipped", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation()
+
+      await projection.rebuildForList(db, "list-1", [
+        makeEvent({ event_id: "e1", seq: 1 }),
+        makeEvent({
+          event_id: "e2",
+          event_type: EventTypes.TODO_LIST_UPDATED,
+          payload: "{not valid json",
+          seq: 2,
+        }),
+      ])
+
+      expect(warnSpy).toHaveBeenCalledWith(
+        expect.stringMatching(
+          /skipped 1 unreadable event.*SyncEngine\.repairList/
+        )
+      )
+
+      warnSpy.mockRestore()
+    })
+
+    // A DB write failure is infrastructure, not unreadable content - unlike
+    // a bad payload (skipped above), it must propagate out of rebuildForList
+    // so EventApplier.apply's transaction rolls back and the cursor doesn't
+    // advance past an event that never actually applied.
+    it("propagates a genuine db write failure instead of swallowing it like a bad payload", async () => {
+      const dbError = new Error("SQLITE_BUSY: database is locked")
+      const originalRunAsync = db.runAsync.bind(db)
+      let callCount = 0
+      jest
+        .spyOn(db, "runAsync")
+        .mockImplementation((...args: Parameters<typeof db.runAsync>) => {
+          callCount++
+          // 1st call is rebuildForList's own DELETE; 2nd is handleCreated's
+          // INSERT - fail that one specifically.
+          if (callCount === 2) {
+            return Promise.reject(dbError)
+          }
+          return originalRunAsync(...args)
+        })
+
+      await expect(
+        projection.rebuildForList(db, "list-1", [makeEvent()])
+      ).rejects.toThrow(dbError)
+
+      jest.restoreAllMocks()
     })
   })
 })

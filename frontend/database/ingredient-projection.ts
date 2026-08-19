@@ -4,15 +4,85 @@ import {
   EventTypes,
   byServerSeqThenLocal,
 } from "@/types/DomainEvent"
+import { createLogger } from "@/api/common/logger"
+
+const logger = createLogger("IngredientProjection")
+
+type CreatedPayload = {
+  name: string
+  completed?: unknown
+  completedAt?: unknown
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value)
+}
+
+function isCreatedPayload(value: unknown): value is CreatedPayload {
+  return isRecord(value) && typeof value.name === "string"
+}
+
+function isPrioritySetPayload(value: unknown): value is { priority: number } {
+  return isRecord(value) && typeof value.priority === "number"
+}
 
 export class IngredientProjection {
   constructor(private readonly db: SQLiteDatabase) {}
 
+  // R4 (see frontend/docs/sync-server-registry-roadmap.md): a projection
+  // must never throw on a bad event - an unparseable/malformed payload from
+  // another device or client version is skipped and logged, not fatal.
+  // onSkip is optional and purely additive - it lets rebuildForList tally
+  // how many events it skipped without handle* methods having to change
+  // their (tested) void-resolving, never-throwing return contract.
+  private parsePayload<T>(
+    event: DomainEventRow,
+    isValid: (value: unknown) => value is T,
+    onSkip?: () => void
+  ): T | null {
+    let value: unknown
+    try {
+      value = JSON.parse(event.payload)
+    } catch {
+      this.logSkipped(event, "payload is not valid JSON", onSkip)
+      return null
+    }
+    if (!isValid(value)) {
+      this.logSkipped(event, "payload is missing a required field", onSkip)
+      return null
+    }
+    return value
+  }
+
+  private logSkipped(
+    event: DomainEventRow,
+    reason: string,
+    onSkip?: () => void
+  ): void {
+    logger.warn("Skipping event while rebuilding ingredient projection", {
+      event_id: event.event_id,
+      event_type: event.event_type,
+      reason,
+    })
+    onSkip?.()
+  }
+
   async handleCreated(
     db: SQLiteDatabase,
-    event: DomainEventRow
+    event: DomainEventRow,
+    onSkip?: () => void
   ): Promise<void> {
-    const { name, listId, completed, completedAt } = JSON.parse(event.payload)
+    const payload = this.parsePayload(event, isCreatedPayload, onSkip)
+    if (!payload) return
+    // list_id comes from the envelope, not the payload: authorization is
+    // enforced server-side on the envelope's list_id, so trusting a
+    // payload-carried listId would let a member of list Y push an event
+    // that's authorized for Y but lands in list X locally (see
+    // sync-server-registry-roadmap.md).
+    if (event.list_id === null) {
+      this.logSkipped(event, "event has no list_id on its envelope", onSkip)
+      return
+    }
     // ON CONFLICT rather than a bare INSERT: a scoped projection rebuild
     // (rebuildForList) replays a list's *entire* merged local+pulled
     // history from scratch every time new remote events land, and two
@@ -30,21 +100,27 @@ export class IngredientProjection {
          updated_at = excluded.updated_at,
          completed_at = excluded.completed_at`,
       event.aggregate_id,
-      name,
-      completed ? 1 : 0,
-      listId,
+      payload.name,
+      payload.completed ? 1 : 0,
+      event.list_id,
       event.occurred_at,
       event.occurred_at,
-      completedAt ?? null
+      (payload.completedAt as number | null | undefined) ?? null
     )
   }
 
   async handleUpdated(
     db: SQLiteDatabase,
-    event: DomainEventRow
+    event: DomainEventRow,
+    onSkip?: () => void
   ): Promise<void> {
-    const payload = JSON.parse(event.payload)
+    const payload = this.parsePayload(event, isRecord, onSkip)
+    if (!payload) return
     if ("name" in payload) {
+      if (typeof payload.name !== "string") {
+        this.logSkipped(event, "payload.name is not a string", onSkip)
+        return
+      }
       await db.runAsync(
         `UPDATE ingredients SET name = ?, updated_at = ? WHERE id = ?`,
         payload.name,
@@ -56,7 +132,7 @@ export class IngredientProjection {
         `UPDATE ingredients SET completed = ?, updated_at = ?, completed_at = ? WHERE id = ?`,
         payload.completed ? 1 : 0,
         event.occurred_at,
-        payload.completedAt ?? null,
+        (payload.completedAt as number | null | undefined) ?? null,
         event.aggregate_id
       )
     }
@@ -64,12 +140,14 @@ export class IngredientProjection {
 
   async handlePrioritySet(
     db: SQLiteDatabase,
-    event: DomainEventRow
+    event: DomainEventRow,
+    onSkip?: () => void
   ): Promise<void> {
-    const { priority } = JSON.parse(event.payload)
+    const payload = this.parsePayload(event, isPrioritySetPayload, onSkip)
+    if (!payload) return
     await db.runAsync(
       `UPDATE ingredients SET priority = ?, updated_at = ? WHERE id = ?`,
-      priority,
+      payload.priority,
       event.occurred_at,
       event.aggregate_id
     )
@@ -119,24 +197,22 @@ export class IngredientProjection {
     // place that actually replays events is cheaper than auditing every
     // future call site.
     const ordered = [...events].sort(byServerSeqThenLocal)
+    let skippedCount = 0
     for (const event of ordered) {
-      switch (event.event_type) {
-        case EventTypes.INGREDIENT_CREATED:
-          await this.handleCreated(db, event)
-          break
-        case EventTypes.INGREDIENT_UPDATED:
-          await this.handleUpdated(db, event)
-          break
-        case EventTypes.INGREDIENT_PRIORITY_SET:
-          await this.handlePrioritySet(db, event)
-          break
-        case EventTypes.INGREDIENT_PRIORITY_CLEARED:
-          await this.handlePriorityCleared(db, event)
-          break
-        case EventTypes.INGREDIENT_DELETED:
-          await this.handleDeleted(db, event)
-          break
+      if (await this.applyEvent(db, event)) {
+        skippedCount++
       }
+    }
+
+    // Same diagnosability pattern as
+    // IngredientListProjection.rebuildForList's aggregate warning: naming
+    // the repair path here keeps this discoverable through
+    // SyncEngine.repairList - the same place drift recovery already lives -
+    // instead of only a per-event log line.
+    if (skippedCount > 0) {
+      logger.warn(
+        `List ${listId} skipped ${skippedCount} unreadable event(s) during rebuild - see SyncEngine.repairList to re-derive it from the server`
+      )
     }
   }
 
@@ -145,24 +221,41 @@ export class IngredientProjection {
       await this.db.runAsync(`DELETE FROM ingredients`)
       const ordered = [...events].sort(byServerSeqThenLocal)
       for (const event of ordered) {
-        switch (event.event_type) {
-          case EventTypes.INGREDIENT_CREATED:
-            await this.handleCreated(this.db, event)
-            break
-          case EventTypes.INGREDIENT_UPDATED:
-            await this.handleUpdated(this.db, event)
-            break
-          case EventTypes.INGREDIENT_PRIORITY_SET:
-            await this.handlePrioritySet(this.db, event)
-            break
-          case EventTypes.INGREDIENT_PRIORITY_CLEARED:
-            await this.handlePriorityCleared(this.db, event)
-            break
-          case EventTypes.INGREDIENT_DELETED:
-            await this.handleDeleted(this.db, event)
-            break
-        }
+        await this.applyEvent(this.db, event)
       }
     })
+  }
+
+  // R4 only covers content we can't read - parsePayload already skips that.
+  // db.runAsync is the one remaining throw source here, and that's a write
+  // failure (locked/full/aborted/constraint), not a bad payload: it must
+  // propagate so EventApplier.apply's transaction rolls back and the cursor
+  // doesn't advance past events that never actually applied.
+  private async applyEvent(
+    db: SQLiteDatabase,
+    event: DomainEventRow
+  ): Promise<boolean> {
+    let skipped = false
+    const onSkip = () => {
+      skipped = true
+    }
+    switch (event.event_type) {
+      case EventTypes.INGREDIENT_CREATED:
+        await this.handleCreated(db, event, onSkip)
+        break
+      case EventTypes.INGREDIENT_UPDATED:
+        await this.handleUpdated(db, event, onSkip)
+        break
+      case EventTypes.INGREDIENT_PRIORITY_SET:
+        await this.handlePrioritySet(db, event, onSkip)
+        break
+      case EventTypes.INGREDIENT_PRIORITY_CLEARED:
+        await this.handlePriorityCleared(db, event)
+        break
+      case EventTypes.INGREDIENT_DELETED:
+        await this.handleDeleted(db, event)
+        break
+    }
+    return skipped
   }
 }
