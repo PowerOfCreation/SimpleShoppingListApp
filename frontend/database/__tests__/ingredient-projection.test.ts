@@ -158,6 +158,46 @@ describe("IngredientProjection", () => {
       )
       expect(row).toEqual({ name: "Whole Milk", completed: 1 })
     })
+
+    it("skips (doesn't throw) when completed has the wrong type", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation()
+
+      await expect(
+        projection.handleCreated(
+          db,
+          makeEvent({
+            payload: JSON.stringify({ name: "Milk", completed: "yes" }),
+          })
+        )
+      ).resolves.toBeUndefined()
+
+      const row = await db.getFirstAsync(`SELECT id FROM ingredients`)
+      expect(row).toBeNull()
+      expect(warnSpy).toHaveBeenCalled()
+      warnSpy.mockRestore()
+    })
+
+    it("skips (doesn't throw) when completedAt has the wrong type", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation()
+
+      await expect(
+        projection.handleCreated(
+          db,
+          makeEvent({
+            payload: JSON.stringify({
+              name: "Milk",
+              completed: true,
+              completedAt: "not-a-timestamp",
+            }),
+          })
+        )
+      ).resolves.toBeUndefined()
+
+      const row = await db.getFirstAsync(`SELECT id FROM ingredients`)
+      expect(row).toBeNull()
+      expect(warnSpy).toHaveBeenCalled()
+      warnSpy.mockRestore()
+    })
   })
 
   describe("handleUpdated", () => {
@@ -226,6 +266,55 @@ describe("IngredientProjection", () => {
         completed_at: number | null
       }>(`SELECT completed, completed_at FROM ingredients WHERE id = 'ing-1'`)
       expect(row).toEqual({ completed: 0, completed_at: null })
+    })
+
+    it("skips (doesn't throw) when completed has the wrong type", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation()
+
+      await expect(
+        projection.handleUpdated(
+          db,
+          makeEvent({
+            event_type: EventTypes.INGREDIENT_UPDATED,
+            occurred_at: 3000,
+            payload: JSON.stringify({ completed: "yes", completedAt: 3000 }),
+          })
+        )
+      ).resolves.toBeUndefined()
+
+      const row = await db.getFirstAsync<{
+        completed: number
+        updated_at: number
+      }>(`SELECT completed, updated_at FROM ingredients WHERE id = 'ing-1'`)
+      expect(row).toEqual({ completed: 0, updated_at: 1000 })
+      expect(warnSpy).toHaveBeenCalled()
+      warnSpy.mockRestore()
+    })
+
+    it("skips (doesn't throw) when completedAt has the wrong type", async () => {
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation()
+
+      await expect(
+        projection.handleUpdated(
+          db,
+          makeEvent({
+            event_type: EventTypes.INGREDIENT_UPDATED,
+            occurred_at: 3000,
+            payload: JSON.stringify({
+              completed: true,
+              completedAt: "not-a-timestamp",
+            }),
+          })
+        )
+      ).resolves.toBeUndefined()
+
+      const row = await db.getFirstAsync<{
+        completed: number
+        updated_at: number
+      }>(`SELECT completed, updated_at FROM ingredients WHERE id = 'ing-1'`)
+      expect(row).toEqual({ completed: 0, updated_at: 1000 })
+      expect(warnSpy).toHaveBeenCalled()
+      warnSpy.mockRestore()
     })
   })
 
