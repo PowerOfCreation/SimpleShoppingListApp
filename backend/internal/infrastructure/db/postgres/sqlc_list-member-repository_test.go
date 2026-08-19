@@ -2,8 +2,6 @@ package postgres
 
 import (
 	"context"
-	"fmt"
-	"sync"
 	"testing"
 	"time"
 
@@ -12,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/entities"
+	db "github.com/powerofcreation/simpleshoppinglistapp/internal/infrastructure/db/sqlc"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/testhelpers"
 )
 
@@ -287,19 +286,27 @@ func TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_LosingClaimKeepsTheReg
 	assert.Nil(t, member)
 }
 
-// TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_ConcurrentClaimsProduceExactlyOneOwner
-// is the test idx_list_members_single_owner (00010) exists for: N different
-// users racing ClaimOwnershipIfUnowned for the same fresh list must yield
-// exactly one winner and zero errors - the loser's 23505 (from the index,
-// since each goroutine uses a distinct user_id so the list_members PK can't
-// be what fires) has to be swallowed into claimed=false, not surfaced.
-func TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_ConcurrentClaimsProduceExactlyOneOwner(t *testing.T) {
+// TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_LoserOfADeterministicRaceLosesCleanly
+// is the regression test for idx_list_members_single_owner (00010) and the
+// 23505 mapping together. It doesn't rely on goroutine-start jitter to hit
+// the race window - a plain N-goroutine test reliably serializes instead of
+// racing, because the gap between ClaimListOwnership's NOT EXISTS check and
+// its own commit is sub-millisecond, far shorter than the time it takes a
+// second goroutine to even get scheduled. Instead it forces the exact
+// interleaving with two explicit transactions: txA claims but doesn't
+// commit, leaving an owner row that's invisible to any NOT EXISTS run from
+// outside txA; user-b's autocommit claim therefore also attempts the
+// INSERT and blocks on the unique index against txA's uncommitted key.
+// Only once txA commits does user-b's INSERT get to run - and fail with
+// 23505.
+func TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_LoserOfADeterministicRaceLosesCleanly(t *testing.T) {
 	testDB := testhelpers.SetupTestDB(t)
 	defer testDB.Close(t)
 	ctx := context.Background()
 
-	// A single *pgx.Conn (testDB.Conn) is documented as unsafe for
-	// concurrent use, so this needs a real pool - see the same reasoning in
+	// A single *pgx.Conn (testDB.Conn) can't run two overlapping
+	// transactions at once, so this needs a real pool - see the same
+	// reasoning in
 	// TestSqlcEventRepository_AppendToList_ConcurrentAppendsForSameListProduceGapfreeUniqueSeq.
 	dsn := testDB.Container.(interface {
 		ConnectionString(ctx context.Context, args ...string) (string, error)
@@ -312,34 +319,46 @@ func TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_ConcurrentClaimsProduc
 
 	repo := NewSqlcListMemberRepository(NewQueries(pool))
 	listID := uuid.New()
+	now := time.Now().UTC()
 
-	const concurrency = 10
-	var wg sync.WaitGroup
-	errs := make([]error, concurrency)
-	claims := make([]bool, concurrency)
+	txA, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	defer txA.Rollback(ctx) // safety net only - a no-op once committed below
 
-	for i := 0; i < concurrency; i++ {
-		wg.Add(1)
-		go func(idx int) {
-			defer wg.Done()
-			claimed, err := repo.ClaimOwnershipIfUnowned(ctx, listID, fmt.Sprintf("user-%d", idx), time.Now().UTC())
-			errs[idx] = err
-			claims[idx] = claimed
-		}(i)
+	_, err = NewQueries(pool).WithTx(txA).ClaimListOwnership(ctx, db.ClaimListOwnershipParams{
+		ListID:   listID,
+		UserID:   "user-a",
+		JoinedAt: timestamptzFromTime(now),
+	})
+	require.NoError(t, err, "txA's own claim must succeed uncommitted")
+
+	type result struct {
+		claimed bool
+		err     error
 	}
-	wg.Wait()
+	resultCh := make(chan result, 1)
+	go func() {
+		claimed, err := repo.ClaimOwnershipIfUnowned(ctx, listID, "user-b", now)
+		resultCh <- result{claimed, err}
+	}()
 
-	winners := 0
-	for i, err := range errs {
-		require.NoError(t, err, "goroutine %d failed", i)
-		if claims[i] {
-			winners++
-		}
+	time.Sleep(100 * time.Millisecond) // let user-b reach and block on the index before we commit
+	require.NoError(t, txA.Commit(ctx))
+
+	select {
+	case res := <-resultCh:
+		require.NoError(t, res.err, "the loser's unique violation must be swallowed, not surfaced")
+		assert.False(t, res.claimed, "user-b must lose once user-a's claim commits")
+	case <-time.After(10 * time.Second):
+		t.Fatal("user-b's claim never returned - it's likely blocked on the index forever")
 	}
-	assert.Equal(t, 1, winners, "exactly one goroutine must win the claim")
 
 	var owners int
 	require.NoError(t, pool.QueryRow(ctx,
 		`SELECT COUNT(*) FROM list_members WHERE list_id = $1 AND role = 'owner'`, listID).Scan(&owners))
-	assert.Equal(t, 1, owners, "exactly one owner row must exist in the database")
+	assert.Equal(t, 1, owners, "exactly one owner row must exist")
+
+	owner, err := repo.FindByListAndUser(ctx, listID, "user-a")
+	require.NoError(t, err)
+	require.NotNil(t, owner, "the committed claim (user-a) must be the one that stuck")
 }
