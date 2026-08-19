@@ -136,7 +136,7 @@ geprüft am Stand von PR #249 (`feat/backend-user-scoping`, Basis `origin/main`)
 | §6.3 „Kein Schreibweg in `todo_lists` außer über den Event-Log" | Löst sich auf — die Tabelle verschwindet. |
 | §6.4 „`seq` hat genau einen Writer" | Bleibt clientseitig gültig; serverseitig wird der Writer die Ref-Zeile statt der Ingestor-Goroutine (Schritt 3). |
 | §6.8 „Jedes Event bekommt genau einmal ein `seq`" | Wird trivial wahr statt durch `ErrPermanent` erzwungen. |
-| §7.1 „Woher kommt der Owner beim Ingest" | Durch #249 bereits gelöst (Claim beim Push, synchron, mit Request-Context). |
+| §7.1 „Enforcement-Zeitpunkt" (woher kommt der Owner beim Ingest) | Durch #249 bereits gelöst (Claim beim Push, synchron, mit Request-Context). |
 | §7.2 Ownership-Squatting | Durch #249 bereits gelöst (`claim-on-first-invite` entfernt). |
 | §7.5 Tombstone-Squatting | **Verschwindet zusätzlich** — ohne Tombstone-Upsert nichts zu squatten. |
 | §4.5 / §5 „unbekannt vs. bekannt-aber-leer" | **Wird gelöst statt gebrochen:** Registry-Zeile fehlt = unbekannt, Zeile mit `head_seq = 0` = bekannt und leer. Genau das Signal, das `DELETE .../sync` laut §5 heute blockiert. |
@@ -194,7 +194,8 @@ die einzige Abwehr, die noch trägt, wenn der Server per Design blind ist.
 
 Der heutige Pfad ist schlimmer als ein leerer Name: `ingredient-list-projection.ts` macht
 `JSON.parse(event.payload)` ungeschützt. Malformter Payload → throw → aus `rebuildForList` → aus der
-Transaktion in `EventApplier.apply` → gefangen, `Result.fail` → `sync-engine.ts::pullList` loggt und
+Transaktion in `EventApplier.apply` → gefangen, `Result.fail` → `sync-engine.ts::pullListToHead`
+(der private Helper, den `pullList` nur aufruft) loggt und
 `return`t, **ohne den Cursor zu setzen**. Der nächste Pull holt dieselbe Seite und scheitert
 identisch. Diese Liste synchronisiert auf diesem Gerät nie wieder — eine Logzeile, kein
 Nutzer-Signal, keine Selbstheilung.
@@ -240,9 +241,11 @@ ersatzlos statt einen Regress freizulegen.
 Der heutige `seq` ist **eine globale Sequenz** (`events_seq_seq`), aber jeder Lesepfad ist pro Liste
 (`GetEventsSince`, `GetListHeads` filtern beide `list_id`). Ein globales Ordnungstoken macht also
 Pro-Listen-Arbeit, und das Einzige, was seine Korrektheit trägt, ist „genau eine
-`EventIngestor`-Goroutine in genau einem Prozess" (dokumentiert in `00004` und `event-ingestor.go`).
+`EventIngestor`-Goroutine in genau einem Prozess" (dokumentiert in `00006` und `event-ingestor.go` —
+`00004`s eigener Kommentar dazu beschreibt noch den alten, seit `00006` selbst als historisch
+markierten Mechanismus, der `seq` erst bei `MarkProcessed` statt bei `Insert` vergab).
 Damit kann das Backend **nie mehr als eine Replik** fahren: Replik A zieht `seq` 10, B zieht 11 und
-committet zuerst; ein Pull dazwischen sieht 11, setzt den Cursor auf 12 — Event 10 ist für diesen
+committet zuerst; ein Pull dazwischen sieht 11, setzt den Cursor auf 11 — Event 10 ist für diesen
 Client dauerhaft unsichtbar. Die Projektion zu löschen und den Worker zu behalten würde diese Grenze
 zementieren, obwohl sein Grund entfällt.
 
@@ -260,8 +263,10 @@ Migration:
 - [ ] **Cursor-Entscheidung:** vorhandene Client-Cursor werden durch die Umnummerierung bedeutungslos.
       Der saubere Weg ist ein erzwungener Voll-Pull (Cursor zurücksetzen), nicht der Clamp-Down-Pfad
       in `sync-engine.ts` — der ist für „Server ist zurückgefallen" gebaut und könnte beim Renumbering
-      Events überspringen. §7.1 setzt ohnehin voraus, dass keine echten Nutzerdaten existieren; **vor
-      der Umsetzung verifizieren.**
+      Events überspringen. §7.1s Hinweis auf fehlende echte Nutzerdaten ist eine einmalige historische
+      Notiz zur Backfill-Entscheidung von Migration `00007`, keine für den Zeitpunkt dieses Schritts
+      weiterhin geltende Annahme — **unabhängig davon vor der Umsetzung erneut verifizieren, dass
+      keine echten Nutzerdaten existieren.**
 - [ ] FKs `list_invites.list_id`/`list_members.list_id` → `synced_lists(id)`, `ON DELETE CASCADE`
       (Rückbau der in `00007` gedroppten FKs, jetzt gegen den richtigen Parent).
 - [ ] `todo_lists` und `todos` droppen, inkl. `last_applied_seq`.
@@ -275,12 +280,17 @@ Migration:
 Code:
 
 - [ ] `POST /api/v1/events` wird synchron: eine Transaktion pro Liste — `SELECT ... FOR UPDATE` auf
-      `synced_lists` (Insert-on-missing **in derselben Transaktion wie der Owner-Claim** aus
-      `ListAccessService.AuthorizeWrite`), Events mit `head_seq+1..+n` einfügen (`ON CONFLICT (id)`
+      `synced_lists` (Insert-on-missing), Events mit `head_seq+1..+n` einfügen (`ON CONFLICT (id)`
       behält die alte `seq` für Redelivery), `head_seq` setzen, committen. Response trägt die
-      vergebenen `seq`-Werte. Die gemeinsame Transaktion ist nicht optional: getrennte Statements
-      erlauben eine Registry-Zeile ohne Owner (oder umgekehrt) — eine neue Drift-Klasse, ausgerechnet
-      im Bereich der drei Wahrheiten aus §2.
+      vergebenen `seq`-Werte. **Korrektur:** ursprünglich war hier vorgesehen, diesen Schritt in
+      derselben Transaktion wie der Owner-Claim aus `ListAccessService.AuthorizeWrite` laufen zu
+      lassen — dafür gibt es aber keine Schnittstelle: `AuthorizeWrite` nimmt nur einen
+      `context.Context`, keinen transaktionsgebundenen Querier, den sich diese Transaktion hier
+      einhängen könnte. Nötig ist das auch nicht mehr: `ClaimListOwnership`s CTE (siehe „Registry als
+      Ref" oben) legt Registry- und Owner-Zeile bereits atomar in einem Statement an, bevor der Push
+      diesen Schritt überhaupt erreicht. Schlägt der Append danach fehl, bleibt höchstens eine gültige,
+      inhaltsleere Registry-Zeile (`head_seq = 0`) stehen — keine Drift im Sinne der drei Wahrheiten
+      aus §2, da Owner und Registry-Existenz weiterhin übereinstimmen.
 - [ ] Löschen: `interfaces/permanent-error.go`, der `ErrPermanent`-Zweig in `event-ingestor.go::apply`
       und die `Permanent(...)`-Wraps in `todo-list-service.go` und den Event-Handlern (aus Schritt 2
       hierher verschoben, siehe dort).
@@ -341,7 +351,8 @@ Code:
       R1–R4 als neue Invarianten übernehmen. §8 ergänzen: Discovery, Push-Notifications und
       Web-Client sind durch Content-Blindheit **nicht** blockiert; Log-Kompaktierung ist die nächste
       offene Architekturfrage.
-- [ ] `AGENTS.md`: „Validated types", „Soft deletes" und der Sync-Abschnitt auf den neuen Stand
+- [ ] `AGENTS.md`: „Validated types", „Soft deletes", die „Events"-Zeile (`EventDispatcher` existiert
+      nicht mehr, siehe „Was danach verschwindet") und der Sync-Abschnitt auf den neuen Stand
       (`todo_lists` existiert nicht mehr, Push ist synchron, `seq` ist pro Liste).
 - [ ] Dieses Dokument entweder löschen oder als „umgesetzt" markieren, sobald Schritt 1–4 gemergt
       sind — sein Inhalt lebt danach in `sync-sharing-target.md` weiter.
@@ -358,8 +369,9 @@ Tabellen (`todo_lists`, `todos`) · der Poison-Pill-Pfad im Client-Pull.
 ## Risiken
 
 - **Schritt 3 ist eine destruktive Migration** (zwei Tabellen droppen, FKs umhängen, `seq`
-  umnummerieren). §7.1 setzt ohnehin voraus, dass es keine echten Nutzerdaten gibt — vor der Umsetzung
-  verifizieren, sonst ist die Cursor-Frage kein Detail mehr.
+  umnummerieren). §7.1s „keine echten Nutzerdaten" ist nur eine historische Notiz zu Migration `00007`,
+  keine Zusicherung für heute — vor der Umsetzung eigenständig verifizieren, sonst ist die
+  Cursor-Frage kein Detail mehr.
 - **Reihenfolge ist bindend, aber anders als naheliegend:** Schritt 1 (Client) kommt vor allem
   anderen. Er blockiert nichts und ist die einzige Abwehr, die wirklich hält. Das oft genannte
   Gegenargument — „ohne Serverprüfung entsteht ein Fenster, in dem ungültige Payloads ungeprüft
