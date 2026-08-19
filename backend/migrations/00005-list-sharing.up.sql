@@ -34,12 +34,6 @@ CREATE TABLE list_members (
     PRIMARY KEY (list_id, user_id)
 );
 
--- Deliberately no unique index enforcing "at most one owner per list" here.
--- claim-on-first-invite is a bootstrap for lists that predate this feature
--- and predate any ownership model at all; it will be superseded once list
--- creation itself records an owner from the verified JWT (planned
--- tenant/user-isolation work). Two concurrent first-invites under READ
--- COMMITTED could in theory both insert an owner row, but that grants
--- neither party anything they don't already have today (knowing a list's
--- UUID already means full read/write access) - not worth a constraint that
--- would need its own migration to relax once co-owners become a real case.
+-- "At most one owner per list" is enforced by a partial unique index added
+-- later, in 00010, once ownership became the access boundary itself rather
+-- than a label on top of an already-open list.

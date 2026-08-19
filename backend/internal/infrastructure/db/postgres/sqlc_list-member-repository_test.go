@@ -10,6 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/entities"
+	db "github.com/powerofcreation/simpleshoppinglistapp/internal/infrastructure/db/sqlc"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/testhelpers"
 )
 
@@ -283,4 +284,81 @@ func TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_LosingClaimKeepsTheReg
 	member, err := repo.FindByListAndUser(ctx, listID, "mallory")
 	require.NoError(t, err)
 	assert.Nil(t, member)
+}
+
+// TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_LoserOfADeterministicRaceLosesCleanly
+// is the regression test for idx_list_members_single_owner (00010) and the
+// 23505 mapping together. It doesn't rely on goroutine-start jitter to hit
+// the race window - a plain N-goroutine test reliably serializes instead of
+// racing, because the gap between ClaimListOwnership's NOT EXISTS check and
+// its own commit is sub-millisecond, far shorter than the time it takes a
+// second goroutine to even get scheduled. Instead it forces the exact
+// interleaving with two explicit transactions: txA claims but doesn't
+// commit, leaving an owner row that's invisible to any NOT EXISTS run from
+// outside txA; user-b's autocommit claim therefore also attempts the
+// INSERT and blocks on the unique index against txA's uncommitted key.
+// Only once txA commits does user-b's INSERT get to run - and fail with
+// 23505.
+func TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_LoserOfADeterministicRaceLosesCleanly(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	ctx := context.Background()
+
+	// A single *pgx.Conn (testDB.Conn) can't run two overlapping
+	// transactions at once, so this needs a real pool - see the same
+	// reasoning in
+	// TestSqlcEventRepository_AppendToList_ConcurrentAppendsForSameListProduceGapfreeUniqueSeq.
+	dsn := testDB.Container.(interface {
+		ConnectionString(ctx context.Context, args ...string) (string, error)
+	})
+	connString, err := dsn.ConnectionString(ctx, "sslmode=disable")
+	require.NoError(t, err)
+	pool, err := NewConnection(ctx, connString)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	repo := NewSqlcListMemberRepository(NewQueries(pool))
+	listID := uuid.New()
+	now := time.Now().UTC()
+
+	txA, err := pool.Begin(ctx)
+	require.NoError(t, err)
+	defer txA.Rollback(ctx) // safety net only - a no-op once committed below
+
+	_, err = NewQueries(pool).WithTx(txA).ClaimListOwnership(ctx, db.ClaimListOwnershipParams{
+		ListID:   listID,
+		UserID:   "user-a",
+		JoinedAt: timestamptzFromTime(now),
+	})
+	require.NoError(t, err, "txA's own claim must succeed uncommitted")
+
+	type result struct {
+		claimed bool
+		err     error
+	}
+	resultCh := make(chan result, 1)
+	go func() {
+		claimed, err := repo.ClaimOwnershipIfUnowned(ctx, listID, "user-b", now)
+		resultCh <- result{claimed, err}
+	}()
+
+	time.Sleep(100 * time.Millisecond) // let user-b reach and block on the index before we commit
+	require.NoError(t, txA.Commit(ctx))
+
+	select {
+	case res := <-resultCh:
+		require.NoError(t, res.err, "the loser's unique violation must be swallowed, not surfaced")
+		assert.False(t, res.claimed, "user-b must lose once user-a's claim commits")
+	case <-time.After(10 * time.Second):
+		t.Fatal("user-b's claim never returned - it's likely blocked on the index forever")
+	}
+
+	var owners int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM list_members WHERE list_id = $1 AND role = 'owner'`, listID).Scan(&owners))
+	assert.Equal(t, 1, owners, "exactly one owner row must exist")
+
+	owner, err := repo.FindByListAndUser(ctx, listID, "user-a")
+	require.NoError(t, err)
+	require.NotNil(t, owner, "the committed claim (user-a) must be the one that stuck")
 }

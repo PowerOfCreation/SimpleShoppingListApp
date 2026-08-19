@@ -8,6 +8,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/entities"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
@@ -36,6 +37,16 @@ func (r *SqlcListMemberRepository) ClaimOwnershipIfUnowned(
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			// The list already had members - nothing was written.
+			return false, nil
+		}
+		// A 23505 here can only come from idx_list_members_single_owner (a
+		// concurrent claim won the race between our NOT EXISTS check and
+		// our INSERT) or the list_members PK (we raced ourselves). Both
+		// mean "lost the race, nothing was written" - same as ErrNoRows -
+		// and the caller (claimNewList) already falls back to checking its
+		// own membership, so there's nothing more to do here than report it.
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" {
 			return false, nil
 		}
 		return false, err
