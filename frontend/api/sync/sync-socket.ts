@@ -1,4 +1,3 @@
-import { getClientId } from "@/api/common/client-id"
 import { getValidAccessToken } from "@/api/auth/auth-service"
 import { syncConfig } from "@/api/sync/config"
 import { createLogger } from "@/api/common/logger"
@@ -12,7 +11,6 @@ const PONG_TIMEOUT_MS = 10_000
 const INITIAL_BACKOFF_MS = 1_000
 const MAX_BACKOFF_MS = 60_000
 
-export type AckHandler = (eventId: string) => void
 export type ConnectedHandler = () => void
 export type ListEventHandler = (listId: string, seq: number) => void
 
@@ -42,10 +40,12 @@ const defaultCreateSocket: CreateSocket = (url, headers) => {
 }
 
 /**
- * Maintains a single persistent WebSocket connection for acks and
- * liveness. Sending events is never done over this socket (see
- * sync-client.ts) - this connection is receive-only from the app's
- * perspective, plus the app-level ping.
+ * Maintains a single persistent WebSocket connection for "a list you
+ * subscribed to changed" notifications and liveness. Our own pushes are
+ * confirmed by their HTTP response (see sync-client.ts), so nothing about
+ * them travels this way - this connection carries only what a
+ * request/response can't: news of what *other* devices did. Receive-only
+ * from the app's perspective, apart from subscribe and the app-level ping.
  *
  * The constructor takes an injectable `createSocket` because jest-expo
  * runs in a plain Node environment with no RN WebSocket implementation -
@@ -70,7 +70,6 @@ export class SyncSocket {
   private hasSubscribed = false
 
   constructor(
-    private readonly onAck: AckHandler,
     private readonly onConnected: ConnectedHandler,
     private readonly onListEvent: ListEventHandler,
     private readonly createSocket: CreateSocket = defaultCreateSocket
@@ -118,7 +117,7 @@ export class SyncSocket {
       return
     }
 
-    const url = `${syncConfig.webSocketUrl}?client_id=${encodeURIComponent(getClientId())}`
+    const url = syncConfig.webSocketUrl
     const headers = token ? { Authorization: `Bearer ${token}` } : undefined
 
     let socket: WebSocket
@@ -136,8 +135,8 @@ export class SyncSocket {
       this.startPing()
       // Resent before onConnected() fires, so a reconnect (dropped
       // connection, token refresh, ...) never leaves the server without
-      // this connection's subscriptions - the server has no memory of
-      // what a client_id was subscribed to on a prior connection.
+      // this connection's subscriptions - the server keys them by
+      // connection and has no memory of a prior one's.
       this.sendSubscribe()
       this.onConnected()
     }
@@ -204,7 +203,6 @@ export class SyncSocket {
     }
     const message = parsed as {
       type?: unknown
-      event_id?: unknown
       list_id?: unknown
       seq?: unknown
     }
@@ -214,15 +212,6 @@ export class SyncSocket {
         clearTimeout(this.pongTimeout)
         this.pongTimeout = null
       }
-      return
-    }
-
-    if (message.type === "ack" && typeof message.event_id === "string") {
-      // The wire message still carries `seq` (unchanged backend contract),
-      // but nothing here reads it anymore - seq has exactly one writer, the
-      // pull path (see sync-design-decisions.md, "Genau ein Writer für
-      // seq"). An ack now only means "mark this outbox row synced".
-      this.onAck(message.event_id)
       return
     }
 

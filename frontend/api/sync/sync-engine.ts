@@ -57,8 +57,11 @@ export const MAX_DRAIN_BATCHES = 20
 
 /**
  * Orchestrates getting outbox rows to the server and reconciling local
- * belief with server reality. Never marks a row synced on POST alone -
- * only handleAck (a WebSocket ack) or reconcile confirms it landed. See
+ * belief with server reality. The push response is the confirmation: the
+ * server appends durably before answering, so a row is marked synced from
+ * exactly what that response acked - never optimistically from the fact
+ * that a request was sent. A lost response leaves the row pending and the
+ * next flush re-pushes it, which the server answers idempotently. See
  * sync-design-decisions.md ("Kein persistierter 'sent'-Zustand").
  */
 export class SyncEngine {
@@ -169,6 +172,23 @@ export class SyncEngine {
         if (!error.retryable) {
           await this.giveUpOnGroup(listId, eventIds)
         }
+        return
+      }
+
+      // Confirm only what we actually sent: the server echoes back what it
+      // stored, and an id we never put on the wire has no business marking
+      // one of our rows synced.
+      const sent = new Set(eventIds)
+      const confirmed = sendResult
+        .getValue()!
+        .map((ack) => ack.eventId)
+        .filter((id) => sent.has(id))
+      const markResult = await this.outboxRepository.markSynced(confirmed)
+      if (!markResult.success) {
+        logger.error(
+          `Failed to mark ${confirmed.length} confirmed events as synced`,
+          markResult.getError()
+        )
       }
     } finally {
       eventIds.forEach((id) => this.inFlight.delete(id))
@@ -222,28 +242,6 @@ export class SyncEngine {
       )
     }
     notifySyncListsChanged()
-  }
-
-  /**
-   * The server confirmed (via WebSocket) that this event committed. Marks
-   * the outbox row synced - that's all. `seq` has exactly one writer (the
-   * pull path, see EventRepository.insertRemote): the ack doesn't record
-   * it, so it never has to race pull for ordering. See
-   * sync-design-decisions.md ("Genau ein Writer für seq") for why a second,
-   * out-of-band writer here made "unconfirmed" ambiguous - it used to mean
-   * either "not yet sent" or "the server has this, we just lost the ack" -
-   * and made every ack a potential list rebuild, ordering-sensitive across
-   * concurrent acks. Losing an ack is now harmless: the event simply stays
-   * in the local unconfirmed tail until the next pull assigns it a seq.
-   */
-  async handleAck(eventId: string): Promise<void> {
-    const result = await this.outboxRepository.markSynced(eventId)
-    if (!result.success) {
-      logger.error(
-        `Failed to mark event ${eventId} as synced`,
-        result.getError()
-      )
-    }
   }
 
   /**

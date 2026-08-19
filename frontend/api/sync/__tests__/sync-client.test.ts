@@ -24,6 +24,13 @@ const makeEvent = (
   ...overrides,
 })
 
+// The push response's shape: a 200 whose body confirms what landed.
+const pushResponse = (acked: unknown[] = [{ event_id: "evt-1", seq: 1 }]) => ({
+  ok: true,
+  status: 200,
+  json: async () => ({ queued: acked.length, acked }),
+})
+
 describe("SyncClient", () => {
   beforeEach(() => {
     jest.clearAllMocks()
@@ -32,7 +39,7 @@ describe("SyncClient", () => {
 
   describe("sendEvents", () => {
     it("sends events with the payload as a JSON value, not a stringified string", async () => {
-      const fetchMock = jest.fn().mockResolvedValue({ ok: true, status: 202 })
+      const fetchMock = jest.fn().mockResolvedValue(pushResponse())
       const client = new SyncClient(fetchMock)
 
       const result = await client.sendEvents([makeEvent()])
@@ -65,7 +72,57 @@ describe("SyncClient", () => {
       const result = await client.sendEvents([])
 
       expect(result.success).toBe(true)
+      expect(result.getValue()).toEqual([])
       expect(fetchMock).not.toHaveBeenCalled()
+    })
+
+    // The response body is the confirmation - this is what lets flush mark
+    // outbox rows synced without a second delivery over the WebSocket.
+    it("returns the acked event ids and their assigned seqs", async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(pushResponse([{ event_id: "evt-1", seq: 7 }]))
+      const client = new SyncClient(fetchMock)
+
+      const result = await client.sendEvents([makeEvent()])
+
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toEqual([{ eventId: "evt-1", seq: 7 }])
+    })
+
+    it("skips malformed entries rather than failing a push that succeeded", async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        pushResponse([
+          { event_id: "evt-1", seq: 7 },
+          { event_id: 123, seq: 8 },
+          { event_id: "evt-3", seq: "not-a-number" },
+        ])
+      )
+      const client = new SyncClient(fetchMock)
+
+      const result = await client.sendEvents([makeEvent()])
+
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toEqual([{ eventId: "evt-1", seq: 7 }])
+    })
+
+    // The events are stored either way; reporting a failure here would make
+    // the client give up on a batch the server actually has. The rows just
+    // stay pending and the next flush re-pushes them.
+    it("succeeds with nothing confirmed when the body is unreadable", async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: true,
+        status: 200,
+        json: async () => {
+          throw new Error("not JSON")
+        },
+      })
+      const client = new SyncClient(fetchMock)
+
+      const result = await client.sendEvents([makeEvent()])
+
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toEqual([])
     })
 
     it("treats a 400 as non-retryable", async () => {

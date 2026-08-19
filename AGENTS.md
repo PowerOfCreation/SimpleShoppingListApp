@@ -59,31 +59,38 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
   (`EXPO_PUBLIC_API_URL`, checked in); Keycloak via local `.env`. Backend
   target via `DATABASE_URL`.
 - **Sync (bidirectional, list content included):** offline mutations (both
-  `todo_list.*` and `ingredient.*` events) → `POST /api/v1/events` (REST, 202).
+  `todo_list.*` and `ingredient.*` events) → `POST /api/v1/events` (REST, 200).
   The push endpoint is synchronous: authorize the whole batch (403), validate
   its structure (400), then durably append it — one transaction per list,
   row-locking that list's `synced_lists` entry to assign `seq` (see
   `EventRepository.AppendToList`) — before the response is sent. Once
   appended, an event is a fact; nothing downstream can still reject it.
-  **WebSocket** (`/api/v1/sync/ws`) pushes per-event **acks**, plus a
-  **`{"type":"event"}`** notification to clients subscribed (via
-  `{"type":"subscribe","list_ids":[...]}`) to a list that just got a new event —
-  so the client doesn't have to poll for either direction. Pull:
-  `POST /api/v1/sync/head` reports each list's current server cursor
-  (`seq` + latest event id); `GET /api/v1/sync/events` returns a list's event
-  history since a given `seq`, applied locally by rebuilding that list's
-  projection from its full merged (local + pulled) history. `POST
-  /api/v1/sync/state` reconciles lost acks (self-heal for push, keyed by
-  `list_id`). Pull only ever fetches lists already known and sync-enabled
+  **The push response is the confirmation:** its `acked: [{event_id, seq}]`
+  is what marks outbox rows synced (`SyncEngine.sendGroup`). There is no
+  WebSocket ack — a lost response leaves the row pending, and the next
+  flush re-pushes it, which the server answers idempotently with the same
+  `seq`. **WebSocket** (`/api/v1/sync/ws`) carries only what a
+  request/response can't: a **`{"type":"event"}`** notification to clients
+  subscribed (via `{"type":"subscribe","list_ids":[...]}`) to a list that
+  just got a new event, so a device hears about *other* devices' writes
+  without polling. It's a debounced pull trigger, not an ordering token
+  (the fan-out is detached from the push request and deliberately
+  unordered). Pull: `POST /api/v1/sync/head` reports each list's current
+  server cursor (`seq` + latest event id); `GET /api/v1/sync/events`
+  returns a list's event history since a given `seq`, applied locally by
+  rebuilding that list's projection from its full merged (local + pulled)
+  history. `POST /api/v1/sync/state` reconciles the other direction —
+  events the server has no record of go back to pending, keyed by
+  `list_id`. Pull only ever fetches lists already known and sync-enabled
   locally — there is **no** "restore my lists after reinstall" / discovery
   endpoint. Replay order is a rebase on the server's `seq` (confirmed prefix,
-  server-authoritative) with our own unacked writes as a local tail
+  server-authoritative) with our own unconfirmed writes as a local tail
   (`byServerSeqThenLocal`), not wall-clock `occurred_at` — see
   `frontend/docs/sync-design-decisions.md`. Whether *this device* syncs a
   list is a device-local setting (`list_sync_settings`, see
   `list-sync-settings-repository.ts`), not a domain event and not a column on
   the `ingredient_lists` projection — that projection rebuilds from the
-  event log on every pull/ack, and a rebuildable table is the wrong place for
+  event log on every pull, and a rebuildable table is the wrong place for
   a fact a rebuild must never be able to reset.
 - **Backend auth:** mandatory. Verifies Keycloak bearer tokens (see
   `backend/internal/interface/api/middleware`) on `/api/v1/events` and every

@@ -44,7 +44,6 @@ function mockAuth(status: "loading" | "signedOut" | "signedIn") {
 
 describe("SyncProvider", () => {
   let flushMock: jest.Mock
-  let handleAckMock: jest.Mock
   let reconcileMock: jest.Mock
   let pullMock: jest.Mock
   let pullListMock: jest.Mock
@@ -52,13 +51,11 @@ describe("SyncProvider", () => {
   let socketDisconnectMock: jest.Mock
   let socketReconnectIfTokenChangedMock: jest.Mock
   let socketSubscribeMock: jest.Mock
-  let ackHandler: ((eventId: string) => void) | undefined
   let onConnectedHandler: (() => void) | undefined
   let listEventHandler: ((listId: string, seq: number) => void) | undefined
 
   beforeEach(() => {
     jest.clearAllMocks()
-    ackHandler = undefined
     onConnectedHandler = undefined
     listEventHandler = undefined
 
@@ -69,7 +66,6 @@ describe("SyncProvider", () => {
       >)
 
     flushMock = jest.fn().mockResolvedValue(undefined)
-    handleAckMock = jest.fn().mockResolvedValue(undefined)
     reconcileMock = jest.fn().mockResolvedValue(undefined)
     pullMock = jest.fn().mockResolvedValue(undefined)
     pullListMock = jest.fn().mockResolvedValue(undefined)
@@ -77,7 +73,6 @@ describe("SyncProvider", () => {
       () =>
         ({
           flush: flushMock,
-          handleAck: handleAckMock,
           reconcile: reconcileMock,
           pull: pullMock,
           pullList: pullListMock,
@@ -88,8 +83,7 @@ describe("SyncProvider", () => {
     socketDisconnectMock = jest.fn()
     socketReconnectIfTokenChangedMock = jest.fn().mockResolvedValue(undefined)
     socketSubscribeMock = jest.fn()
-    MockSyncSocket.mockImplementation((onAck, onConnected, onListEvent) => {
-      ackHandler = onAck
+    MockSyncSocket.mockImplementation((onConnected, onListEvent) => {
       onConnectedHandler = onConnected
       listEventHandler = onListEvent
       return {
@@ -209,17 +203,6 @@ describe("SyncProvider", () => {
 
     await waitFor(() => expect(flushMock).toHaveBeenCalledTimes(1))
     expect(socketConnectMock).toHaveBeenCalledTimes(1)
-  })
-
-  it("wires the socket's ack messages to engine.handleAck", async () => {
-    mockAuth("signedIn")
-    renderProvider()
-    await waitFor(() => expect(socketConnectMock).toHaveBeenCalledTimes(1))
-
-    expect(ackHandler).toBeDefined()
-    ackHandler!("evt-123")
-
-    expect(handleAckMock).toHaveBeenCalledWith("evt-123")
   })
 
   it("pulls and reconciles sync-enabled list ids when the socket (re)connects", async () => {

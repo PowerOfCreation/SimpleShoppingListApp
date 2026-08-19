@@ -72,7 +72,7 @@ describe("OutboxRepository", () => {
       // history into the outbox each time - re-enqueueing an event that's
       // already queued must not violate the primary key.
       await repo.enqueue(db, "evt-1", "agg-1", 1000)
-      await repo.markSynced("evt-1")
+      await repo.markSynced(["evt-1"])
 
       await expect(
         repo.enqueue(db, "evt-1", "agg-1", 1000)
@@ -89,7 +89,7 @@ describe("OutboxRepository", () => {
       await repo.enqueue(db, "evt-2", "agg-1", 2000)
       await repo.enqueue(db, "evt-1", "agg-1", 1000)
       await repo.enqueue(db, "evt-3", "agg-1", 3000)
-      await repo.markSynced("evt-3")
+      await repo.markSynced(["evt-3"])
 
       const result = await repo.getPending()
       expect(result.getValue()!.map((r) => r.event_id)).toEqual([
@@ -133,20 +133,36 @@ describe("OutboxRepository", () => {
   })
 
   describe("markSynced", () => {
-    it("moves a row out of getPending", async () => {
+    it("moves the confirmed rows out of getPending", async () => {
       await repo.enqueue(db, "evt-1", "agg-1", 1000)
+      await repo.enqueue(db, "evt-2", "agg-1", 1001)
 
-      const result = await repo.markSynced("evt-1")
+      const result = await repo.markSynced(["evt-1", "evt-2"])
       expect(result.success).toBe(true)
 
       const pending = await repo.getPending()
       expect(pending.getValue()).toEqual([])
     })
 
-    it("is a no-op, not a failure, when the row no longer exists", async () => {
-      // Simulates an ack arriving for a row already removed by
-      // cancelForAggregate (sync toggled off mid-flight).
-      const result = await repo.markSynced("never-enqueued")
+    it("leaves rows the push did not confirm pending", async () => {
+      await repo.enqueue(db, "evt-1", "agg-1", 1000)
+      await repo.enqueue(db, "evt-2", "agg-1", 1001)
+
+      await repo.markSynced(["evt-1"])
+
+      const pending = await repo.getPending()
+      expect(pending.getValue()!.map((row) => row.event_id)).toEqual(["evt-2"])
+    })
+
+    it("is a no-op, not a failure, when a row no longer exists", async () => {
+      // Simulates a confirmation arriving for a row already removed by
+      // cancelForList (sync toggled off mid-flight).
+      const result = await repo.markSynced(["never-enqueued"])
+      expect(result.success).toBe(true)
+    })
+
+    it("is a no-op for an empty confirmation list", async () => {
+      const result = await repo.markSynced([])
       expect(result.success).toBe(true)
     })
   })
@@ -172,7 +188,7 @@ describe("OutboxRepository", () => {
   describe("resetToPending", () => {
     it("moves synced rows back to pending (the self-heal path)", async () => {
       await repo.enqueue(db, "evt-1", "agg-1", 1000)
-      await repo.markSynced("evt-1")
+      await repo.markSynced(["evt-1"])
 
       await repo.resetToPending(["evt-1"])
 
@@ -197,7 +213,7 @@ describe("OutboxRepository", () => {
       await repo.enqueue(db, "evt-1", "ing-1", 1000)
       await repo.enqueue(db, "evt-2", "ing-2", 2000)
       await repo.enqueue(db, "evt-3", "ing-3", 3000)
-      await repo.markSynced("evt-2")
+      await repo.markSynced(["evt-2"])
 
       await repo.cancelForList("list-1")
 

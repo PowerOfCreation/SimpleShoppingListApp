@@ -45,6 +45,42 @@ function toWireEvent(event: DomainEventRow): WireEvent {
 }
 
 /**
+ * One event the server confirmed durably appended, with the seq it was
+ * given. seq is carried for diagnostics only - the pull path stays seq's
+ * single writer (see sync-design-decisions.md, "Genau ein Writer für seq").
+ */
+export type PushAck = {
+  eventId: string
+  seq: number
+}
+
+/**
+ * Reads the confirmations out of a successful push response. Deliberately
+ * total: a body that isn't the expected shape yields an empty list rather
+ * than an error, because the push itself already succeeded and turning that
+ * into a failure would be a lie. The unconfirmed rows just stay pending and
+ * the next flush re-pushes them, which the server answers idempotently.
+ */
+async function parseAcked(response: Response): Promise<PushAck[]> {
+  try {
+    const data = (await response.json()) as {
+      acked?: { event_id?: unknown; seq?: unknown }[]
+    }
+    if (!Array.isArray(data?.acked)) {
+      return []
+    }
+    return data.acked.flatMap((ack) =>
+      typeof ack?.event_id === "string" && typeof ack.seq === "number"
+        ? [{ eventId: ack.event_id, seq: ack.seq }]
+        : []
+    )
+  } catch (error) {
+    logger.warn("Push succeeded but its response body was unreadable", error)
+    return []
+  }
+}
+
+/**
  * The shape GET /api/v1/sync/events actually returns - the same fields as
  * WireEvent (see mapper.ToSyncEventResponse on the backend, which builds
  * pull responses from the exact same StoredEvent push already round-trips
@@ -178,9 +214,18 @@ export class SyncClient {
     }
   }
 
-  async sendEvents(events: DomainEventRow[]): Promise<Result<void, SyncError>> {
+  /**
+   * Pushes a batch and returns the server's confirmation for it. The push
+   * is synchronous server-side (see EventController.SyncEvents): a 2xx
+   * means every event in the batch is durably in its list's log, and the
+   * body carries the seq each one was assigned. There is no separate
+   * WebSocket ack to wait for.
+   */
+  async sendEvents(
+    events: DomainEventRow[]
+  ): Promise<Result<PushAck[], SyncError>> {
     if (events.length === 0) {
-      return Result.ok(undefined)
+      return Result.ok([])
     }
 
     const tokenResult = await this.getAuthToken()
@@ -215,7 +260,7 @@ export class SyncClient {
       )
     }
 
-    return Result.ok(undefined)
+    return Result.ok(await parseAcked(response))
   }
 
   /**

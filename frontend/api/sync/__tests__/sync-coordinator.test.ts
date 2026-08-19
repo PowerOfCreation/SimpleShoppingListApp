@@ -22,7 +22,6 @@ const MockListSyncSettingsRepository =
 
 describe("SyncCoordinator", () => {
   let flushMock: jest.Mock
-  let handleAckMock: jest.Mock
   let reconcileMock: jest.Mock
   let pullMock: jest.Mock
   let pullListMock: jest.Mock
@@ -30,7 +29,6 @@ describe("SyncCoordinator", () => {
   let socketDisconnectMock: jest.Mock
   let socketReconnectIfTokenChangedMock: jest.Mock
   let socketSubscribeMock: jest.Mock
-  let ackHandler: ((eventId: string) => void) | undefined
   let onConnectedHandler: (() => void) | undefined
   let listEventHandler: ((listId: string, seq: number) => void) | undefined
   let appStateRemoveMock: jest.Mock
@@ -59,7 +57,6 @@ describe("SyncCoordinator", () => {
   beforeEach(() => {
     jest.clearAllMocks()
     coordinators = []
-    ackHandler = undefined
     onConnectedHandler = undefined
     listEventHandler = undefined
 
@@ -71,7 +68,6 @@ describe("SyncCoordinator", () => {
       >)
 
     flushMock = jest.fn().mockResolvedValue(undefined)
-    handleAckMock = jest.fn().mockResolvedValue(undefined)
     reconcileMock = jest.fn().mockResolvedValue(undefined)
     pullMock = jest.fn().mockResolvedValue(undefined)
     pullListMock = jest.fn().mockResolvedValue(undefined)
@@ -79,7 +75,6 @@ describe("SyncCoordinator", () => {
       () =>
         ({
           flush: flushMock,
-          handleAck: handleAckMock,
           reconcile: reconcileMock,
           pull: pullMock,
           pullList: pullListMock,
@@ -90,8 +85,7 @@ describe("SyncCoordinator", () => {
     socketDisconnectMock = jest.fn()
     socketReconnectIfTokenChangedMock = jest.fn().mockResolvedValue(undefined)
     socketSubscribeMock = jest.fn()
-    MockSyncSocket.mockImplementation((onAck, onConnected, onListEvent) => {
-      ackHandler = onAck
+    MockSyncSocket.mockImplementation((onConnected, onListEvent) => {
       onConnectedHandler = onConnected
       listEventHandler = onListEvent
       return {
@@ -142,15 +136,6 @@ describe("SyncCoordinator", () => {
     } finally {
       jest.useRealTimers()
     }
-  })
-
-  it("wires the socket's ack messages to engine.handleAck", () => {
-    buildCoordinator().start()
-
-    expect(ackHandler).toBeDefined()
-    ackHandler!("evt-123")
-
-    expect(handleAckMock).toHaveBeenCalledWith("evt-123")
   })
 
   it("pulls and reconciles sync-enabled lists when the socket (re)connects", async () => {
