@@ -171,48 +171,36 @@ func (f *fakeListMemberRepo) FindClaimedListIDs(ctx context.Context, listIDs []u
 	return claimed, nil
 }
 
-// fakeToDoListRepo implements repositories.ToDoListRepository, but this
-// suite only ever exercises FindById - every other method panics so an
-// accidental call surfaces immediately instead of silently no-oping.
-type fakeToDoListRepo struct {
-	lists map[uuid.UUID]*entities.ToDoList
+// fakeSyncedListRepo is the registry: a set of list ids the server holds a
+// log for. No content, mirroring the real table.
+type fakeSyncedListRepo struct {
+	ids map[uuid.UUID]struct{}
 }
 
-func newFakeToDoListRepo(lists ...*entities.ToDoList) *fakeToDoListRepo {
-	m := make(map[uuid.UUID]*entities.ToDoList, len(lists))
-	for _, l := range lists {
-		m[l.Id] = l
+func newFakeSyncedListRepo(ids ...uuid.UUID) *fakeSyncedListRepo {
+	m := make(map[uuid.UUID]struct{}, len(ids))
+	for _, id := range ids {
+		m[id] = struct{}{}
 	}
-	return &fakeToDoListRepo{lists: m}
+	return &fakeSyncedListRepo{ids: m}
 }
 
-func (f *fakeToDoListRepo) Create(context.Context, *entities.ValidatedToDoList, int64) error {
-	panic("not used by ListSharingService tests")
+func (f *fakeSyncedListRepo) Exists(_ context.Context, id uuid.UUID) (bool, error) {
+	_, ok := f.ids[id]
+	return ok, nil
 }
 
-func (f *fakeToDoListRepo) FindById(_ context.Context, id uuid.UUID) (*entities.ToDoList, error) {
-	return f.lists[id], nil
-}
-
-func (f *fakeToDoListRepo) Update(context.Context, *entities.ValidatedToDoList, int64) error {
-	panic("not used by ListSharingService tests")
-}
-
-func (f *fakeToDoListRepo) Delete(context.Context, uuid.UUID, time.Time, int64) error {
-	panic("not used by ListSharingService tests")
-}
-
-func newSharingTestService(list *entities.ToDoList) (*ListSharingService, *fakeListInviteRepo, *fakeListMemberRepo) {
+func newSharingTestService(listID uuid.UUID) (*ListSharingService, *fakeListInviteRepo, *fakeListMemberRepo) {
 	invites := newFakeListInviteRepo()
 	members := newFakeListMemberRepo()
-	todoLists := newFakeToDoListRepo(list)
+	lists := newFakeSyncedListRepo(listID)
 	access := NewListAccessService(members)
-	svc := NewListSharingService(testLogger(), invites, members, todoLists, access).(*ListSharingService)
+	svc := NewListSharingService(testLogger(), invites, members, lists, access).(*ListSharingService)
 	return svc, invites, members
 }
 
-func testList() *entities.ToDoList {
-	return &entities.ToDoList{Id: uuid.New(), Name: "Rewe"}
+func testListID() uuid.UUID {
+	return uuid.New()
 }
 
 // seedOwner simulates what the push path (ListAccessService.AuthorizeWrite,
@@ -229,76 +217,76 @@ func seedOwner(t *testing.T, members *fakeListMemberRepo, listID uuid.UUID, user
 // --- CreateInvite ---
 
 func TestListSharingService_CreateInvite_NonMemberOfUnclaimedListIsRejected(t *testing.T) {
-	list := testList()
-	svc, _, members := newSharingTestService(list)
+	listID := testListID()
+	svc, _, members := newSharingTestService(listID)
 
 	// Nobody has pushed to this list yet - ListSharingService itself never
 	// claims ownership anymore (see ListAccessService.AuthorizeWrite, the
 	// push path's job), so a bare CreateInvite call must not grant it.
-	_, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "24h"})
+	_, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "24h"})
 	assert.ErrorIs(t, err, interfaces.ErrNotAListMember)
 
-	member, err := members.FindByListAndUser(context.Background(), list.Id, "alice")
+	member, err := members.FindByListAndUser(context.Background(), listID, "alice")
 	require.NoError(t, err)
 	assert.Nil(t, member)
 }
 
 func TestListSharingService_CreateInvite_OwnerMayInvite(t *testing.T) {
-	list := testList()
-	svc, _, members := newSharingTestService(list)
-	seedOwner(t, members, list.Id, "alice")
+	listID := testListID()
+	svc, _, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
 
-	result, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "24h"})
+	result, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "24h"})
 	require.NoError(t, err)
 	assert.NotEmpty(t, result.Token)
 }
 
 func TestListSharingService_CreateInvite_NonMemberOfAlreadyClaimedListIsRejected(t *testing.T) {
-	list := testList()
-	svc, _, members := newSharingTestService(list)
-	seedOwner(t, members, list.Id, "alice")
+	listID := testListID()
+	svc, _, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
 
-	_, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "mallory", TTLKey: "24h"})
+	_, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "mallory", TTLKey: "24h"})
 	assert.ErrorIs(t, err, interfaces.ErrNotAListMember)
 }
 
 func TestListSharingService_CreateInvite_MemberMayNotInviteOthers(t *testing.T) {
-	list := testList()
-	svc, _, members := newSharingTestService(list)
-	seedOwner(t, members, list.Id, "alice")
+	listID := testListID()
+	svc, _, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
 
-	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "24h"})
+	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "24h"})
 	require.NoError(t, err)
 	_, err = svc.RedeemInvite(context.Background(), &command.RedeemListInviteCommand{Token: created.Token, UserID: "bob"})
 	require.NoError(t, err)
 
 	// bob joined as a plain member, not the owner - sharing is owner-only.
-	_, err = svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "bob", TTLKey: "24h"})
+	_, err = svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "bob", TTLKey: "24h"})
 	assert.ErrorIs(t, err, interfaces.ErrNotListOwner)
 }
 
 func TestListSharingService_CreateInvite_UnknownListReturnsNotFound(t *testing.T) {
-	svc, _, _ := newSharingTestService(testList())
+	svc, _, _ := newSharingTestService(testListID())
 
 	_, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: uuid.New(), UserID: "alice", TTLKey: "24h"})
 	assert.ErrorIs(t, err, interfaces.ErrListNotFound)
 }
 
 func TestListSharingService_CreateInvite_InvalidTTLIsRejected(t *testing.T) {
-	list := testList()
-	svc, _, _ := newSharingTestService(list)
+	listID := testListID()
+	svc, _, _ := newSharingTestService(listID)
 
-	_, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "3 weeks"})
+	_, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "3 weeks"})
 	assert.ErrorIs(t, err, interfaces.ErrInvalidInviteTTL)
 }
 
 func TestListSharingService_CreateInvite_ExpiresAtMatchesPresetDuration(t *testing.T) {
-	list := testList()
-	svc, invites, members := newSharingTestService(list)
-	seedOwner(t, members, list.Id, "alice")
+	listID := testListID()
+	svc, invites, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
 
 	before := time.Now().UTC()
-	result, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
+	result, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "1h"})
 	require.NoError(t, err)
 	after := time.Now().UTC()
 
@@ -309,11 +297,11 @@ func TestListSharingService_CreateInvite_ExpiresAtMatchesPresetDuration(t *testi
 }
 
 func TestListSharingService_CreateInvite_OnlyTheTokenHashIsPersisted(t *testing.T) {
-	list := testList()
-	svc, invites, members := newSharingTestService(list)
-	seedOwner(t, members, list.Id, "alice")
+	listID := testListID()
+	svc, invites, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
 
-	result, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
+	result, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "1h"})
 	require.NoError(t, err)
 
 	stored, err := invites.FindByID(context.Background(), result.Result.ID)
@@ -323,13 +311,13 @@ func TestListSharingService_CreateInvite_OnlyTheTokenHashIsPersisted(t *testing.
 }
 
 func TestListSharingService_CreateInvite_TwoCallsProduceDifferentTokens(t *testing.T) {
-	list := testList()
-	svc, _, members := newSharingTestService(list)
-	seedOwner(t, members, list.Id, "alice")
+	listID := testListID()
+	svc, _, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
 
-	first, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
+	first, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "1h"})
 	require.NoError(t, err)
-	second, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
+	second, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "1h"})
 	require.NoError(t, err)
 
 	assert.NotEqual(t, first.Token, second.Token)
@@ -338,53 +326,53 @@ func TestListSharingService_CreateInvite_TwoCallsProduceDifferentTokens(t *testi
 // --- FindActiveInvites ---
 
 func TestListSharingService_FindActiveInvites_ExcludesExpiredAndRevoked(t *testing.T) {
-	list := testList()
-	svc, invites, members := newSharingTestService(list)
-	seedOwner(t, members, list.Id, "alice")
+	listID := testListID()
+	svc, invites, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
 
-	_, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
+	_, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "1h"})
 	require.NoError(t, err)
-	toRevoke, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
+	toRevoke, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "1h"})
 	require.NoError(t, err)
 	require.NoError(t, invites.Revoke(context.Background(), toRevoke.Result.ID, time.Now().UTC()))
 
 	// An invite that's already expired.
-	expired, _, err := entities.NewListInvite(list.Id, "alice", mustTTL(t, "1h"), time.Now().UTC().Add(-2*time.Hour))
+	expired, _, err := entities.NewListInvite(listID, "alice", mustTTL(t, "1h"), time.Now().UTC().Add(-2*time.Hour))
 	require.NoError(t, err)
 	require.NoError(t, invites.Create(context.Background(), expired))
 
-	result, err := svc.FindActiveInvites(context.Background(), &query.GetListInvitesQuery{ListID: list.Id, UserID: "alice"})
+	result, err := svc.FindActiveInvites(context.Background(), &query.GetListInvitesQuery{ListID: listID, UserID: "alice"})
 	require.NoError(t, err)
 	require.Len(t, result.Result, 1)
 }
 
 func TestListSharingService_FindActiveInvites_DoesNotClaimOwnershipOfAnUnownedList(t *testing.T) {
-	list := testList()
-	svc, _, members := newSharingTestService(list)
+	listID := testListID()
+	svc, _, members := newSharingTestService(listID)
 
 	// Nobody has ever pushed to this list - it has zero members. Merely
 	// asking to list its invites must not make the caller its owner; only
 	// the push path (ListAccessService.AuthorizeWrite) may claim ownership.
-	_, err := svc.FindActiveInvites(context.Background(), &query.GetListInvitesQuery{ListID: list.Id, UserID: "alice"})
+	_, err := svc.FindActiveInvites(context.Background(), &query.GetListInvitesQuery{ListID: listID, UserID: "alice"})
 	assert.ErrorIs(t, err, interfaces.ErrNotAListMember)
 
-	member, err := members.FindByListAndUser(context.Background(), list.Id, "alice")
+	member, err := members.FindByListAndUser(context.Background(), listID, "alice")
 	require.NoError(t, err)
 	assert.Nil(t, member)
 }
 
 func TestListSharingService_FindActiveInvites_MemberMayNotList(t *testing.T) {
-	list := testList()
-	svc, _, members := newSharingTestService(list)
-	seedOwner(t, members, list.Id, "alice")
+	listID := testListID()
+	svc, _, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
 
-	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
+	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "1h"})
 	require.NoError(t, err)
 	_, err = svc.RedeemInvite(context.Background(), &command.RedeemListInviteCommand{Token: created.Token, UserID: "bob"})
 	require.NoError(t, err)
 
 	// bob is a member, not the owner - listing invites is owner-only.
-	_, err = svc.FindActiveInvites(context.Background(), &query.GetListInvitesQuery{ListID: list.Id, UserID: "bob"})
+	_, err = svc.FindActiveInvites(context.Background(), &query.GetListInvitesQuery{ListID: listID, UserID: "bob"})
 	assert.ErrorIs(t, err, interfaces.ErrNotListOwner)
 }
 
@@ -398,11 +386,11 @@ func mustTTL(t *testing.T, key string) entities.InviteTTL {
 // --- RevokeInvite ---
 
 func TestListSharingService_RevokeInvite_CreatorMayRevoke(t *testing.T) {
-	list := testList()
-	svc, invites, members := newSharingTestService(list)
-	seedOwner(t, members, list.Id, "alice")
+	listID := testListID()
+	svc, invites, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
 
-	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
+	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "1h"})
 	require.NoError(t, err)
 
 	_, err = svc.RevokeInvite(context.Background(), &command.RevokeListInviteCommand{InviteID: created.Result.ID, UserID: "alice"})
@@ -420,14 +408,14 @@ func TestListSharingService_RevokeInvite_CreatorMayRevoke(t *testing.T) {
 // "creator OR owner" branch collapsed to "owner" (see the service).
 
 func TestListSharingService_RevokeInvite_UnrelatedMemberMayNotRevoke(t *testing.T) {
-	list := testList()
-	svc, _, members := newSharingTestService(list)
-	seedOwner(t, members, list.Id, "alice")
+	listID := testListID()
+	svc, _, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
 
-	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
+	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "1h"})
 	require.NoError(t, err)
 
-	member, err := entities.NewListMember(list.Id, "bob", entities.RoleMember, time.Now().UTC(), nil)
+	member, err := entities.NewListMember(listID, "bob", entities.RoleMember, time.Now().UTC(), nil)
 	require.NoError(t, err)
 	require.NoError(t, members.Add(context.Background(), member))
 
@@ -436,18 +424,18 @@ func TestListSharingService_RevokeInvite_UnrelatedMemberMayNotRevoke(t *testing.
 }
 
 func TestListSharingService_RevokeInvite_UnknownInviteReturnsNotFound(t *testing.T) {
-	svc, _, _ := newSharingTestService(testList())
+	svc, _, _ := newSharingTestService(testListID())
 
 	_, err := svc.RevokeInvite(context.Background(), &command.RevokeListInviteCommand{InviteID: uuid.New(), UserID: "alice"})
 	assert.ErrorIs(t, err, interfaces.ErrInviteNotFound)
 }
 
 func TestListSharingService_RevokeInvite_RevokingTwiceIsIdempotent(t *testing.T) {
-	list := testList()
-	svc, _, members := newSharingTestService(list)
-	seedOwner(t, members, list.Id, "alice")
+	listID := testListID()
+	svc, _, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
 
-	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
+	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "1h"})
 	require.NoError(t, err)
 
 	_, err = svc.RevokeInvite(context.Background(), &command.RevokeListInviteCommand{InviteID: created.Result.ID, UserID: "alice"})
@@ -459,21 +447,20 @@ func TestListSharingService_RevokeInvite_RevokingTwiceIsIdempotent(t *testing.T)
 // --- RedeemInvite ---
 
 func TestListSharingService_RedeemInvite_ValidTokenGrantsMembership(t *testing.T) {
-	list := testList()
-	svc, _, members := newSharingTestService(list)
-	seedOwner(t, members, list.Id, "alice")
+	listID := testListID()
+	svc, _, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
 
-	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
+	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "1h"})
 	require.NoError(t, err)
 
 	result, err := svc.RedeemInvite(context.Background(), &command.RedeemListInviteCommand{Token: created.Token, UserID: "bob"})
 	require.NoError(t, err)
-	assert.Equal(t, list.Id, result.ListID)
-	assert.Equal(t, list.Name, result.ListName)
+	assert.Equal(t, listID, result.ListID)
 	assert.Equal(t, entities.RoleMember, result.Role)
 	assert.False(t, result.AlreadyMember)
 
-	member, err := members.FindByListAndUser(context.Background(), list.Id, "bob")
+	member, err := members.FindByListAndUser(context.Background(), listID, "bob")
 	require.NoError(t, err)
 	require.NotNil(t, member)
 	require.NotNil(t, member.InviteID)
@@ -481,10 +468,10 @@ func TestListSharingService_RedeemInvite_ValidTokenGrantsMembership(t *testing.T
 }
 
 func TestListSharingService_RedeemInvite_ExpiredTokenIsRejected(t *testing.T) {
-	list := testList()
-	svc, invites, _ := newSharingTestService(list)
+	listID := testListID()
+	svc, invites, _ := newSharingTestService(listID)
 
-	expired, token, err := entities.NewListInvite(list.Id, "alice", mustTTL(t, "1h"), time.Now().UTC().Add(-2*time.Hour))
+	expired, token, err := entities.NewListInvite(listID, "alice", mustTTL(t, "1h"), time.Now().UTC().Add(-2*time.Hour))
 	require.NoError(t, err)
 	require.NoError(t, invites.Create(context.Background(), expired))
 
@@ -493,11 +480,11 @@ func TestListSharingService_RedeemInvite_ExpiredTokenIsRejected(t *testing.T) {
 }
 
 func TestListSharingService_RedeemInvite_RevokedTokenIsRejected(t *testing.T) {
-	list := testList()
-	svc, _, members := newSharingTestService(list)
-	seedOwner(t, members, list.Id, "alice")
+	listID := testListID()
+	svc, _, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
 
-	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
+	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "1h"})
 	require.NoError(t, err)
 	_, err = svc.RevokeInvite(context.Background(), &command.RevokeListInviteCommand{InviteID: created.Result.ID, UserID: "alice"})
 	require.NoError(t, err)
@@ -507,18 +494,18 @@ func TestListSharingService_RedeemInvite_RevokedTokenIsRejected(t *testing.T) {
 }
 
 func TestListSharingService_RedeemInvite_UnknownTokenReturnsNotFound(t *testing.T) {
-	svc, _, _ := newSharingTestService(testList())
+	svc, _, _ := newSharingTestService(testListID())
 
 	_, err := svc.RedeemInvite(context.Background(), &command.RedeemListInviteCommand{Token: "does-not-exist", UserID: "bob"})
 	assert.ErrorIs(t, err, interfaces.ErrInviteNotFound)
 }
 
 func TestListSharingService_RedeemInvite_RedeemingTwiceIsIdempotentAndDoesNotDuplicateMembership(t *testing.T) {
-	list := testList()
-	svc, _, members := newSharingTestService(list)
-	seedOwner(t, members, list.Id, "alice")
+	listID := testListID()
+	svc, _, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
 
-	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
+	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "1h"})
 	require.NoError(t, err)
 
 	first, err := svc.RedeemInvite(context.Background(), &command.RedeemListInviteCommand{Token: created.Token, UserID: "bob"})
@@ -531,7 +518,7 @@ func TestListSharingService_RedeemInvite_RedeemingTwiceIsIdempotentAndDoesNotDup
 
 	count := 0
 	for key := range members.members {
-		if key.listID == list.Id && key.userID == "bob" {
+		if key.listID == listID && key.userID == "bob" {
 			count++
 		}
 	}
@@ -539,11 +526,11 @@ func TestListSharingService_RedeemInvite_RedeemingTwiceIsIdempotentAndDoesNotDup
 }
 
 func TestListSharingService_RedeemInvite_RetryAfterRevokeStillSucceedsForAnExistingMember(t *testing.T) {
-	list := testList()
-	svc, _, members := newSharingTestService(list)
-	seedOwner(t, members, list.Id, "alice")
+	listID := testListID()
+	svc, _, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
 
-	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
+	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "1h"})
 	require.NoError(t, err)
 
 	first, err := svc.RedeemInvite(context.Background(), &command.RedeemListInviteCommand{Token: created.Token, UserID: "bob"})
@@ -563,11 +550,11 @@ func TestListSharingService_RedeemInvite_RetryAfterRevokeStillSucceedsForAnExist
 }
 
 func TestListSharingService_RedeemInvite_RevokingAnInviteDoesNotRemoveExistingMembers(t *testing.T) {
-	list := testList()
-	svc, _, members := newSharingTestService(list)
-	seedOwner(t, members, list.Id, "alice")
+	listID := testListID()
+	svc, _, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
 
-	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: list.Id, UserID: "alice", TTLKey: "1h"})
+	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "1h"})
 	require.NoError(t, err)
 
 	_, err = svc.RedeemInvite(context.Background(), &command.RedeemListInviteCommand{Token: created.Token, UserID: "bob"})
@@ -576,7 +563,7 @@ func TestListSharingService_RedeemInvite_RevokingAnInviteDoesNotRemoveExistingMe
 	_, err = svc.RevokeInvite(context.Background(), &command.RevokeListInviteCommand{InviteID: created.Result.ID, UserID: "alice"})
 	require.NoError(t, err)
 
-	member, err := members.FindByListAndUser(context.Background(), list.Id, "bob")
+	member, err := members.FindByListAndUser(context.Background(), listID, "bob")
 	require.NoError(t, err)
 	assert.NotNil(t, member)
 }

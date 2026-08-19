@@ -13,9 +13,8 @@ type RedeemListInviteCommand struct {
 }
 
 type RedeemListInviteCommandResult struct {
-	ListID   uuid.UUID
-	ListName string
-	Role     entities.ListMemberRole
+	ListID uuid.UUID
+	Role   entities.ListMemberRole
 	// AlreadyMember is true when the caller was already a member of the
 	// list before this redeem - a successful no-op, not an error.
 	AlreadyMember bool

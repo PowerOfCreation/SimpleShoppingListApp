@@ -58,10 +58,11 @@ func run(logger *slog.Logger) error {
 	eventRepo := postgres2.NewSqlcEventRepository(queries)
 	listInviteRepo := postgres2.NewSqlcListInviteRepository(queries)
 	listMemberRepo := postgres2.NewSqlcListMemberRepository(queries)
+	syncedListRepo := postgres2.NewSqlcSyncedListRepository(queries)
 
 	toDoListService := services.NewToDoListService(toDoListRepo)
 	listAccessService := services.NewListAccessService(listMemberRepo)
-	listSharingService := services.NewListSharingService(logger, listInviteRepo, listMemberRepo, toDoListRepo, listAccessService)
+	listSharingService := services.NewListSharingService(logger, listInviteRepo, listMemberRepo, syncedListRepo, listAccessService)
 
 	eventDispatcher := services.NewEventDispatcher(
 		logger,

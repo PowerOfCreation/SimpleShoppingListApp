@@ -42,6 +42,11 @@ type ListMember struct {
 	InviteID pgtype.UUID        `db:"invite_id" json:"invite_id"`
 }
 
+type SyncedList struct {
+	ID        uuid.UUID          `db:"id" json:"id"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
 type Todo struct {
 	ID          uuid.UUID          `db:"id" json:"id"`
 	Name        string             `db:"name" json:"name"`

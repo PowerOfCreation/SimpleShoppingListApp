@@ -38,7 +38,6 @@ func ToListInviteResponseList(invites []*common.ListInviteResult) []response.Lis
 func ToRedeemListInviteResponse(result *command.RedeemListInviteCommandResult) response.RedeemListInviteResponse {
 	return response.RedeemListInviteResponse{
 		ListID:        result.ListID,
-		ListName:      result.ListName,
 		Role:          string(result.Role),
 		AlreadyMember: result.AlreadyMember,
 	}

@@ -10,23 +10,20 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/entities"
-	db "github.com/powerofcreation/simpleshoppinglistapp/internal/infrastructure/db/sqlc"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/testhelpers"
 )
 
-// createTestToDoList inserts a minimal todo_lists row so list_invites/
+// registerTestList inserts a minimal todo_lists row so list_invites/
 // list_members FK constraints are satisfied - shared by every test in this
 // package that needs a real list to attach sharing data to.
-func createTestToDoList(t *testing.T, testDB *testhelpers.PostgresTestContainer) uuid.UUID {
+// registerTestList makes a list id known to the server the way the real push
+// path does - a registry row, no content. Invites and memberships hang off
+// this row via the foreign keys added in 00008.
+func registerTestList(t *testing.T, testDB *testhelpers.PostgresTestContainer) uuid.UUID {
 	t.Helper()
 	id := uuid.New()
-	now := timestamptzFromTime(time.Now().UTC())
-	err := testDB.Queries.CreateToDoList(context.Background(), db.CreateToDoListParams{
-		ID:        id,
-		Name:      "Rewe",
-		CreatedAt: now,
-		UpdatedAt: now,
-	})
+	_, err := testDB.Conn.Exec(context.Background(),
+		`INSERT INTO synced_lists (id, created_at) VALUES ($1, $2)`, id, time.Now().UTC())
 	require.NoError(t, err)
 	return id
 }
@@ -36,7 +33,7 @@ func TestSqlcListInviteRepository_Create_FindByID_Roundtrips(t *testing.T) {
 	defer testDB.Close(t)
 	repo := NewSqlcListInviteRepository(NewQueries(testDB.Conn))
 	ctx := context.Background()
-	listID := createTestToDoList(t, testDB)
+	listID := registerTestList(t, testDB)
 
 	ttl, err := entities.ParseInviteTTL("1h")
 	require.NoError(t, err)
@@ -74,7 +71,7 @@ func TestSqlcListInviteRepository_FindByTokenHash_OnlyMatchesTheExactHash(t *tes
 	defer testDB.Close(t)
 	repo := NewSqlcListInviteRepository(NewQueries(testDB.Conn))
 	ctx := context.Background()
-	listID := createTestToDoList(t, testDB)
+	listID := registerTestList(t, testDB)
 
 	ttl, err := entities.ParseInviteTTL("1h")
 	require.NoError(t, err)
@@ -97,8 +94,8 @@ func TestSqlcListInviteRepository_FindActiveByList_FiltersRevokedAndExpiredAndOt
 	defer testDB.Close(t)
 	repo := NewSqlcListInviteRepository(NewQueries(testDB.Conn))
 	ctx := context.Background()
-	listID := createTestToDoList(t, testDB)
-	otherListID := createTestToDoList(t, testDB)
+	listID := registerTestList(t, testDB)
+	otherListID := registerTestList(t, testDB)
 
 	ttl, err := entities.ParseInviteTTL("1h")
 	require.NoError(t, err)
@@ -132,7 +129,7 @@ func TestSqlcListInviteRepository_Revoke_SetsRevokedAt(t *testing.T) {
 	defer testDB.Close(t)
 	repo := NewSqlcListInviteRepository(NewQueries(testDB.Conn))
 	ctx := context.Background()
-	listID := createTestToDoList(t, testDB)
+	listID := registerTestList(t, testDB)
 
 	ttl, err := entities.ParseInviteTTL("1h")
 	require.NoError(t, err)
@@ -154,7 +151,7 @@ func TestSqlcListInviteRepository_Revoke_TwiceIsANoOpWithoutError(t *testing.T) 
 	defer testDB.Close(t)
 	repo := NewSqlcListInviteRepository(NewQueries(testDB.Conn))
 	ctx := context.Background()
-	listID := createTestToDoList(t, testDB)
+	listID := registerTestList(t, testDB)
 
 	ttl, err := entities.ParseInviteTTL("1h")
 	require.NoError(t, err)

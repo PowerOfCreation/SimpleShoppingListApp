@@ -33,15 +33,32 @@ SET revoked_at = sqlc.arg(revoked_at)
 WHERE id = sqlc.arg(id) AND revoked_at IS NULL;
 
 -- name: ClaimListOwnership :one
--- Adds the caller as owner only if listID has no members yet at all - the
--- bootstrap for lists that predate this feature and never had an owner
--- recorded anywhere. NOT EXISTS and the INSERT run as one statement so the
--- common case doesn't need two round-trips. :one + zero rows (pgx.ErrNoRows)
--- means the list already had members and nothing was written.
+-- Adds the caller as owner only if listID has no members yet at all, and
+-- registers the list in the same statement. :one + zero rows
+-- (pgx.ErrNoRows) means the list already had members and no membership was
+-- written.
+--
+-- The registry insert is a data-modifying CTE rather than a second
+-- round-trip so the two can't diverge: Postgres runs it exactly once and to
+-- completion, and list_members' foreign key is checked after the whole
+-- statement, by which point the parent row exists. A member row without a
+-- registry row is therefore not representable - which is what makes the
+-- foreign key added in 00008 truthful rather than aspirational.
+WITH registered AS (
+    INSERT INTO synced_lists (id, created_at)
+    VALUES (sqlc.arg(list_id), sqlc.arg(joined_at))
+    ON CONFLICT (id) DO NOTHING
+)
 INSERT INTO list_members (list_id, user_id, role, joined_at)
 SELECT sqlc.arg(list_id), sqlc.arg(user_id), 'owner', sqlc.arg(joined_at)
 WHERE NOT EXISTS (SELECT 1 FROM list_members WHERE list_id = sqlc.arg(list_id))
 RETURNING list_id;
+
+-- name: SyncedListExists :one
+-- "Does the server hold a log for this list" - the registry replacement for
+-- the old todo_lists existence check. Deliberately returns no content: the
+-- server has none to return.
+SELECT EXISTS (SELECT 1 FROM synced_lists WHERE id = $1);
 
 -- name: AddListMember :exec
 -- Idempotent on (list_id, user_id) so redeeming an invite for a list you're

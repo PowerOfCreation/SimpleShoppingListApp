@@ -18,7 +18,9 @@ import (
 // fails the moment one exists - i.e. after the very first push of any new
 // list, not some rare edge case.
 func TestMigration00007Down_SucceedsWithAListMembersRowThatHasNoTodoListsRow(t *testing.T) {
-	testDB := testhelpers.SetupTestDB(t)
+	// Pinned to 00007's own schema: a down-migration test must run against
+	// the schema that migration created, not whatever HEAD looks like today.
+	testDB := testhelpers.SetupTestDBAtMigration(t, "00007-list-access-enforcement.up.sql")
 	defer testDB.Close(t)
 
 	listID := uuid.New()
@@ -41,7 +43,9 @@ func TestMigration00007Down_SucceedsWithAListMembersRowThatHasNoTodoListsRow(t *
 // mirrors the list_members case above for list_invites, which lost the same
 // FK in the up migration for the same reason.
 func TestMigration00007Down_SucceedsWithAListInvitesRowThatHasNoTodoListsRow(t *testing.T) {
-	testDB := testhelpers.SetupTestDB(t)
+	// Pinned to 00007's own schema: a down-migration test must run against
+	// the schema that migration created, not whatever HEAD looks like today.
+	testDB := testhelpers.SetupTestDBAtMigration(t, "00007-list-access-enforcement.up.sql")
 	defer testDB.Close(t)
 
 	listID := uuid.New()
@@ -65,7 +69,9 @@ func TestMigration00007Down_SucceedsWithAListInvitesRowThatHasNoTodoListsRow(t *
 // actually put the constraints back, not just that it didn't error - a
 // dropped-and-never-restored FK would pass the two tests above too.
 func TestMigration00007Down_RestoresTheForeignKeys(t *testing.T) {
-	testDB := testhelpers.SetupTestDB(t)
+	// Pinned to 00007's own schema: a down-migration test must run against
+	// the schema that migration created, not whatever HEAD looks like today.
+	testDB := testhelpers.SetupTestDBAtMigration(t, "00007-list-access-enforcement.up.sql")
 	defer testDB.Close(t)
 
 	testDB.ApplyMigration(t, "00007-list-access-enforcement.down.sql")

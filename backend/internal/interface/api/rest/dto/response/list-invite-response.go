@@ -30,10 +30,11 @@ type ListInvitesResponse struct {
 	Invites []ListInviteResponse `json:"invites"`
 }
 
+// No list name: the server holds no list content. The client creates the
+// list locally by pulling its log from seq 0 (see sync-sharing-target.md 4.3).
 type RedeemListInviteResponse struct {
-	ListID   uuid.UUID `json:"list_id"`
-	ListName string    `json:"list_name"`
-	Role     string    `json:"role"`
+	ListID uuid.UUID `json:"list_id"`
+	Role   string    `json:"role"`
 	// AlreadyMember is true when the caller was already a member before
 	// this redeem - a successful no-op, not an error.
 	AlreadyMember bool `json:"already_member"`

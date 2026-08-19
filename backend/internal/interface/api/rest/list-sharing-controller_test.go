@@ -359,7 +359,7 @@ func TestListSharingController_RedeemInvite_ReturnsAlreadyMemberFlag(t *testing.
 			assert.Equal(t, "raw-token", cmd.Token)
 			assert.Equal(t, "user-2", cmd.UserID)
 			return &command.RedeemListInviteCommandResult{
-				ListID: listID, ListName: "Groceries", Role: entities.RoleMember, AlreadyMember: true,
+				ListID: listID, Role: entities.RoleMember, AlreadyMember: true,
 			}, nil
 		},
 	}
@@ -374,7 +374,7 @@ func TestListSharingController_RedeemInvite_ReturnsAlreadyMemberFlag(t *testing.
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.JSONEq(t,
-		`{"list_id":"`+listID.String()+`","list_name":"Groceries","role":"member","already_member":true}`,
+		`{"list_id":"`+listID.String()+`","role":"member","already_member":true}`,
 		rec.Body.String(),
 	)
 }
