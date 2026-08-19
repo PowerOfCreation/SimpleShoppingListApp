@@ -297,7 +297,7 @@ type LockOrCreateSyncedListParams struct {
 // transaction, serializing seq assignment against any concurrent append for
 // the same list - this is what makes seq assignment safe across multiple
 // API replicas instead of depending on "exactly one EventIngestor goroutine
-// in one process" (see frontend/docs/sync-server-registry-roadmap.md).
+// in one process" (see 6.4 in frontend/docs/sync-sharing-target.md).
 // Upserts as a no-op update so RETURNING always yields the current
 // head_seq, whether the row already existed (the common case -
 // ClaimListOwnership already created it) or this is a defensive first

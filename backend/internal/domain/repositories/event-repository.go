@@ -57,8 +57,8 @@ type EventRepository interface {
 	// and does not consume a fresh one), advances head_seq to match, and
 	// mutates each event's Seq field in place. The row lock is what makes
 	// this safe across multiple API replicas, replacing the old
-	// single-EventIngestor-process invariant (see
-	// frontend/docs/sync-server-registry-roadmap.md).
+	// single-EventIngestor-process invariant (see 6.4 in
+	// frontend/docs/sync-sharing-target.md).
 	//
 	// Returns the list's resulting head_seq (always >= every event's Seq
 	// above, even if this call's events were all duplicates) and whether at
