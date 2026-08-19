@@ -357,6 +357,7 @@ func TestEventController_SyncEvents_MissingPayloadReturns400(t *testing.T) {
 	e.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
+	assert.Contains(t, rec.Body.String(), "payload is required", "the message must say the payload is missing, not that it's invalid JSON")
 	assert.NotContains(t, repo.seen, eventID, "a structurally invalid event must not reach the events table")
 }
 

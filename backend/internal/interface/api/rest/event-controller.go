@@ -195,8 +195,8 @@ func distinctListIDs(events []request.SyncEventRequest) ([]uuid.UUID, error) {
 // check without parsing payload content: event_id/aggregate_id must be
 // real UUIDs, a todo_list.* event's aggregate_id must equal its own
 // list_id (list_id itself is already required by distinctListIDs, called
-// before this), payload must be syntactically valid JSON, and both
-// per-event and per-batch payload size stay bounded. It deliberately never
+// before this), payload must be present and syntactically valid JSON, and
+// both per-event and per-batch payload size stay bounded. It deliberately never
 // looks at a field inside payload - an unknown event_type or a semantically
 // invalid payload (e.g. an empty name) is not this function's concern, see
 // SyncEvents's doc comment.
@@ -214,6 +214,9 @@ func validateEventStructure(events []request.SyncEventRequest) error {
 		}
 		if len(event.Payload) > maxEventPayloadBytes {
 			return fmt.Errorf("event %s: payload exceeds %d bytes", event.EventID, maxEventPayloadBytes)
+		}
+		if len(event.Payload) == 0 {
+			return fmt.Errorf("event %s: payload is required", event.EventID)
 		}
 		if !json.Valid(event.Payload) {
 			return fmt.Errorf("event %s: payload is not valid JSON", event.EventID)
