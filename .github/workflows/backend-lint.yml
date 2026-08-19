@@ -5,10 +5,12 @@ on:
     branches: [main, master]
     paths:
       - "backend/**"
+      - ".github/workflows/backend-lint.yml"
   pull_request:
     branches: [main, master]
     paths:
       - "backend/**"
+      - ".github/workflows/backend-lint.yml"
 
 jobs:
   lint:
@@ -35,4 +37,8 @@ jobs:
 
       - name: 🏃‍♂️ Run go vet
         run: go vet ./...
+        working-directory: ./backend
+
+      - name: 🏃‍♂️ Check go.mod/go.sum are tidy
+        run: go mod tidy -diff
         working-directory: ./backend
