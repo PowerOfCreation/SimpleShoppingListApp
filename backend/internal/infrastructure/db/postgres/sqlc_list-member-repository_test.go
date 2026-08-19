@@ -2,6 +2,8 @@ package postgres
 
 import (
 	"context"
+	"fmt"
+	"sync"
 	"testing"
 	"time"
 
@@ -283,4 +285,61 @@ func TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_LosingClaimKeepsTheReg
 	member, err := repo.FindByListAndUser(ctx, listID, "mallory")
 	require.NoError(t, err)
 	assert.Nil(t, member)
+}
+
+// TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_ConcurrentClaimsProduceExactlyOneOwner
+// is the test idx_list_members_single_owner (00010) exists for: N different
+// users racing ClaimOwnershipIfUnowned for the same fresh list must yield
+// exactly one winner and zero errors - the loser's 23505 (from the index,
+// since each goroutine uses a distinct user_id so the list_members PK can't
+// be what fires) has to be swallowed into claimed=false, not surfaced.
+func TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_ConcurrentClaimsProduceExactlyOneOwner(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	ctx := context.Background()
+
+	// A single *pgx.Conn (testDB.Conn) is documented as unsafe for
+	// concurrent use, so this needs a real pool - see the same reasoning in
+	// TestSqlcEventRepository_AppendToList_ConcurrentAppendsForSameListProduceGapfreeUniqueSeq.
+	dsn := testDB.Container.(interface {
+		ConnectionString(ctx context.Context, args ...string) (string, error)
+	})
+	connString, err := dsn.ConnectionString(ctx, "sslmode=disable")
+	require.NoError(t, err)
+	pool, err := NewConnection(ctx, connString)
+	require.NoError(t, err)
+	defer pool.Close()
+
+	repo := NewSqlcListMemberRepository(NewQueries(pool))
+	listID := uuid.New()
+
+	const concurrency = 10
+	var wg sync.WaitGroup
+	errs := make([]error, concurrency)
+	claims := make([]bool, concurrency)
+
+	for i := 0; i < concurrency; i++ {
+		wg.Add(1)
+		go func(idx int) {
+			defer wg.Done()
+			claimed, err := repo.ClaimOwnershipIfUnowned(ctx, listID, fmt.Sprintf("user-%d", idx), time.Now().UTC())
+			errs[idx] = err
+			claims[idx] = claimed
+		}(i)
+	}
+	wg.Wait()
+
+	winners := 0
+	for i, err := range errs {
+		require.NoError(t, err, "goroutine %d failed", i)
+		if claims[i] {
+			winners++
+		}
+	}
+	assert.Equal(t, 1, winners, "exactly one goroutine must win the claim")
+
+	var owners int
+	require.NoError(t, pool.QueryRow(ctx,
+		`SELECT COUNT(*) FROM list_members WHERE list_id = $1 AND role = 'owner'`, listID).Scan(&owners))
+	assert.Equal(t, 1, owners, "exactly one owner row must exist in the database")
 }
