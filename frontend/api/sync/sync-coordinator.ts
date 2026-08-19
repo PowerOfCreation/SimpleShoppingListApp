@@ -52,9 +52,9 @@ export class SyncCoordinator {
         // Freshly (re)connected is exactly the moment a gap that opened up
         // while disconnected should be caught - both directions: pull
         // anything the server got that we don't have yet, and reconcile
-        // (self-heal) anything we sent that never got acked. The socket
-        // itself already resent our subscriptions from its own onopen,
-        // before this fires.
+        // (self-heal) anything we believe is synced that the server has no
+        // record of. The socket itself already resent our subscriptions
+        // from its own onopen, before this fires.
         this.pullThenReconcile().catch((error) => {
           logger.error("Pull/reconcile on connect failed", error)
         })

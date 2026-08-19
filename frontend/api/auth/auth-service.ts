@@ -51,9 +51,9 @@ let currentUserId: string | null = null
 /**
  * The signed-in user's Keycloak subject, or null if nobody is signed in
  * (or a session hasn't been restored yet). See client-id.ts for why this
- * doubles as the identity used for WebSocket ack routing once sync is
- * active - sync only ever runs while signed in, so there is always a
- * subject available by the time it would matter.
+ * doubles as the client id attributed to locally created events - sync
+ * only ever runs while signed in, so there is always a subject available
+ * by the time it would matter.
  */
 export function getCurrentUserId(): string | null {
   return currentUserId

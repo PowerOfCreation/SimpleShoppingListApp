@@ -18,9 +18,10 @@ export type OutboxRow = {
  * Tracks which domain events still need to reach the backend.
  *
  * There is deliberately no "sent"/"in-flight" status persisted here: a row
- * that gets marked "sent" after the 202 response and then never receives
- * its ack (app killed, server crashed before commit, response lost) would
- * have no way back to "pending" on its own. Instead there are only two
+ * marked "sent" the moment a request goes out, whose confirmation never
+ * arrives (app killed, response lost), would have no way back to "pending"
+ * on its own. A row only leaves "pending" once the push response actually
+ * names it (see SyncEngine.sendGroup). Instead there are only two
  * persisted states, "pending" and "synced" - the sync engine keeps its own
  * in-memory set of event ids currently in flight, which is naturally
  * cleared on restart, making every in-flight row "pending" again. Because

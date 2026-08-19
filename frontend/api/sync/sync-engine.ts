@@ -81,15 +81,19 @@ export class SyncEngine {
 
   /**
    * Drains the outbox via getPending's keyset pagination, not a naive
-   * `while (pending.length > 0)` loop - rows never leave "pending" as a
-   * side effect of sending, only via ack/reconcile, so the keyset cursor
-   * (not row status) is what proves progress. Each page is sent one
-   * list_id-group at a time (see groupByListId) and, on a non-retryable
-   * rejection, that list is given up on (giveUpOnGroup) rather than left to
-   * retry forever - a group failing never stops the rest of the page or the
-   * next page from being tried, so a single unsyncable list can no longer
-   * block every other list behind it in the outbox. Stops on a short page
-   * or after MAX_DRAIN_BATCHES pages. See sync-design-decisions.md.
+   * `while (pending.length > 0)` loop - a page's rows may or may not leave
+   * "pending" (only those the push response confirms do), so the keyset
+   * cursor, not row status, is what proves progress. The cursor survives a
+   * row flipping to "synced" mid-drain: getPending's `after` subquery looks
+   * the anchor row up by event_id without filtering on status.
+   *
+   * Each page is sent one list_id-group at a time (see groupByListId) and,
+   * on a non-retryable rejection, that list is given up on (giveUpOnGroup)
+   * rather than left to retry forever - a group failing never stops the rest
+   * of the page or the next page from being tried, so a single unsyncable
+   * list can no longer block every other list behind it in the outbox. Stops
+   * on a short page or after MAX_DRAIN_BATCHES pages. See
+   * sync-design-decisions.md.
    */
   async flush(): Promise<void> {
     if (this.flushing) {

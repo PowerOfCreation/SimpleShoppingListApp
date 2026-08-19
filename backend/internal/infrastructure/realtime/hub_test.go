@@ -2,6 +2,7 @@ package realtime
 
 import (
 	"context"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"net/http/httptest"
@@ -157,8 +158,8 @@ func TestHub_PublishListEvent_DeliversToASubscriber(t *testing.T) {
 // that has stopped reading must not be able to hold that request open for
 // writeDeadline. A held connection.mu is the stand-in for a write that
 // won't complete - it blocks writeJSON exactly the way a stalled socket
-// does. The lock is deliberately never released: the detached goroutine
-// stays parked for the rest of the test, which is the point.
+// does. The lock is deliberately never released: the parked goroutine stays
+// parked for the rest of the test, which is the point.
 func TestHub_PublishListEvent_DoesNotBlockOnAStalledSubscriber(t *testing.T) {
 	hub := NewHub(testLogger(), newFakeAccessFilter())
 	stalled := newConnection(&websocket.Conn{})
@@ -177,6 +178,51 @@ func TestHub_PublishListEvent_DoesNotBlockOnAStalledSubscriber(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("PublishListEvent blocked on a subscriber that isn't draining its writes")
 	}
+}
+
+// TestHub_PublishListEvent_AStalledSubscriberDoesNotDelayAHealthyOne is the
+// per-connection half of the guarantee above, and the reason the goroutine
+// is inside the fan-out loop rather than around it: with one goroutine for
+// the whole snapshot, a shared list whose subscribers include a peer that
+// stopped reading would hold every other member's notification for
+// writeDeadline.
+//
+// Several stalled peers rather than one on purpose. subscribersFor iterates
+// a map, so a serialized fan-out only demonstrably delays the healthy
+// connection when a stalled one happens to come first; with stalledPeers of
+// them the healthy connection goes first only 1-in-(stalledPeers+1) times,
+// which is what makes this a reliable guard rather than a coin flip.
+func TestHub_PublishListEvent_AStalledSubscriberDoesNotDelayAHealthyOne(t *testing.T) {
+	const stalledPeers = 8
+
+	hub := NewHub(testLogger(), newFakeAccessFilter())
+	server := startTestServer(t, hub)
+	listID := uuid.New()
+
+	healthy := dial(t, server, "user-1")
+	require.NoError(t, healthy.WriteJSON(map[string]any{
+		"type":     "subscribe",
+		"list_ids": []string{listID.String()},
+	}))
+	require.Eventually(t, func() bool {
+		return len(hub.subscribersFor(listID)) == 1
+	}, time.Second, time.Millisecond)
+
+	for i := range stalledPeers {
+		stalled := newConnection(&websocket.Conn{})
+		hub.subscribe(context.Background(), fmt.Sprintf("stalled-%d", i), stalled, []uuid.UUID{listID})
+		stalled.mu.Lock()
+	}
+	require.Len(t, hub.subscribersFor(listID), stalledPeers+1)
+
+	hub.PublishListEvent(listID, 42)
+
+	// Comfortably below writeDeadline: if a stalled peer were serialized
+	// ahead of this one, nothing would arrive here for 10s.
+	_ = healthy.SetReadDeadline(time.Now().Add(time.Second))
+	var msg map[string]any
+	require.NoError(t, healthy.ReadJSON(&msg))
+	assert.Equal(t, listID.String(), msg["list_id"])
 }
 
 func TestHub_PublishListEvent_NoSubscriberIsANoOp(t *testing.T) {
