@@ -3,78 +3,104 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgtype"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
 	db "github.com/powerofcreation/simpleshoppinglistapp/internal/infrastructure/db/sqlc"
 )
 
+// transactionBeginner is the one thing AppendToList needs beyond db.DBTX:
+// both *pgxpool.Pool (production) and the *pgx.Conn testhelpers.SetupTestDB
+// hands out implement it, so this repository works unchanged in either.
+type transactionBeginner interface {
+	Begin(ctx context.Context) (pgx.Tx, error)
+}
+
 type SqlcEventRepository struct {
+	conn    transactionBeginner
 	queries *db.Queries
 }
 
-func NewSqlcEventRepository(queries *db.Queries) repositories.EventRepository {
-	return &SqlcEventRepository{queries: queries}
+func NewSqlcEventRepository(conn transactionBeginner, queries *db.Queries) repositories.EventRepository {
+	return &SqlcEventRepository{conn: conn, queries: queries}
 }
 
-func (r *SqlcEventRepository) Insert(
+// AppendToList implements repositories.EventRepository. See that interface
+// for the invariant this establishes (row lock -> per-list gapless seq).
+func (r *SqlcEventRepository) AppendToList(
 	ctx context.Context,
-	event *repositories.StoredEvent,
-) (bool, int64, *uuid.UUID, error) {
-	row, err := r.queries.InsertEvent(ctx, db.InsertEventParams{
-		ID:            event.EventID,
-		EventType:     event.EventType,
-		AggregateID:   event.AggregateID,
-		AggregateType: event.AggregateType,
-		ListID:        pgtypeFromUUIDPtr(event.ListID),
-		Payload:       []byte(event.Payload),
-		OccurredAt:    timestamptzFromTime(event.OccurredAt),
-		ClientID:      event.ClientID,
-		UserID:        pgtypeTextFromString(event.UserID),
+	listID uuid.UUID,
+	events []*repositories.StoredEvent,
+	now time.Time,
+) (int64, bool, error) {
+	tx, err := r.conn.Begin(ctx)
+	if err != nil {
+		return 0, false, err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	q := r.queries.WithTx(tx)
+
+	headSeq, err := q.LockOrCreateSyncedList(ctx, db.LockOrCreateSyncedListParams{
+		ListID:    listID,
+		CreatedAt: timestamptzFromTime(now),
 	})
 	if err != nil {
-		return false, 0, nil, err
-	}
-	// InsertEvent upserts (ON CONFLICT DO UPDATE SET id = events.id) purely
-	// so RETURNING always yields a row, whether this was a fresh insert or
-	// a duplicate delivery of the same event_id. processed_at reflects
-	// what's currently stored either way, without a second round-trip.
-	return row.ProcessedAt.Valid, row.Seq.Int64, uuidPtrFromPgtype(row.ListID), nil
-}
-
-func (r *SqlcEventRepository) MarkProcessed(
-	ctx context.Context,
-	eventID uuid.UUID,
-) error {
-	return r.queries.MarkEventProcessed(ctx, eventID)
-}
-
-func (r *SqlcEventRepository) FindUnprocessed(
-	ctx context.Context,
-) ([]*repositories.StoredEvent, error) {
-	rows, err := r.queries.GetUnprocessedEvents(ctx)
-	if err != nil {
-		return nil, err
+		return 0, false, err
 	}
 
-	events := make([]*repositories.StoredEvent, len(rows))
-	for i, row := range rows {
-		events[i] = &repositories.StoredEvent{
-			EventID:       row.ID,
-			EventType:     row.EventType,
-			AggregateID:   row.AggregateID,
-			AggregateType: row.AggregateType,
-			ListID:        uuidPtrFromPgtype(row.ListID),
-			Payload:       json.RawMessage(row.Payload),
-			OccurredAt:    timeFromTimestamptz(row.OccurredAt),
-			ClientID:      row.ClientID,
-			Seq:           row.Seq.Int64,
-			UserID:        stringFromPgtypeText(row.UserID),
+	appended := false
+	for _, event := range events {
+		headSeq++
+		seq, err := q.InsertEventAtSeq(ctx, db.InsertEventAtSeqParams{
+			ID:            event.EventID,
+			EventType:     event.EventType,
+			AggregateID:   event.AggregateID,
+			AggregateType: event.AggregateType,
+			ListID:        pgtypeFromUUIDPtr(&listID),
+			Payload:       []byte(event.Payload),
+			OccurredAt:    timestamptzFromTime(event.OccurredAt),
+			ClientID:      event.ClientID,
+			Seq:           pgtype.Int8{Int64: headSeq, Valid: true},
+			UserID:        pgtypeTextFromString(event.UserID),
+		})
+		if err != nil {
+			if !errors.Is(err, pgx.ErrNoRows) {
+				return 0, false, err
+			}
+			// event_id already existed (a duplicate delivery, e.g. a
+			// retried push after a lost response) - it keeps its original
+			// seq, so this iteration's headSeq++ above didn't actually
+			// consume a slot.
+			headSeq--
+			existingSeq, err := q.GetEventSeq(ctx, event.EventID)
+			if err != nil {
+				return 0, false, err
+			}
+			event.Seq = existingSeq.Int64
+			continue
+		}
+		event.Seq = seq.Int64
+		appended = true
+	}
+
+	if appended {
+		if err := q.UpdateSyncedListHeadSeq(ctx, db.UpdateSyncedListHeadSeqParams{
+			ListID: listID, HeadSeq: headSeq,
+		}); err != nil {
+			return 0, false, err
 		}
 	}
-	return events, nil
+
+	if err := tx.Commit(ctx); err != nil {
+		return 0, false, err
+	}
+	return headSeq, appended, nil
 }
 
 func (r *SqlcEventRepository) FindKnownEventIDsByList(
@@ -96,9 +122,9 @@ func (r *SqlcEventRepository) FindListHeads(
 	heads := make([]*repositories.ListHead, len(rows))
 	for i, row := range rows {
 		heads[i] = &repositories.ListHead{
-			ListID:  uuid.UUID(row.ListID.Bytes),
-			Seq:     row.Seq.Int64,
-			EventID: row.ID,
+			ListID:  row.ListID,
+			Seq:     row.Seq,
+			EventID: uuidPtrFromPgtype(row.EventID),
 		}
 	}
 	return heads, nil

@@ -2,6 +2,7 @@ package services
 
 import (
 	"context"
+	"log/slog"
 	"sync"
 	"testing"
 	"time"
@@ -15,6 +16,11 @@ import (
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/query"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/entities"
 )
+
+// testLogger is shared by every *_test.go file in this package.
+func testLogger() *slog.Logger {
+	return slog.New(slog.DiscardHandler)
+}
 
 // fakeListInviteRepo and fakeListMemberRepo are hand-rolled in-memory
 // doubles, same rationale as fakeEventRepo in event-ingestor_test.go: this

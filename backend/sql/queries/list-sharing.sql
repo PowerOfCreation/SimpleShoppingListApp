@@ -60,6 +60,24 @@ RETURNING list_id;
 -- server has none to return.
 SELECT EXISTS (SELECT 1 FROM synced_lists WHERE id = $1);
 
+-- name: LockOrCreateSyncedList :one
+-- Row-locks the list's registry entry for the duration of the caller's
+-- transaction, serializing seq assignment against any concurrent append for
+-- the same list - this is what makes seq assignment safe across multiple
+-- API replicas instead of depending on "exactly one EventIngestor goroutine
+-- in one process" (see frontend/docs/sync-server-registry-roadmap.md).
+-- Upserts as a no-op update so RETURNING always yields the current
+-- head_seq, whether the row already existed (the common case -
+-- ClaimListOwnership already created it) or this is a defensive first
+-- write reaching AppendToList without a prior claim.
+INSERT INTO synced_lists (id, head_seq, created_at)
+VALUES (sqlc.arg(list_id), 0, sqlc.arg(created_at))
+ON CONFLICT (id) DO UPDATE SET id = synced_lists.id
+RETURNING head_seq;
+
+-- name: UpdateSyncedListHeadSeq :exec
+UPDATE synced_lists SET head_seq = sqlc.arg(head_seq) WHERE id = sqlc.arg(list_id);
+
 -- name: AddListMember :exec
 -- Idempotent on (list_id, user_id) so redeeming an invite for a list you're
 -- already on (including the invite you just claimed ownership with) is a

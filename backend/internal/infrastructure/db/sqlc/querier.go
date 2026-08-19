@@ -8,6 +8,7 @@ import (
 	"context"
 
 	"github.com/google/uuid"
+	"github.com/jackc/pgx/v5/pgtype"
 )
 
 type Querier interface {
@@ -27,41 +28,6 @@ type Querier interface {
 	// registry row is therefore not representable - which is what makes the
 	// foreign key added in 00008 truthful rather than aspirational.
 	ClaimListOwnership(ctx context.Context, arg ClaimListOwnershipParams) (uuid.UUID, error)
-	CreateToDo(ctx context.Context, arg CreateToDoParams) (Todo, error)
-	// Projection, not an aggregate: a re-delivered created may update an
-	// existing row, but must never resurrect a tombstoned one (deleted_at IS
-	// NULL) or rewind one a later event already applied (last_applied_seq) -
-	// see migration 00006-events-seq-at-insert. The two guards are not
-	// redundant: deleted_at blocks a *newer* create from reviving a tombstone
-	// (terminal, regardless of seq); last_applied_seq blocks an *older* event
-	// (e.g. a create the sweep retried after a later update already landed)
-	// from clobbering newer content.
-	CreateToDoList(ctx context.Context, arg CreateToDoListParams) error
-	DeleteToDo(ctx context.Context, id uuid.UUID) error
-	// Tombstone upsert: idempotent via the deleted_at IS NULL guard - the
-	// first tombstone timestamp sticks, deleted_at is terminal (see 6.2 in
-	// sync-sharing-target.md). name is left empty for a list never otherwise
-	// seen; that row is unreadable (every read filters deleted_at IS NULL).
-	//
-	// Deliberately no last_applied_seq guard here, unlike Create/Update above:
-	// a delete must apply even when its own seq is *lower* than what's already
-	// landed, e.g. a delete durably received early but stuck on a transient
-	// failure until a sweep retries it, after an update with a higher seq
-	// already applied live. A full in-order rebuild of the same history would
-	// apply the delete first and then reject that update via its own
-	// deleted_at IS NULL guard (see 6.1) - the frontend's handleDeleted
-	// (ingredient-list-projection.ts) confirms this: it hard-deletes the row,
-	// so a later-processed update in the same rebuild just no-ops against a
-	// row that no longer exists. Guarding this delete on last_applied_seq
-	// would make this projection diverge from that outcome instead of
-	// converging to it - the seq comparison the guard would perform is exactly
-	// backwards for a terminal write. last_applied_seq is still set here (to
-	// at_seq, unconditionally) purely so a row this query creates or touches
-	// reports an accurate watermark if ever inspected outside the normal
-	// deleted_at IS NULL read path; no future guard check ever consults it
-	// again once deleted_at is set, since deleted_at IS NULL is already the
-	// universal gate ahead of it on every other write.
-	DeleteToDoList(ctx context.Context, arg DeleteToDoListParams) error
 	// Which of the given list ids the caller is a member (owner or member) of -
 	// the filter behind every read path (ListAccessService.FilterAccessible).
 	// Deliberately returns a subset rather than erroring on a list the caller
@@ -73,13 +39,15 @@ type Querier interface {
 	// sqlc.arg(now) - the caller passes the current time rather than this query
 	// using NOW() so results are reproducible in tests.
 	GetActiveListInvites(ctx context.Context, arg GetActiveListInvitesParams) ([]ListInvite, error)
-	GetAllToDos(ctx context.Context) ([]GetAllToDosRow, error)
 	// Which of the given list ids already have at least one member, regardless
 	// of who - the pre-check behind ListAccessService.AuthorizeWrite's claim
 	// phase. Distinguishes "nobody has pushed to this list yet" (eligible for
 	// ClaimOwnershipIfUnowned) from "someone else already owns it" (must be
 	// rejected) without granting access or claiming anything itself.
 	GetClaimedListIDs(ctx context.Context, listIds []uuid.UUID) ([]uuid.UUID, error)
+	// Looks up the seq an event was already assigned by an earlier delivery -
+	// the fallback InsertEventAtSeq's caller takes on a conflict.
+	GetEventSeq(ctx context.Context, id uuid.UUID) (pgtype.Int8, error)
 	// Pull page: every event for one list with seq strictly greater than
 	// since_seq, oldest-first, capped at limit_count. The controller requests
 	// limit_count+0 rows and treats a full page as "there may be more" (see
@@ -87,49 +55,44 @@ type Querier interface {
 	// this query's shape identical to what it returns.
 	GetEventsSince(ctx context.Context, arg GetEventsSinceParams) ([]GetEventsSinceRow, error)
 	// Which of a set of lists' events this server has durably received - the
-	// reconcile self-heal endpoint's query. seq IS NOT NULL as of migration
-	// 00006-events-seq-at-insert means "durably inserted", not "projection
-	// applied" - an event whose handler is still stuck (or permanently failed)
-	// is "known" here just the same, since the client only needs confirmation
-	// the server has it, not that the backend's own todo_lists projection
-	// reflects it yet. Keyed by list_id rather than aggregate_id: aggregate_id
-	// is the ingredient id for ingredient.* events, so a single list can span
+	// reconcile self-heal endpoint's query. Every row in `events` is now
+	// durably accepted the moment it exists (see AppendToList/R1), so this is
+	// simply "does a row exist", with no processed/unprocessed distinction left
+	// to make. Keyed by list_id rather than aggregate_id: aggregate_id is the
+	// ingredient id for ingredient.* events, so a single list can span
 	// arbitrarily many aggregate_ids, but always has exactly one list_id.
 	GetKnownEventIdsByList(ctx context.Context, listIds []uuid.UUID) ([]uuid.UUID, error)
-	// The latest (list_id, seq, id) per requested list - "what's the most
-	// recent event you have for this list". Lists with zero durably received
-	// events simply produce no row; the controller fills in the seq=0 head
-	// itself so every requested id still appears in the response.
+	// The current pull cursor for every requested list that the registry knows
+	// about: head_seq plus the id of the event at that seq (NULL when
+	// head_seq is 0 - a registered-but-empty list, e.g. claimed but not yet
+	// pushed to). A list the registry has no row for produces no row here at
+	// all, same omission-based "unknown" signal FindAccessibleListIDs already
+	// uses elsewhere - see sync-pull-controller.go on why that must stay
+	// indistinguishable from "not yours".
 	GetListHeads(ctx context.Context, listIds []uuid.UUID) ([]GetListHeadsRow, error)
 	GetListInviteById(ctx context.Context, id uuid.UUID) (ListInvite, error)
 	GetListInviteByTokenHash(ctx context.Context, tokenHash string) (ListInvite, error)
 	GetListMember(ctx context.Context, arg GetListMemberParams) (ListMember, error)
-	GetToDoById(ctx context.Context, id uuid.UUID) (GetToDoByIdRow, error)
-	GetToDoListById(ctx context.Context, id uuid.UUID) (GetToDoListByIdRow, error)
-	// The startup/periodic sweep's replay set - ordered by seq (unique,
-	// assigned once at insert) so a retried event can never be replayed out of
-	// position relative to one that arrived after it. received_at ordering
-	// (pre migration 00006) had neither property: it wasn't unique, and it no
-	// longer tracked seq order once seq could be assigned later than insert.
-	GetUnprocessedEvents(ctx context.Context) ([]GetUnprocessedEventsRow, error)
-	// Assigns seq here, not at MarkEventProcessed (see migration
-	// 00006-events-seq-at-insert) - a durably received event gets its log
-	// position regardless of whether its projection ever succeeds. Upserts as
-	// a no-op update (rather than DO NOTHING) purely so RETURNING always
-	// yields exactly one row, whether this event_id was just inserted or
-	// already existed from a previous delivery; since seq isn't in the SET
-	// clause, a duplicate delivery keeps its original seq and RETURNING hands
-	// back that one, not a freshly burned one (nextval() is still evaluated
-	// for the value list on a conflicting insert - a harmless gap, since seq's
-	// only contract is monotonic-and-unique, not contiguous).
-	InsertEvent(ctx context.Context, arg InsertEventParams) (InsertEventRow, error)
+	// Assigns the caller-supplied seq directly rather than pulling from a
+	// global sequence - seq is now a per-list, gap-free counter derived from
+	// synced_lists.head_seq under that row's lock (see AppendToList), not a
+	// process-wide invariant (see migration 00009-log-only-server). ON CONFLICT
+	// DO NOTHING rather than the old no-op-update-for-RETURNING trick: :one
+	// reports pgx.ErrNoRows on a duplicate delivery, which is exactly the
+	// signal the caller needs to know it must not consume a fresh seq from its
+	// running head_seq counter for this event.
+	InsertEventAtSeq(ctx context.Context, arg InsertEventAtSeqParams) (pgtype.Int8, error)
 	InsertListInvite(ctx context.Context, arg InsertListInviteParams) error
-	// Only marks the row's projection attempt as finished - seq is already
-	// assigned by InsertEvent. The `processed_at IS NULL` guard makes a second
-	// call for the same id a genuine no-op (0 rows) rather than clobbering the
-	// original timestamp: the periodic sweep can legitimately race a
-	// just-finished live dispatch and call this again for the same row.
-	MarkEventProcessed(ctx context.Context, id uuid.UUID) error
+	// Row-locks the list's registry entry for the duration of the caller's
+	// transaction, serializing seq assignment against any concurrent append for
+	// the same list - this is what makes seq assignment safe across multiple
+	// API replicas instead of depending on "exactly one EventIngestor goroutine
+	// in one process" (see frontend/docs/sync-server-registry-roadmap.md).
+	// Upserts as a no-op update so RETURNING always yields the current
+	// head_seq, whether the row already existed (the common case -
+	// ClaimListOwnership already created it) or this is a defensive first
+	// write reaching AppendToList without a prior claim.
+	LockOrCreateSyncedList(ctx context.Context, arg LockOrCreateSyncedListParams) (int64, error)
 	// The `revoked_at IS NULL` guard makes revoking an already-revoked invite a
 	// true no-op (zero rows affected) rather than overwriting the original
 	// revocation time - ListSharingService treats both as success either way,
@@ -139,11 +102,7 @@ type Querier interface {
 	// the old todo_lists existence check. Deliberately returns no content: the
 	// server has none to return.
 	SyncedListExists(ctx context.Context, id uuid.UUID) (bool, error)
-	UpdateToDo(ctx context.Context, arg UpdateToDoParams) error
-	// Missing or already-deleted row: zero rows affected, not an error - the
-	// row is a rebuildable projection, not the authority. last_applied_seq
-	// guard: see CreateToDoList above.
-	UpdateToDoList(ctx context.Context, arg UpdateToDoListParams) error
+	UpdateSyncedListHeadSeq(ctx context.Context, arg UpdateSyncedListHeadSeqParams) error
 }
 
 var _ Querier = (*Queries)(nil)

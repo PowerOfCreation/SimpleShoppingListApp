@@ -54,27 +54,15 @@ func run(logger *slog.Logger) error {
 
 	queries := postgres2.NewQueries(pool)
 
-	toDoListRepo := postgres2.NewSqlcToDoListRepository(queries)
-	eventRepo := postgres2.NewSqlcEventRepository(queries)
+	eventRepo := postgres2.NewSqlcEventRepository(pool, queries)
 	listInviteRepo := postgres2.NewSqlcListInviteRepository(queries)
 	listMemberRepo := postgres2.NewSqlcListMemberRepository(queries)
 	syncedListRepo := postgres2.NewSqlcSyncedListRepository(queries)
 
-	toDoListService := services.NewToDoListService(toDoListRepo)
 	listAccessService := services.NewListAccessService(listMemberRepo)
 	listSharingService := services.NewListSharingService(logger, listInviteRepo, listMemberRepo, syncedListRepo, listAccessService)
 
-	eventDispatcher := services.NewEventDispatcher(
-		logger,
-		services.NewCreateToDoListEventHandler(toDoListService),
-		services.NewUpdateToDoListEventHandler(toDoListService),
-		services.NewDeleteToDoListEventHandler(toDoListService),
-	)
-
 	hub := realtime.NewHub(logger, listAccessService)
-	eventIngestor := services.NewEventIngestor(logger, eventRepo, eventDispatcher, hub)
-	eventIngestor.Start(ctx)
-	defer eventIngestor.Stop()
 
 	authMW, err := middleware.NewKeycloakAuth(ctx, logger)
 	if err != nil {
@@ -96,7 +84,7 @@ func run(logger *slog.Logger) error {
 	e.Use(middleware.RequestLogger(logger))
 	e.Use(middleware.ContextLogger(logger))
 
-	rest.NewEventController(e, logger, eventIngestor, listAccessService, authMW)
+	rest.NewEventController(e, logger, eventRepo, listAccessService, hub, authMW)
 	rest.NewSyncWebSocketController(e, hub, authMW)
 	rest.NewSyncStateController(e, logger, eventRepo, listAccessService, authMW)
 	rest.NewSyncPullController(e, logger, eventRepo, listAccessService, authMW)

@@ -7,14 +7,16 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/interfaces"
-	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/services"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/rest/dto/request"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/rest/dto/response"
 )
 
 const (
@@ -36,44 +38,55 @@ const (
 	todoListEventTypePrefix = "todo_list."
 )
 
+// realtimePublisher is what SyncEvents needs from the realtime layer: ack
+// the sender, and notify anyone subscribed to a list that just got a new
+// event. A single combined interface rather than two constructor
+// parameters, since in practice one hub (internal/infrastructure/realtime)
+// implements both and there's never a reason to wire them independently.
+// Moved here from the now-deleted EventIngestor, which used to be the only
+// caller.
+type realtimePublisher interface {
+	interfaces.AckPublisher
+	interfaces.ListEventPublisher
+}
+
 type EventController struct {
-	logger   *slog.Logger
-	ingestor *services.EventIngestor
-	access   interfaces.ListAccessService
+	logger    *slog.Logger
+	eventRepo repositories.EventRepository
+	access    interfaces.ListAccessService
+	publisher realtimePublisher
 }
 
 func NewEventController(
 	e *echo.Echo,
 	logger *slog.Logger,
-	ingestor *services.EventIngestor,
+	eventRepo repositories.EventRepository,
 	access interfaces.ListAccessService,
+	publisher realtimePublisher,
 	authMW echo.MiddlewareFunc,
 ) *EventController {
-	controller := &EventController{logger: logger, ingestor: ingestor, access: access}
+	controller := &EventController{logger: logger, eventRepo: eventRepo, access: access, publisher: publisher}
 	e.POST("/api/v1/events", controller.SyncEvents, authMW)
 	return controller
 }
 
-// SyncEvents authorizes the whole batch synchronously, then only enqueues
-// events for background processing and returns 202 - it does not wait for
-// them to be written to the database. Authorization has to happen here, not
-// in the ingestor: the ingestor's worker runs on a background goroutine
-// with no HTTP request context, so the verified caller identity
-// (middleware.UserIDFromContext) is only ever available at this point (see
-// sync-sharing-target.md 7.1). The whole batch is checked before anything
-// is enqueued - a rejected list must not have some of its events silently
-// accepted just because they arrived interleaved with an authorized list's.
+// SyncEvents accepts a batch synchronously and returns only once every
+// event is durably in the log: authorize the whole batch (403), validate
+// its structure (400), then append it, one transaction per list (see
+// EventRepository.AppendToList). Nothing past this point can reject an
+// event - once appended it is a fact (R1, see
+// frontend/docs/sync-server-registry-roadmap.md); there is no background
+// worker left that could still say no, so unlike the old enqueue-and-202
+// model this genuinely means "stored", not "accepted for later attempt".
 //
-// Once authorized, each event is still enqueued independently, so one
-// client sending a batch containing an event the server doesn't understand
-// yet no longer poisons the events behind it (see EventDispatcher's
-// forward-compatible unknown-type handling and EventIngestor's per-event
-// processing).
-//
-// validateEventStructure runs before authorization: it's a cheap, local
-// check of the envelope only (never the payload's fields, see its own
-// comment) - like git fsck, not a content review - so it rejects a
-// malformed batch before spending a DB round-trip on it.
+// Authorization and structural validation both stay whole-batch/fail-closed
+// (a rejected list must not have some of its events silently accepted just
+// because they arrived interleaved with an authorized list's), but the
+// append itself is per list: a mid-batch failure on one list's transaction
+// does not roll back another list's already-committed events from the same
+// request. That's an acceptable, narrow window - a client retries the
+// whole batch on any non-2xx response, and every append is idempotent on
+// event_id, so the retry simply re-confirms what already landed.
 func (ec *EventController) SyncEvents(c echo.Context) error {
 	userID, ok := middleware.UserIDFromContext(c)
 	if !ok {
@@ -112,16 +125,53 @@ func (ec *EventController) SyncEvents(c echo.Context) error {
 		})
 	}
 
-	for _, event := range events {
-		if err := ec.ingestor.Enqueue(ctx, event.ToStoredEvent(userID)); err != nil {
-			middleware.RequestScopedLogger(ec.logger, c).Error("failed to queue event", "event_id", event.EventID, "error", err)
+	byList := groupByListID(events, userID)
+	now := time.Now().UTC()
+	acked := make([]response.SyncEventAckResponse, 0, len(events))
+
+	for _, listID := range listIDs {
+		listEvents := byList[listID]
+		headSeq, appended, err := ec.eventRepo.AppendToList(ctx, listID, listEvents, now)
+		if err != nil {
+			middleware.RequestScopedLogger(ec.logger, c).Error("failed to append events", "list_id", listID, "error", err)
 			return c.JSON(http.StatusInternalServerError, map[string]string{
-				"error": "Failed to queue event",
+				"error": "Failed to store events",
 			})
+		}
+
+		for _, event := range listEvents {
+			ec.publisher.PublishAck(event.UserID, event.EventID, event.Seq)
+			acked = append(acked, response.SyncEventAckResponse{EventID: event.EventID, Seq: event.Seq})
+		}
+		// Only notify subscribers if this batch actually added something -
+		// a batch that's a pure echo (every event already known, e.g. a
+		// redelivered page or our own push looped back) makes nothing newly
+		// visible, so there's nothing to pull. A client that missed the
+		// notification for the original delivery recovers on its next head
+		// check regardless.
+		if appended {
+			ec.publisher.PublishListEvent(listID, headSeq)
 		}
 	}
 
-	return c.JSON(http.StatusAccepted, map[string]int{"queued": len(events)})
+	return c.JSON(http.StatusAccepted, response.SyncEventsPushResponse{
+		Queued: len(events),
+		Acked:  acked,
+	})
+}
+
+// groupByListID buckets events by list_id, preserving each list's relative
+// order from the original batch - AppendToList assigns seq in the order it
+// receives events, and the client's own outbox already flushes a list's
+// events oldest-first, so that order must survive the regrouping.
+// distinctListIDs has already rejected any event without a list_id by the
+// time this runs.
+func groupByListID(events []request.SyncEventRequest, userID string) map[uuid.UUID][]*repositories.StoredEvent {
+	byList := make(map[uuid.UUID][]*repositories.StoredEvent)
+	for _, event := range events {
+		byList[*event.ListID] = append(byList[*event.ListID], event.ToStoredEvent(userID))
+	}
+	return byList
 }
 
 // distinctListIDs collects every event's list_id, deduplicated, and rejects

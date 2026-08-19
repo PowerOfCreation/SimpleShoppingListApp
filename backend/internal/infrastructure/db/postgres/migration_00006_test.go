@@ -204,11 +204,14 @@ func TestMigration00006_LastAppliedSeqDefaultsToZeroForAListWithNoEvents(t *test
 }
 
 func TestMigration00006_DoesNotFailOnAFreshEmptyDatabase(t *testing.T) {
-	// SetupTestDB runs the full chain including 00006 with zero pre-existing
-	// rows - equivalent to a fresh install, exactly the case the
-	// conditional setval() guards against (same rationale as migration
-	// 00004's own equivalent test).
-	testDB := testhelpers.SetupTestDB(t)
+	// Pinned to 00006 itself, not SetupTestDB's full HEAD chain: HEAD no
+	// longer has events_seq_seq at all (see migration
+	// 00009-log-only-server), so this test - specific to 00006's guarded
+	// setval() on an empty DB - has to stop here to still mean anything.
+	// Equivalent to a fresh install at that point in the chain, exactly the
+	// case the conditional setval() guards against (same rationale as
+	// migration 00004's own equivalent test).
+	testDB := testhelpers.SetupTestDBAtMigration(t, "00006-events-seq-at-insert.up.sql")
 	defer testDB.Close(t)
 
 	var nextSeq int64

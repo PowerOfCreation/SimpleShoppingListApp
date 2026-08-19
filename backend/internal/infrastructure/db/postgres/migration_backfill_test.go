@@ -181,11 +181,13 @@ func TestMigration00004_SequenceContinuesAfterBackfill(t *testing.T) {
 }
 
 func TestMigration00004_DoesNotFailOnAFreshEmptyDatabase(t *testing.T) {
-	// SetupTestDBAtMigration itself runs migration 00004 as part of the
-	// standard chain when no upTo cutoff is given - equivalent to a fresh
-	// install with zero pre-existing rows, which is exactly the case the
-	// conditional setval() guards against.
-	testDB := testhelpers.SetupTestDB(t)
+	// Pinned to 00004 itself, not SetupTestDB's full HEAD chain: HEAD no
+	// longer has events_seq_seq at all (see migration
+	// 00009-log-only-server), so this test - specific to 00004's guarded
+	// setval() on an empty DB - has to stop here to still mean anything.
+	// Equivalent to a fresh install at that point in the chain, which is
+	// exactly the case the conditional setval() guards against.
+	testDB := testhelpers.SetupTestDBAtMigration(t, "00004-events-list-id-and-seq.up.sql")
 	defer testDB.Close(t)
 
 	var nextSeq int64

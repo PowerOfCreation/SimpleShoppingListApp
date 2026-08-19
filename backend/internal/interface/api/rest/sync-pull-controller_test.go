@@ -27,16 +27,13 @@ type stubPullEventRepository struct {
 	findEventsSince func(ctx context.Context, listID uuid.UUID, sinceSeq int64, limit int32) ([]*repositories.StoredEvent, error)
 }
 
-func (s *stubPullEventRepository) Insert(ctx context.Context, event *repositories.StoredEvent) (bool, int64, *uuid.UUID, error) {
-	panic("Insert not used by SyncPullController")
-}
-
-func (s *stubPullEventRepository) MarkProcessed(ctx context.Context, eventID uuid.UUID) error {
-	panic("MarkProcessed not used by SyncPullController")
-}
-
-func (s *stubPullEventRepository) FindUnprocessed(ctx context.Context) ([]*repositories.StoredEvent, error) {
-	panic("FindUnprocessed not used by SyncPullController")
+func (s *stubPullEventRepository) AppendToList(
+	ctx context.Context,
+	listID uuid.UUID,
+	events []*repositories.StoredEvent,
+	now time.Time,
+) (int64, bool, error) {
+	panic("AppendToList not used by SyncPullController")
 }
 
 func (s *stubPullEventRepository) FindKnownEventIDsByList(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error) {
@@ -82,7 +79,7 @@ func TestSyncPullController_GetHead_EveryRequestedListIDAppearsInTheResponse(t *
 			// repository is never even asked about a list the caller isn't
 			// a member of.
 			assert.ElementsMatch(t, []uuid.UUID{knownList}, listIDs)
-			return []*repositories.ListHead{{ListID: knownList, Seq: 42, EventID: knownEvent}}, nil
+			return []*repositories.ListHead{{ListID: knownList, Seq: 42, EventID: &knownEvent}}, nil
 		},
 	}
 	access := &stubListAccessService{
