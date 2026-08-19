@@ -1,9 +1,12 @@
 package rest
 
 import (
+	"encoding/json"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
+	"strings"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -12,6 +15,25 @@ import (
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/services"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/rest/dto/request"
+)
+
+const (
+	// maxEventPayloadBytes bounds a single event's payload. A shopping-list
+	// event payload (a list/item name, maybe a short note) is realistically
+	// well under 1 KB; this leaves generous headroom for legitimate use
+	// while still bounding a malformed or hostile payload.
+	maxEventPayloadBytes = 8 * 1024
+	// maxBatchPayloadBytes bounds a batch's combined payload size. The
+	// client flushes at most 50 events per push (see
+	// OutboxRepository.getPending's default page size), so this comfortably
+	// covers even a large offline backlog of normal-sized events without
+	// allowing an unbounded batch.
+	maxBatchPayloadBytes = 64 * 1024
+
+	// todoListEventTypePrefix marks events whose aggregate *is* the list
+	// (see events.EventTypeCreateToDoList and friends) - only for these is
+	// an aggregate_id addressing a different list a structural error.
+	todoListEventTypePrefix = "todo_list."
 )
 
 type EventController struct {
@@ -47,6 +69,11 @@ func NewEventController(
 // yet no longer poisons the events behind it (see EventDispatcher's
 // forward-compatible unknown-type handling and EventIngestor's per-event
 // processing).
+//
+// validateEventStructure runs before authorization: it's a cheap, local
+// check of the envelope only (never the payload's fields, see its own
+// comment) - like git fsck, not a content review - so it rejects a
+// malformed batch before spending a DB round-trip on it.
 func (ec *EventController) SyncEvents(c echo.Context) error {
 	userID, ok := middleware.UserIDFromContext(c)
 	if !ok {
@@ -64,6 +91,11 @@ func (ec *EventController) SyncEvents(c echo.Context) error {
 
 	listIDs, err := distinctListIDs(events)
 	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": err.Error(),
+		})
+	}
+	if err := validateEventStructure(events); err != nil {
 		return c.JSON(http.StatusBadRequest, map[string]string{
 			"error": err.Error(),
 		})
@@ -111,4 +143,39 @@ func distinctListIDs(events []request.SyncEventRequest) ([]uuid.UUID, error) {
 		ids = append(ids, *event.ListID)
 	}
 	return ids, nil
+}
+
+// validateEventStructure enforces the envelope-only rules the server may
+// check without parsing payload content: event_id/aggregate_id must be
+// real UUIDs, a todo_list.* event's aggregate_id must equal its own
+// list_id (list_id itself is already required by distinctListIDs, called
+// before this), payload must be syntactically valid JSON, and both
+// per-event and per-batch payload size stay bounded. It deliberately never
+// looks at a field inside payload - an unknown event_type or a semantically
+// invalid payload (e.g. an empty name) is not this function's concern, see
+// SyncEvents's doc comment.
+func validateEventStructure(events []request.SyncEventRequest) error {
+	var batchBytes int
+	for _, event := range events {
+		if event.EventID == uuid.Nil {
+			return fmt.Errorf("event_id is required")
+		}
+		if event.AggregateID == uuid.Nil {
+			return fmt.Errorf("aggregate_id is required")
+		}
+		if strings.HasPrefix(event.EventType, todoListEventTypePrefix) && event.AggregateID != *event.ListID {
+			return fmt.Errorf("event %s: aggregate_id must equal list_id for %s events", event.EventID, event.EventType)
+		}
+		if len(event.Payload) > maxEventPayloadBytes {
+			return fmt.Errorf("event %s: payload exceeds %d bytes", event.EventID, maxEventPayloadBytes)
+		}
+		if !json.Valid(event.Payload) {
+			return fmt.Errorf("event %s: payload is not valid JSON", event.EventID)
+		}
+		batchBytes += len(event.Payload)
+		if batchBytes > maxBatchPayloadBytes {
+			return fmt.Errorf("batch payload exceeds %d bytes", maxBatchPayloadBytes)
+		}
+	}
+	return nil
 }
