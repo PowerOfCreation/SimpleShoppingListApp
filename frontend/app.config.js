@@ -39,7 +39,17 @@ function withAppThemeAlwaysLight(config) {
 
 // Only build for the target device architecture in dev to avoid freezing the system.
 // For release builds, all architectures are included automatically by the release script.
-const ANDROID_ARCHS = IS_DEV ? "arm64-v8a" : "armeabi-v7a,arm64-v8a,x86,x86_64"
+// CI_ANDROID_ARCH lets the E2E workflow build only the emulator's ABI (x86_64) instead
+// of all four — the other three are never exercised by that emulator, just wasted CMake
+// time. Unset in every other context, so real release builds are unaffected.
+const ANDROID_ARCHS = IS_DEV
+  ? ["arm64-v8a"]
+  : (process.env.CI_ANDROID_ARCH?.split(",") ?? [
+      "armeabi-v7a",
+      "arm64-v8a",
+      "x86",
+      "x86_64",
+    ])
 
 const config = {
   name: IS_DEV ? "sholist (Dev)" : "sholist",
@@ -75,10 +85,7 @@ const config = {
       "expo-build-properties",
       {
         android: {
-          gradleProperties: {
-            reactNativeArchitectures: ANDROID_ARCHS,
-            "org.gradle.workers.max": "4",
-          },
+          buildArchs: ANDROID_ARCHS,
           // Android release builds block cleartext (http://, ws://) traffic
           // by default - only debug builds get a permissive network
           // security config automatically. Without this, a release APK
