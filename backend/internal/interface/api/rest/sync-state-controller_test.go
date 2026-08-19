@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/labstack/echo/v4"
@@ -25,16 +26,13 @@ type stubEventRepository struct {
 	findKnownEventIDsByList func(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error)
 }
 
-func (s *stubEventRepository) Insert(ctx context.Context, event *repositories.StoredEvent) (bool, int64, *uuid.UUID, error) {
-	panic("Insert not used by SyncStateController")
-}
-
-func (s *stubEventRepository) MarkProcessed(ctx context.Context, eventID uuid.UUID) error {
-	panic("MarkProcessed not used by SyncStateController")
-}
-
-func (s *stubEventRepository) FindUnprocessed(ctx context.Context) ([]*repositories.StoredEvent, error) {
-	panic("FindUnprocessed not used by SyncStateController")
+func (s *stubEventRepository) AppendToList(
+	ctx context.Context,
+	listID uuid.UUID,
+	events []*repositories.StoredEvent,
+	now time.Time,
+) (int64, bool, error) {
+	panic("AppendToList not used by SyncStateController")
 }
 
 func (s *stubEventRepository) FindListHeads(ctx context.Context, listIDs []uuid.UUID) ([]*repositories.ListHead, error) {

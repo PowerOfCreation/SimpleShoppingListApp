@@ -51,7 +51,7 @@ type ListAccessFilter interface {
 // via subscribe) to connections. Both are access-checked at the point a
 // caller could learn something: PublishAck only ever reaches connections
 // registered under the verified user_id that pushed the event (see
-// EventIngestor), and subscribe (below) filters requested list_ids through
+// EventController.SyncEvents), and subscribe (below) filters requested list_ids through
 // ListAccessFilter before a connection is added to a list's subscriber set.
 //
 // Client registration is keyed by user_id -> set of connections, and

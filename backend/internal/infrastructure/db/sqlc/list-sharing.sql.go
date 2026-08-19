@@ -281,6 +281,34 @@ func (q *Queries) InsertListInvite(ctx context.Context, arg InsertListInvitePara
 	return err
 }
 
+const lockOrCreateSyncedList = `-- name: LockOrCreateSyncedList :one
+INSERT INTO synced_lists (id, head_seq, created_at)
+VALUES ($1, 0, $2)
+ON CONFLICT (id) DO UPDATE SET id = synced_lists.id
+RETURNING head_seq
+`
+
+type LockOrCreateSyncedListParams struct {
+	ListID    uuid.UUID          `db:"list_id" json:"list_id"`
+	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
+}
+
+// Row-locks the list's registry entry for the duration of the caller's
+// transaction, serializing seq assignment against any concurrent append for
+// the same list - this is what makes seq assignment safe across multiple
+// API replicas instead of depending on "exactly one EventIngestor goroutine
+// in one process" (see frontend/docs/sync-server-registry-roadmap.md).
+// Upserts as a no-op update so RETURNING always yields the current
+// head_seq, whether the row already existed (the common case -
+// ClaimListOwnership already created it) or this is a defensive first
+// write reaching AppendToList without a prior claim.
+func (q *Queries) LockOrCreateSyncedList(ctx context.Context, arg LockOrCreateSyncedListParams) (int64, error) {
+	row := q.db.QueryRow(ctx, lockOrCreateSyncedList, arg.ListID, arg.CreatedAt)
+	var head_seq int64
+	err := row.Scan(&head_seq)
+	return head_seq, err
+}
+
 const revokeListInvite = `-- name: RevokeListInvite :exec
 UPDATE list_invites
 SET revoked_at = $1
@@ -313,4 +341,18 @@ func (q *Queries) SyncedListExists(ctx context.Context, id uuid.UUID) (bool, err
 	var exists bool
 	err := row.Scan(&exists)
 	return exists, err
+}
+
+const updateSyncedListHeadSeq = `-- name: UpdateSyncedListHeadSeq :exec
+UPDATE synced_lists SET head_seq = $1 WHERE id = $2
+`
+
+type UpdateSyncedListHeadSeqParams struct {
+	HeadSeq int64     `db:"head_seq" json:"head_seq"`
+	ListID  uuid.UUID `db:"list_id" json:"list_id"`
+}
+
+func (q *Queries) UpdateSyncedListHeadSeq(ctx context.Context, arg UpdateSyncedListHeadSeqParams) error {
+	_, err := q.db.Exec(ctx, updateSyncedListHeadSeq, arg.HeadSeq, arg.ListID)
+	return err
 }

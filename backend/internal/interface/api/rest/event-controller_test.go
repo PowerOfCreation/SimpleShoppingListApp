@@ -15,7 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/interfaces"
-	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/services"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
 )
@@ -25,36 +24,44 @@ func testLogger() *slog.Logger {
 	return slog.New(slog.DiscardHandler)
 }
 
-// fakeEventRepo/fakeAckPublisher mirror the ones in
-// internal/application/services/event-ingestor_test.go, kept minimal and
-// local since this backend has no shared test-double package. Unlike that
-// one, this fakeEventRepo keeps the full stored event (not just a bool) -
-// tests here need to inspect UserID, which EventController is responsible
-// for setting.
+// fakeEventRepo is a hand-rolled in-memory double for
+// repositories.EventRepository - this backend has no mocking library, and
+// these tests care about the controller's own orchestration (what it
+// authorizes/validates/appends), not persistence. It keeps the full stored
+// event (not just a bool) - tests here need to inspect UserID, which
+// EventController is responsible for setting.
 type fakeEventRepo struct {
-	stored    map[uuid.UUID]*repositories.StoredEvent
-	processed map[uuid.UUID]bool
+	byList map[uuid.UUID][]*repositories.StoredEvent
+	seen   map[uuid.UUID]*repositories.StoredEvent
 }
 
 func newFakeEventRepo() *fakeEventRepo {
-	return &fakeEventRepo{stored: map[uuid.UUID]*repositories.StoredEvent{}, processed: map[uuid.UUID]bool{}}
-}
-
-func (f *fakeEventRepo) Insert(ctx context.Context, event *repositories.StoredEvent) (bool, int64, *uuid.UUID, error) {
-	if existing, ok := f.stored[event.EventID]; ok {
-		return f.processed[event.EventID], 1, existing.ListID, nil
+	return &fakeEventRepo{
+		byList: map[uuid.UUID][]*repositories.StoredEvent{},
+		seen:   map[uuid.UUID]*repositories.StoredEvent{},
 	}
-	f.stored[event.EventID] = event
-	return false, 1, event.ListID, nil
 }
 
-func (f *fakeEventRepo) MarkProcessed(ctx context.Context, eventID uuid.UUID) error {
-	f.processed[eventID] = true
-	return nil
-}
-
-func (f *fakeEventRepo) FindUnprocessed(ctx context.Context) ([]*repositories.StoredEvent, error) {
-	return nil, nil
+func (f *fakeEventRepo) AppendToList(
+	ctx context.Context,
+	listID uuid.UUID,
+	events []*repositories.StoredEvent,
+	now time.Time,
+) (int64, bool, error) {
+	appended := false
+	headSeq := int64(len(f.byList[listID]))
+	for _, event := range events {
+		if existing, ok := f.seen[event.EventID]; ok {
+			event.Seq = existing.Seq
+			continue
+		}
+		headSeq++
+		event.Seq = headSeq
+		f.seen[event.EventID] = event
+		f.byList[listID] = append(f.byList[listID], event)
+		appended = true
+	}
+	return headSeq, appended, nil
 }
 
 func (f *fakeEventRepo) FindKnownEventIDsByList(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error) {
@@ -74,15 +81,22 @@ func (f *fakeEventRepo) FindEventsSince(
 	return nil, nil
 }
 
-type fakeAckPublisher struct {
-	acked map[uuid.UUID]bool
+type fakeRealtimePublisher struct {
+	acked    map[uuid.UUID]bool
+	notified map[uuid.UUID]int64
 }
 
-func (f *fakeAckPublisher) PublishAck(userID string, eventID uuid.UUID, seq int64) {
+func newFakeRealtimePublisher() *fakeRealtimePublisher {
+	return &fakeRealtimePublisher{acked: map[uuid.UUID]bool{}, notified: map[uuid.UUID]int64{}}
+}
+
+func (f *fakeRealtimePublisher) PublishAck(userID string, eventID uuid.UUID, seq int64) {
 	f.acked[eventID] = true
 }
 
-func (f *fakeAckPublisher) PublishListEvent(listID uuid.UUID, seq int64) {}
+func (f *fakeRealtimePublisher) PublishListEvent(listID uuid.UUID, seq int64) {
+	f.notified[listID] = seq
+}
 
 // stubListAccessService implements interfaces.ListAccessService with one
 // overridable function field per method a given test exercises - same
@@ -138,26 +152,17 @@ func allowAllAccess() *stubListAccessService {
 	}
 }
 
-func newTestEventController(t *testing.T, access interfaces.ListAccessService, authMW echo.MiddlewareFunc) (*echo.Echo, *fakeEventRepo, *fakeAckPublisher) {
+func newTestEventController(t *testing.T, access interfaces.ListAccessService, authMW echo.MiddlewareFunc) (*echo.Echo, *fakeEventRepo, *fakeRealtimePublisher) {
 	repo := newFakeEventRepo()
-	ack := &fakeAckPublisher{acked: map[uuid.UUID]bool{}}
-	dispatcher := services.NewEventDispatcher(testLogger())
-	ingestor := services.NewEventIngestor(testLogger(), repo, dispatcher, ack)
-
-	ctx, cancel := context.WithCancel(context.Background())
-	ingestor.Start(ctx)
-	t.Cleanup(func() {
-		ingestor.Stop()
-		cancel()
-	})
+	publisher := newFakeRealtimePublisher()
 
 	e := echo.New()
-	NewEventController(e, testLogger(), ingestor, access, authMW)
-	return e, repo, ack
+	NewEventController(e, testLogger(), repo, access, publisher, authMW)
+	return e, repo, publisher
 }
 
-func TestEventController_SyncEvents_QueuesEventsAndReturns202(t *testing.T) {
-	e, _, ack := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
+func TestEventController_SyncEvents_AppendsEventsAndReturns202(t *testing.T) {
+	e, _, publisher := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
 
 	eventID := uuid.New()
 	aggregateID := uuid.New()
@@ -180,15 +185,13 @@ func TestEventController_SyncEvents_QueuesEventsAndReturns202(t *testing.T) {
 	e.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusAccepted, rec.Code)
-	assert.JSONEq(t, `{"queued":1}`, rec.Body.String())
-
-	require.Eventually(t, func() bool {
-		return ack.acked[eventID]
-	}, time.Second, time.Millisecond, "event should have been processed asynchronously")
+	assert.JSONEq(t, `{"queued":1,"acked":[{"event_id":"`+eventID.String()+`","seq":1}]}`, rec.Body.String())
+	assert.True(t, publisher.acked[eventID], "event should have been acked synchronously")
+	assert.Equal(t, int64(1), publisher.notified[listID], "list subscribers should have been notified")
 }
 
 func TestEventController_SyncEvents_SetsUserIDFromVerifiedContextNotClientSuppliedField(t *testing.T) {
-	e, repo, ack := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
+	e, repo, publisher := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
 
 	eventID := uuid.New()
 	listID := uuid.New()
@@ -210,8 +213,8 @@ func TestEventController_SyncEvents_SetsUserIDFromVerifiedContextNotClientSuppli
 	e.ServeHTTP(rec, req)
 	require.Equal(t, http.StatusAccepted, rec.Code)
 
-	require.Eventually(t, func() bool { return ack.acked[eventID] }, time.Second, time.Millisecond)
-	assert.Equal(t, "user-1", repo.stored[eventID].UserID)
+	assert.True(t, publisher.acked[eventID])
+	assert.Equal(t, "user-1", repo.seen[eventID].UserID)
 }
 
 func TestEventController_SyncEvents_MalformedBodyReturns400(t *testing.T) {
@@ -236,7 +239,7 @@ func TestEventController_SyncEvents_EmptyBatchReturns202WithZeroQueued(t *testin
 	e.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusAccepted, rec.Code)
-	assert.JSONEq(t, `{"queued":0}`, rec.Body.String())
+	assert.JSONEq(t, `{"queued":0,"acked":[]}`, rec.Body.String())
 }
 
 func TestEventController_SyncEvents_NoIdentityReturns401(t *testing.T) {
@@ -279,7 +282,7 @@ func TestEventController_SyncEvents_MissingListIDReturns400(t *testing.T) {
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
-func TestEventController_SyncEvents_DeniedListReturns403AndEnqueuesNothing(t *testing.T) {
+func TestEventController_SyncEvents_DeniedListReturns403AndAppendsNothing(t *testing.T) {
 	access := &stubListAccessService{
 		authorizeWrite: func(ctx context.Context, userID string, listIDs []uuid.UUID) error {
 			return interfaces.ErrListAccessDenied
@@ -307,7 +310,7 @@ func TestEventController_SyncEvents_DeniedListReturns403AndEnqueuesNothing(t *te
 	e.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusForbidden, rec.Code)
-	assert.NotContains(t, repo.stored, eventID, "a rejected batch must not enqueue any of its events")
+	assert.NotContains(t, repo.seen, eventID, "a rejected batch must not append any of its events")
 }
 
 // syncEvent builds one event JSON object for a request body. payload must
@@ -358,7 +361,7 @@ func TestEventController_SyncEvents_MissingPayloadReturns400(t *testing.T) {
 	e.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.NotContains(t, repo.stored, eventID, "a structurally invalid event must not reach the events table")
+	assert.NotContains(t, repo.seen, eventID, "a structurally invalid event must not reach the events table")
 }
 
 // TestEventController_SyncEvents_ToDoListEventWithMismatchedAggregateIDReturns400
@@ -379,7 +382,7 @@ func TestEventController_SyncEvents_ToDoListEventWithMismatchedAggregateIDReturn
 	e.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.NotContains(t, repo.stored, eventID)
+	assert.NotContains(t, repo.seen, eventID)
 }
 
 // TestEventController_SyncEvents_OversizedEventPayloadReturns400 checks the
@@ -399,7 +402,7 @@ func TestEventController_SyncEvents_OversizedEventPayloadReturns400(t *testing.T
 	e.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.NotContains(t, repo.stored, eventID)
+	assert.NotContains(t, repo.seen, eventID)
 }
 
 // TestEventController_SyncEvents_OversizedBatchReturns400 checks the
@@ -429,14 +432,14 @@ func TestEventController_SyncEvents_OversizedBatchReturns400(t *testing.T) {
 	e.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.NotContains(t, repo.stored, eventIDs[0], "a rejected batch must not enqueue any of its events")
+	assert.NotContains(t, repo.seen, eventIDs[0], "a rejected batch must not append any of its events")
 }
 
 // TestEventController_SyncEvents_OneStructurallyBrokenEventRejectsWholeBatch
-// mirrors TestEventController_SyncEvents_DeniedListReturns403AndEnqueuesNothing
+// mirrors TestEventController_SyncEvents_DeniedListReturns403AndAppendsNothing
 // for validateEventStructure: one bad event anywhere in the batch means
 // none of the batch's events - including otherwise-fine ones - get
-// enqueued, matching distinctListIDs/AuthorizeWrite's existing all-or-
+// appended, matching distinctListIDs/AuthorizeWrite's existing all-or-
 // nothing semantics.
 func TestEventController_SyncEvents_OneStructurallyBrokenEventRejectsWholeBatch(t *testing.T) {
 	e, repo, _ := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
@@ -458,18 +461,18 @@ func TestEventController_SyncEvents_OneStructurallyBrokenEventRejectsWholeBatch(
 	e.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.NotContains(t, repo.stored, goodEventID)
-	assert.NotContains(t, repo.stored, brokenEventID)
+	assert.NotContains(t, repo.seen, goodEventID)
+	assert.NotContains(t, repo.seen, brokenEventID)
 }
 
 // TestEventController_SyncEvents_UnknownEventTypeIsAcceptedAndRelayed is the
 // forward-compatibility counterpart to every rejection test above: a
 // structurally valid event of a type this server doesn't know about (e.g.
-// from a newer client) must still be accepted and enqueued, not rejected
+// from a newer client) must still be accepted and appended, not rejected
 // with a 400 - the frontend treats 400 as non-retryable and disables sync
 // for the whole list on it (see sync-client.ts's nonRetryableError).
 func TestEventController_SyncEvents_UnknownEventTypeIsAcceptedAndRelayed(t *testing.T) {
-	e, _, ack := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
+	e, _, publisher := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
 
 	eventID := uuid.New()
 	aggregateID := uuid.New()
@@ -483,7 +486,7 @@ func TestEventController_SyncEvents_UnknownEventTypeIsAcceptedAndRelayed(t *test
 	e.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusAccepted, rec.Code)
-	require.Eventually(t, func() bool { return ack.acked[eventID] }, time.Second, time.Millisecond)
+	assert.True(t, publisher.acked[eventID])
 }
 
 // TestEventController_SyncEvents_EmptyNameToDoListCreatedIsAccepted
@@ -492,7 +495,7 @@ func TestEventController_SyncEvents_UnknownEventTypeIsAcceptedAndRelayed(t *test
 // payload is valid JSON, sizes are in bounds), never semantics. An empty
 // name is a client-side concern to harden separately.
 func TestEventController_SyncEvents_EmptyNameToDoListCreatedIsAccepted(t *testing.T) {
-	e, _, ack := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
+	e, _, publisher := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
 
 	eventID := uuid.New()
 	listID := uuid.New()
@@ -505,5 +508,33 @@ func TestEventController_SyncEvents_EmptyNameToDoListCreatedIsAccepted(t *testin
 	e.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusAccepted, rec.Code)
-	require.Eventually(t, func() bool { return ack.acked[eventID] }, time.Second, time.Millisecond)
+	assert.True(t, publisher.acked[eventID])
+}
+
+// TestEventController_SyncEvents_RedeliveredEventDoesNotRenotifySubscribers
+// is the pure-echo case: a batch whose every event already exists (e.g. a
+// redelivered page, or the sender's own push looped back) makes nothing
+// newly visible, so PublishListEvent must not fire - see AppendToList's
+// `appended` return value.
+func TestEventController_SyncEvents_RedeliveredEventDoesNotRenotifySubscribers(t *testing.T) {
+	e, _, publisher := newTestEventController(t, allowAllAccess(), withUserID("user-1"))
+
+	eventID := uuid.New()
+	listID := uuid.New()
+	body := "[" + syncEvent(eventID.String(), listID.String(), "todo_list", "todo_list.created", &listID, `{"name": "Rewe"}`) + "]"
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	e.ServeHTTP(httptest.NewRecorder(), req)
+	require.Contains(t, publisher.notified, listID)
+	delete(publisher.notified, listID)
+
+	req2 := httptest.NewRequest(http.MethodPost, "/api/v1/events", strings.NewReader(body))
+	req2.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec2 := httptest.NewRecorder()
+	e.ServeHTTP(rec2, req2)
+
+	assert.Equal(t, http.StatusAccepted, rec2.Code)
+	assert.True(t, publisher.acked[eventID], "a redelivered event must still be acked")
+	assert.NotContains(t, publisher.notified, listID, "a pure-echo batch must not renotify subscribers")
 }

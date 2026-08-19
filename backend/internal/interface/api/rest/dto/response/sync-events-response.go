@@ -32,3 +32,23 @@ type SyncEventsResponse struct {
 	NextSeq int64               `json:"next_seq"`
 	HasMore bool                `json:"has_more"`
 }
+
+// SyncEventAckResponse is one pushed event's assigned seq, echoed back in
+// SyncEventsPushResponse.
+type SyncEventAckResponse struct {
+	EventID uuid.UUID `json:"event_id"`
+	Seq     int64     `json:"seq"`
+}
+
+// SyncEventsPushResponse is POST /api/v1/events's body. Queued alone (the
+// pre-step-3 shape) stays for backward compatibility with a client that
+// only checks the status code and event count; Acked is additive - the
+// push is now synchronous (see EventController.SyncEvents), so unlike the
+// old fire-and-forget 202 the assigned seq is already known by the time
+// this response is built and doesn't have to wait for a separate WebSocket
+// ack. Consuming Acked instead of the WS ack path client-side is a
+// follow-up, not part of this change.
+type SyncEventsPushResponse struct {
+	Queued int                    `json:"queued"`
+	Acked  []SyncEventAckResponse `json:"acked"`
+}

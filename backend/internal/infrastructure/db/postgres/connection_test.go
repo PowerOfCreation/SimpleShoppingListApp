@@ -5,6 +5,7 @@ import (
 	"sync"
 	"testing"
 
+	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -53,8 +54,8 @@ func TestNewQueries(t *testing.T) {
 
 	// Verify queries object is functional by running a simple query
 	ctx := context.Background()
-	_, err := queries.GetAllToDos(ctx)
-	assert.NoError(t, err) // Should not error even if empty
+	_, err := queries.SyncedListExists(ctx, uuid.New())
+	assert.NoError(t, err) // Should not error even for an unknown list
 }
 
 // TestNewConnection_ConcurrentQueries guards against regressing to a

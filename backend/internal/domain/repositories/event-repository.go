@@ -9,9 +9,7 @@ import (
 )
 
 // StoredEvent is the durable representation of a synced domain event -
-// enough to (re-)dispatch it without going back to the client. Used both
-// for freshly-received events and for the unprocessed-events sweep on
-// startup.
+// enough to relay it to another client without going back to the sender.
 type StoredEvent struct {
 	EventID       uuid.UUID
 	EventType     string
@@ -20,59 +18,53 @@ type StoredEvent struct {
 	// ListID groups the event by the list it belongs to, for list-scoped
 	// pull/reconcile. Equal to AggregateID for todo_list.* events; for
 	// ingredient.* events it's the parent list, resolved client-side (the
-	// ingredient's own aggregate_id isn't the list). Nil when the sending
-	// client didn't populate it (older builds) or it couldn't be resolved.
+	// ingredient's own aggregate_id isn't the list). Nil only for rows that
+	// predate list scoping (older stored data) - every event AppendToList
+	// accepts today carries one, enforced by the push handler.
 	ListID     *uuid.UUID
 	Payload    json.RawMessage
 	OccurredAt time.Time
 	ClientID   string
 	// UserID is the verified Keycloak sub of whoever pushed this event, set
-	// by the push handler (which still has the request context) - never by
-	// the async EventIngestor worker, which doesn't (see
-	// sync-sharing-target.md 7.1). Empty for events accepted before access
+	// by the push handler (which has the request context) - see
+	// sync-sharing-target.md 7.1. Empty for events accepted before access
 	// enforcement existed; those get no owner and stay outside every
 	// list_members-based check (see migration 00007).
 	UserID string
-	// Seq is the pull cursor position, assigned by Insert as soon as the
-	// event is durably received - independent of whether its projection
-	// ever succeeds (see EventIngestor). Zero on an event that hasn't been
-	// inserted yet; every StoredEvent read back from the repository
-	// (FindUnprocessed, FindEventsSince, or Insert's own return) has it set.
+	// Seq is the pull cursor position within this event's list, assigned by
+	// AppendToList. Zero until AppendToList sets it; every StoredEvent read
+	// back from the repository (FindEventsSince, or AppendToList's own
+	// mutation) has it set.
 	Seq int64
 }
 
 // ListHead is a list's current pull cursor: the seq and id of the most
-// recently processed event belonging to it. Returned by FindListHeads.
+// recently appended event belonging to it. Returned by FindListHeads.
+// EventID is nil for a list the registry knows about but that has no
+// events yet (head_seq 0).
 type ListHead struct {
 	ListID  uuid.UUID
 	Seq     int64
-	EventID uuid.UUID
+	EventID *uuid.UUID
 }
 
 type EventRepository interface {
-	// Insert durably stores the event and assigns it its seq (idempotent on
-	// EventID - a duplicate delivery keeps its original seq rather than
-	// getting a new one). Returns alreadyProcessed=true if this exact
-	// event_id had already finished processing on a previous delivery - the
-	// caller must not dispatch it again in that case, only ack it (using
-	// the returned seq/listID). Returns alreadyProcessed=false for a
-	// brand-new event (apply it), which is also the only way an
-	// existing-but-still-unprocessed row is reported - see EventIngestor
-	// for why that combination can't otherwise arise.
-	Insert(ctx context.Context, event *StoredEvent) (alreadyProcessed bool, seq int64, listID *uuid.UUID, err error)
-	// MarkProcessed marks the event's projection attempt as finished. Does
-	// not touch seq - that was already assigned by Insert. Safe to call
-	// more than once for the same event_id (a genuine no-op past the first
-	// call): the periodic sweep can legitimately race a live dispatch that
-	// just finished the same row.
-	MarkProcessed(ctx context.Context, eventID uuid.UUID) error
-	// FindUnprocessed returns events that were durably inserted but never
-	// finished processing - e.g. a transient handler error, or the process
-	// crashed between Insert and the dispatch+MarkProcessed step. Ordered
-	// by seq so a sweep replays them in the order they were durably
-	// received, never out of position relative to an event that arrived
-	// after them.
-	FindUnprocessed(ctx context.Context) ([]*StoredEvent, error)
+	// AppendToList durably appends events - already known to all belong to
+	// listID - to that list's log, inside a single transaction: it row-locks
+	// (creating if missing - see LockOrCreateSyncedList) the list's registry
+	// entry, assigns each new event's seq from that row's head_seq in order
+	// (a duplicate delivery, identified by event_id, keeps its original seq
+	// and does not consume a fresh one), advances head_seq to match, and
+	// mutates each event's Seq field in place. The row lock is what makes
+	// this safe across multiple API replicas, replacing the old
+	// single-EventIngestor-process invariant (see
+	// frontend/docs/sync-server-registry-roadmap.md).
+	//
+	// Returns the list's resulting head_seq (always >= every event's Seq
+	// above, even if this call's events were all duplicates) and whether at
+	// least one event was newly appended - the caller's signal for whether a
+	// ListEventPublisher notification is warranted at all.
+	AppendToList(ctx context.Context, listID uuid.UUID, events []*StoredEvent, now time.Time) (headSeq int64, appended bool, err error)
 	// FindKnownEventIDsByList returns which of the given lists' events this
 	// server has durably received - used by the /sync/state reconcile
 	// endpoint. Keyed by list_id rather than aggregate_id: once
@@ -81,10 +73,10 @@ type EventRepository interface {
 	// have to enumerate every ingredient id in a list instead of the one
 	// list_id it already has.
 	FindKnownEventIDsByList(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error)
-	// FindListHeads returns the current pull cursor for every requested
-	// list that has at least one durably received event. Lists with none
-	// are simply omitted - callers fill in the zero-value head themselves
-	// so every requested id still appears in a response.
+	// FindListHeads returns the current pull cursor for every requested list
+	// the registry has a row for. A list the registry doesn't know at all is
+	// simply omitted - callers fill in the zero-value head themselves so
+	// every requested id still appears in a response.
 	FindListHeads(ctx context.Context, listIDs []uuid.UUID) ([]*ListHead, error)
 	// FindEventsSince returns up to limit events for one list, strictly
 	// ordered by seq, whose seq is greater than sinceSeq - the pull

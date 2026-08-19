@@ -107,8 +107,7 @@ func (spc *SyncPullController) GetHead(c echo.Context) error {
 			continue
 		}
 		if h, ok := byListID[listID]; ok {
-			eventID := h.EventID
-			responseHeads[i] = response.ListHeadResponse{ListID: listID, Seq: h.Seq, EventID: &eventID}
+			responseHeads[i] = response.ListHeadResponse{ListID: listID, Seq: h.Seq, EventID: h.EventID}
 		} else {
 			responseHeads[i] = response.ListHeadResponse{ListID: listID, Seq: 0, EventID: nil}
 		}

@@ -18,7 +18,6 @@ type Event struct {
 	OccurredAt    pgtype.Timestamptz `db:"occurred_at" json:"occurred_at"`
 	ReceivedAt    pgtype.Timestamptz `db:"received_at" json:"received_at"`
 	ClientID      string             `db:"client_id" json:"client_id"`
-	ProcessedAt   pgtype.Timestamptz `db:"processed_at" json:"processed_at"`
 	ListID        pgtype.UUID        `db:"list_id" json:"list_id"`
 	Seq           pgtype.Int8        `db:"seq" json:"seq"`
 	UserID        pgtype.Text        `db:"user_id" json:"user_id"`
@@ -45,24 +44,5 @@ type ListMember struct {
 type SyncedList struct {
 	ID        uuid.UUID          `db:"id" json:"id"`
 	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
-}
-
-type Todo struct {
-	ID          uuid.UUID          `db:"id" json:"id"`
-	Name        string             `db:"name" json:"name"`
-	IsCompleted bool               `db:"is_completed" json:"is_completed"`
-	TodoListID  uuid.UUID          `db:"todo_list_id" json:"todo_list_id"`
-	CreatedAt   pgtype.Timestamptz `db:"created_at" json:"created_at"`
-	UpdatedAt   pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
-	CompletedAt pgtype.Timestamptz `db:"completed_at" json:"completed_at"`
-	DeletedAt   pgtype.Timestamptz `db:"deleted_at" json:"deleted_at"`
-}
-
-type TodoList struct {
-	ID             uuid.UUID          `db:"id" json:"id"`
-	Name           string             `db:"name" json:"name"`
-	CreatedAt      pgtype.Timestamptz `db:"created_at" json:"created_at"`
-	UpdatedAt      pgtype.Timestamptz `db:"updated_at" json:"updated_at"`
-	DeletedAt      pgtype.Timestamptz `db:"deleted_at" json:"deleted_at"`
-	LastAppliedSeq int64              `db:"last_applied_seq" json:"last_applied_seq"`
+	HeadSeq   int64              `db:"head_seq" json:"head_seq"`
 }
