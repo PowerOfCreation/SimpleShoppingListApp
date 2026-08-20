@@ -25,6 +25,7 @@ export type ShoppingListEntryProps = {
   onToggleSync?: (enabled: boolean) => void
   syncToggleDisabled?: boolean
   onResync?: () => void
+  onShare?: () => void
 }
 
 export function ShoppingListEntry(props: ShoppingListEntryProps) {
@@ -112,9 +113,17 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
           // Only meaningful once sync is actually on for this list and sync
           // interactions aren't disabled (e.g. signed out) - otherwise
           // there's nothing to re-derive from the server, or no valid
-          // session to do it with.
+          // session to do it with. Inviting has the same precondition for a
+          // sharper reason: only a list the server holds a log for can be
+          // shared at all (see frontend/docs/sync-sharing-target.md 4.2),
+          // and the server only learns of one through a push.
           ...(props.syncEnabled && !props.syncToggleDisabled
             ? [
+                {
+                  label: "Invite people",
+                  testID: `shopping-list-context-share-${props.id}`,
+                  onPress: () => props.onShare?.(),
+                },
                 {
                   label: "Re-sync from server",
                   testID: `shopping-list-context-resync-${props.id}`,

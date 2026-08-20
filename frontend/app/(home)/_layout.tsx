@@ -49,6 +49,12 @@ export default function HomeLayout() {
           headerTitle: "New list",
         }}
       />
+      <Stack.Screen
+        name="share_shopping_list"
+        options={{
+          headerTitle: "Invite people",
+        }}
+      />
     </Stack>
   )
 }

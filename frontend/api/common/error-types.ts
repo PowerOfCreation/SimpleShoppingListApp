@@ -113,3 +113,39 @@ export class SyncError extends AppError {
     super(message)
   }
 }
+
+/**
+ * What went wrong while managing a list's invite links.
+ *
+ * Unlike SyncError, "can I retry this" is rarely the interesting question:
+ * sharing happens in a screen a person is looking at, and every failure mode
+ * is one they can act on - sign in again, push the list once so the server
+ * knows it, or accept that they are not its owner. `kind` carries that
+ * distinction, mapped from the statuses ListSharingController returns (see
+ * sharing-client.ts's errorForStatus).
+ */
+export type SharingErrorKind =
+  /** 401 - no valid session; the token expired or was revoked. */
+  | "unauthenticated"
+  /** 403 - the caller is a member, not the owner, of this list. */
+  | "notOwner"
+  /** 404 on a list - no log on the server, so it can't be shared yet. */
+  | "listUnknown"
+  /** 404/410 on an invite - already revoked, expired, or gone. */
+  | "inviteGone"
+  /** 400 - the request itself was rejected (e.g. an unknown TTL preset). */
+  | "invalid"
+  /** Timeout or transport failure; nothing is known about the outcome. */
+  | "network"
+  /** 5xx or an unreadable response body. */
+  | "server"
+
+export class SharingError extends AppError {
+  constructor(
+    message: string,
+    public kind: SharingErrorKind,
+    public originalError?: unknown
+  ) {
+    super(message)
+  }
+}

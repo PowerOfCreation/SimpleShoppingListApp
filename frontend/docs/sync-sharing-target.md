@@ -168,12 +168,20 @@ mit dem Cascade aus 4.4 passiert: `DELETE FROM synced_lists` reißt Mitgliedscha
 mit, und Zugriffsdaten sind das Einzige in diesem System, was sich *nicht* aus dem Log rekonstruieren
 lässt.
 
-**Frontend-Stand:** Kein Teil dieses Abschnitts hat eine Entsprechung im Frontend. `grep -ri invite`
-über `frontend/{api,app,components,database,types}` findet keinen Treffer — es gibt weder eine
-Einladungs-UI (erzeugen/auflisten/widerrufen) noch einen Redeem-Handler für den Deep-Link aus 4.3,
-noch eine Owner-/Member-Unterscheidung in der Listenansicht, noch „Verlassen" oder „Entsyncen". Die
-✅-Markierungen oben gelten ausschließlich für das Backend; produktseitig ist Teilen für Nutzer noch
-nicht erreichbar.
+**Frontend-Stand:** Gebaut ist genau die **Owner-Seite von 4.3**:
+`app/(home)/share_shopping_list.tsx` — erreichbar über „Invite people" im Kontextmenü einer Liste,
+und zwar nur solange dieses Gerät sie synct und ein Login besteht (beides Vorbedingung dafür, dass
+der Server überhaupt eine Registry-Zeile hat, siehe 4.2) — erzeugt, listet und widerruft
+Einladungen über `api/sharing/sharing-client.ts`. Der Deep-Link wird clientseitig aus dem Token
+gebaut (`api/sharing/invite-link.ts`, `<scheme>://invite?token=…`), passend zu „das Backend kennt
+keine Frontend-Routen".
+
+Weiterhin offen: **kein Redeem-Handler** — der Link wird von nichts entgegengenommen, `+native-intent.ts`
+kennt ihn nicht, ein Eingeladener kann also noch nicht beitreten. Ebenso fehlen eine Mitgliederliste
+(es gibt keinen Endpunkt dafür), die Owner-/Member-Unterscheidung in der Listenansicht, „Verlassen"
+und „Entsyncen". Solange `GET .../membership` offen ist, kann der Client seine eigene Rolle nicht
+erfragen: ein Member erfährt erst aus dem 403 der Einladungsroute, dass die Liste ihm nicht gehört —
+die Einladungs-UI zeigt das als Fehlermeldung, statt den Einstieg zu verstecken.
 
 ## 6. Invarianten
 
