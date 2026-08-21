@@ -37,7 +37,7 @@ const DEFAULT_TTL: InviteTTL = "7d"
  * for its own role yet - GET /todo-lists/:id/membership is still open (§5).
  */
 export default function ShareShoppingList() {
-  const { listId, listName } = useLocalSearchParams<{
+  const { listId } = useLocalSearchParams<{
     listId: string
     listName: string
   }>()
@@ -290,14 +290,6 @@ export default function ShareShoppingList() {
         contentContainerStyle={styles.content}
         keyboardShouldPersistTaps="handled"
       >
-        {listName ? (
-          <ThemedText
-            testID="share-list-name"
-            style={[styles.listName, { color: textSecondaryColor }]}
-          >
-            {listName}
-          </ThemedText>
-        ) : null}
         {renderContent()}
       </ScrollView>
     </SafeAreaView>
@@ -311,10 +303,6 @@ const styles = StyleSheet.create({
   content: {
     padding: 20,
     gap: 4,
-  },
-  listName: {
-    fontSize: 13,
-    marginBottom: 8,
   },
   section: {
     gap: 8,

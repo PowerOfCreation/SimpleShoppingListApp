@@ -80,7 +80,7 @@ describe("ShareShoppingList", () => {
     mockBuildInviteLink.mockReturnValue("app.test://invite?token=plaintext")
   })
 
-  it("shows the list it is about and loads its active invites", async () => {
+  it("loads the active invites for the given list", async () => {
     mockGetInvites.mockResolvedValue(Result.ok([anInvite()]))
 
     renderShareScreen()
@@ -89,7 +89,6 @@ describe("ShareShoppingList", () => {
       expect(screen.getByTestId("invite-entry-invite-1")).toBeTruthy()
     })
     expect(mockGetInvites).toHaveBeenCalledWith("list-1")
-    expect(screen.getByTestId("share-list-name")).toHaveTextContent("Rewe")
   })
 
   it("explains the empty state instead of showing nothing", async () => {
