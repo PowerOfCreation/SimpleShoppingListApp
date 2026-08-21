@@ -128,6 +128,25 @@ lists after a reinstall (pull only ever fetches lists already known and
 sync-enabled locally) and user-scoping on the backend (see
 `docs/sync-design-decisions.md`).
 
+### Sharing a list (invite links)
+
+A list this device syncs can be shared from its context menu ("Invite
+people"), which opens `app/(home)/share_shopping_list.tsx`: it lists the
+list's active invite links, creates a new one with a server-side validity
+preset (1h / 24h / 7d / 30d) and revokes existing ones, all through
+`api/sharing/sharing-client.ts`. Only the owner may do any of this — that is
+enforced by the backend and shown here as an error message, because the
+client has no endpoint yet to ask what its own role is.
+
+The link itself is built on the device (`api/sharing/invite-link.ts`) as
+`<app scheme>://invite?token=…` — the backend never learns a frontend route,
+so it only ever hands out the raw token, exactly once, in the response that
+created the invite. It cannot be fetched again afterwards; only its hash is
+stored. **Redeeming is not implemented yet**: nothing in the app handles that
+deep link, so an invited person cannot join through it so far. The same goes
+for showing who has already joined — that needs a backend endpoint that does
+not exist yet (see `docs/sync-sharing-target.md` §5).
+
 `.env.development` points at `http://10.0.2.2:8080`, the Android emulator's
 alias for the host machine's localhost, so `pnpm android:dev` talks to a
 backend running locally via `docker compose up -d postgres && go run

@@ -106,6 +106,19 @@ export default function Index() {
     }
   }
 
+  const handleShareList = (id: string) => {
+    const list = lists.find((l) => l.id === id)
+    if (!list) return
+
+    // The name travels as a param so the invite screen can show which list
+    // it is talking about without another query - it never needs the list's
+    // content, only its id.
+    router.push({
+      pathname: "/share_shopping_list",
+      params: { listId: id, listName: list.name },
+    })
+  }
+
   const handleResync = async (id: string) => {
     try {
       await syncEngine.repairList(id)
@@ -131,6 +144,7 @@ export default function Index() {
         onToggleSync={(enabled) => handleToggleSync(item.id, enabled)}
         syncToggleDisabled={!isSignedIn}
         onResync={() => handleResync(item.id)}
+        onShare={() => handleShareList(item.id)}
       />
     )
   }
