@@ -104,6 +104,40 @@ or request:
   access-log lines, handler errors, and panics for the same request all
   carry the same id.
 
+## Releasing
+
+`.github/workflows/backend-release.yml` builds a hardened image
+(`gcr.io/distroless/static-debian12:nonroot`, non-root, no shell) and
+publishes it to Docker Hub. Two ways to trigger it:
+
+- **Push a tag** matching `backend-v<major>.<minor>.<patch>` (e.g.
+  `backend-v1.4.0`).
+- **Run the workflow manually** (Actions → Backend Release → Run workflow) —
+  the next version is computed automatically from Conventional Commits on
+  `backend/**` since the last `backend-v*` tag (via
+  [git-cliff](https://git-cliff.org), config in `backend/cliff.toml`), and
+  that tag is created and pushed for you.
+
+Either path builds & pushes by digest, boots the image against a throwaway
+Postgres and the real hosted Keycloak issuer (smoke test), only *then*
+promotes the `X.Y.Z`/`X.Y`/`X`/`sha-<commit>` tags to that exact manifest,
+signs it (cosign, keyless/GitHub OIDC), and scans it (Trivy → GitHub code
+scanning). No `latest` tag is published — pin a version or a digest.
+
+Verify a release:
+
+```bash
+cosign verify <image>@<digest> \
+  --certificate-identity-regexp '^https://github.com/PowerOfCreation/SimpleShoppingListApp/' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+
+docker buildx imagetools inspect <image>@<digest> --format '{{json .SBOM}}'
+docker buildx imagetools inspect <image>@<digest> --format '{{json .Provenance}}'
+```
+
+Requires repo secrets `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN` (Docker Hub
+push access) to be configured.
+
 ## Updating the dev database schema
 
 Migrations are embedded into the binary (`migrations/migrations.go`) and

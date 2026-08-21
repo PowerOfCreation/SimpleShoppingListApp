@@ -84,6 +84,14 @@ func run(logger *slog.Logger) error {
 	e.Use(middleware.RequestLogger(logger))
 	e.Use(middleware.ContextLogger(logger))
 
+	// Unauthenticated on purpose: container/orchestrator liveness probes
+	// have no Keycloak token. Registered after migrations and Keycloak
+	// discovery above already succeeded, so 200 here means the process is
+	// actually ready to serve, not just that the binary started.
+	e.GET("/healthz", func(c echo.Context) error {
+		return c.NoContent(http.StatusOK)
+	})
+
 	rest.NewEventController(e, logger, eventRepo, listAccessService, hub, authMW)
 	rest.NewSyncWebSocketController(e, hub, authMW)
 	rest.NewSyncStateController(e, logger, eventRepo, listAccessService, authMW)

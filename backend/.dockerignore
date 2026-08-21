@@ -1,0 +1,9 @@
+.git
+tmp/
+.air.toml
+.env
+.env.*
+*.md
+docker-compose.yml
+sql/
+sqlc.yaml
