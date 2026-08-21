@@ -1,0 +1,242 @@
+name: Backend Release (hardened image)
+
+on:
+  push:
+    tags:
+      - "backend-v[0-9]+.[0-9]+.[0-9]+"
+  workflow_dispatch:
+
+env:
+  IMAGE: docker.io/powerofcreation/imp-list-backend
+
+concurrency:
+  group: backend-release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      id-token: write # cosign keyless signing
+      security-events: write # SARIF upload
+    steps:
+      - name: 📦 Checkout project repo
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+
+      - name: 🏷️ Determine trigger tag
+        id: trigger
+        run: |
+          set -euo pipefail
+          if [ "${{ github.ref_type }}" = "tag" ]; then
+            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: 🛠️ Install git-cliff
+        if: steps.trigger.outputs.tag == ''
+        uses: taiki-e/install-action@a2a5f6e99e1a31540baa0468acfa302cff0f359f # v2.86.4
+        with:
+          tool: git-cliff
+
+      # Only runs for workflow_dispatch (no trigger tag). The pushed tag uses
+      # GITHUB_TOKEN, which by GitHub's own loop-prevention design does NOT
+      # trigger a second run of this workflow - so this is the only place in
+      # this run that builds/signs/publishes, never a duplicate.
+      - name: 🔖 Compute next version and create tag
+        if: steps.trigger.outputs.tag == ''
+        id: bump
+        run: |
+          set -euo pipefail
+          NEXT_TAG=$(git-cliff --config backend/cliff.toml --bumped-version)
+          if [ -n "$(git ls-remote --tags origin "refs/tags/${NEXT_TAG}")" ]; then
+            echo "::error::Refusing to create release for already-existing tag ${NEXT_TAG}"
+            exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$NEXT_TAG" -m "$NEXT_TAG"
+          git push origin "$NEXT_TAG"
+          echo "tag=${NEXT_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: 🧮 Resolve release tag/version
+        id: release
+        run: |
+          set -euo pipefail
+          TAG="${{ steps.trigger.outputs.tag }}${{ steps.bump.outputs.tag }}"
+          if [ -z "$TAG" ]; then
+            echo "::error::Could not resolve a release tag"
+            exit 1
+          fi
+          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#backend-v}" >> "$GITHUB_OUTPUT"
+
+      - name: 📝 Generate changelog (backend/** commits only)
+        id: changelog
+        uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4.8.0
+        with:
+          config: backend/cliff.toml
+          args: --latest --tag ${{ steps.release.outputs.tag }} --strip header
+
+      - uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4.2.0
+
+      - name: Login to Docker Hub
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      # Push without tags (by digest) - tags are only set on this exact
+      # manifest below, after the smoke test passes. That way no consumer
+      # ever sees an image that hasn't been booted.
+      - name: 🏗️ Build & push (by digest, no tags yet)
+        id: build
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7.3.0
+        with:
+          context: backend
+          platforms: linux/amd64
+          outputs: type=image,name=${{ env.IMAGE }},push-by-digest=true,name-canonical=true,push=true
+          labels: |
+            org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+            org.opencontainers.image.version=${{ steps.release.outputs.version }}
+            org.opencontainers.image.title=simpleshoppinglistapp-backend
+            org.opencontainers.image.description=Offline-first shopping list sync backend (Go/Echo/Postgres)
+            org.opencontainers.image.licenses=NOASSERTION
+          provenance: mode=max
+          sbom: true
+
+      - name: Verify digest
+        run: |
+          if [ -z "${{ steps.build.outputs.digest }}" ]; then
+            echo "::error::Build did not produce a digest"
+            exit 1
+          fi
+
+      - name: 🔥 Smoke test (boot the pushed digest against Postgres + real Keycloak issuer)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+        run: |
+          set -euo pipefail
+          docker pull "${IMAGE}@${DIGEST}"
+
+          docker network create backend-smoke
+
+          docker run -d --name pg --network backend-smoke \
+            -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=smoke -e POSTGRES_DB=todos \
+            postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+
+          # KEYCLOAK_ISSUER points at the real, shared, hosted SSO instance
+          # (never run locally, see AGENTS.md) purely for OIDC discovery -
+          # exactly what the container does on every real boot.
+          docker run -d --name api --network backend-smoke -p 8080:8080 \
+            -e DATABASE_URL="host=pg user=postgres password=smoke dbname=todos port=5432 sslmode=disable" \
+            -e KEYCLOAK_ISSUER="https://sso.ops.light-dev-solutions.de/realms/user-apps" \
+            -e KEYCLOAK_CLIENT_ID="shopping-list" \
+            -e LOG_LEVEL="info" \
+            "${IMAGE}@${DIGEST}"
+
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8080/healthz >/dev/null 2>&1; then
+              echo "ready after ~$((i * 2))s"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "::error::Backend did not become ready within 60s"
+          exit 1
+
+      - name: Smoke test logs on failure
+        if: failure()
+        run: docker logs api 2>&1 | tail -100 || true
+
+      - name: 🎯 Promote tags (no rebuild - same manifest as the smoke test)
+        env:
+          DIGEST: ${{ steps.build.outputs.digest }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          MAJOR="${VERSION%%.*}"
+          MINOR="${VERSION%.*}"
+
+          docker buildx imagetools create \
+            --tag "${IMAGE}:${VERSION}" \
+            --tag "${IMAGE}:${MINOR}" \
+            --tag "${IMAGE}:${MAJOR}" \
+            --tag "${IMAGE}:sha-${{ github.sha }}" \
+            "${IMAGE}@${DIGEST}"
+
+          for t in "${VERSION}" "${MINOR}" "${MAJOR}" "sha-${{ github.sha }}"; do
+            got=$(docker buildx imagetools inspect "${IMAGE}:${t}" --format '{{.Manifest.Digest}}')
+            if [ "$got" != "$DIGEST" ]; then
+              echo "::error::${t} points to ${got}, expected ${DIGEST}"
+              exit 1
+            fi
+          done
+
+      - name: Install cosign
+        uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+
+      - name: ✍️ Sign image (keyless, GitHub OIDC)
+        run: cosign sign --yes --recursive "${IMAGE}@${{ steps.build.outputs.digest }}"
+
+      - name: 🔎 Trivy scan (SARIF, non-blocking)
+        uses: aquasecurity/trivy-action@a9c7b0f06e461e9d4b4d1711f154ee024b8d7ab8 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE }}@${{ steps.build.outputs.digest }}
+          format: sarif
+          output: trivy-results.sarif
+          exit-code: "0"
+
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@37f2634a92ba38a0926ef79a0748ac8ae7d95ab2 # v4.37.8
+        if: always()
+        continue-on-error: true
+        with:
+          sarif_file: trivy-results.sarif
+
+      - name: 🚀 Create release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+          VERSION: ${{ steps.release.outputs.version }}
+          DIGEST: ${{ steps.build.outputs.digest }}
+          CHANGELOG: ${{ steps.changelog.outputs.content }}
+        run: |
+          set -euo pipefail
+          {
+            echo "## Backend ${VERSION}"
+            echo
+            echo "**Image:** \`${IMAGE}\`"
+            echo "**Digest:** \`${DIGEST}\`"
+            echo
+            echo "### Pull"
+            echo '```'
+            echo "docker pull ${IMAGE}:${VERSION}"
+            echo "docker pull ${IMAGE}@${DIGEST}"
+            echo '```'
+            echo
+            echo "### Verify signature"
+            echo '```'
+            echo "cosign verify ${IMAGE}@${DIGEST} \\"
+            echo "  --certificate-identity-regexp '^https://github.com/${{ github.repository }}/' \\"
+            echo "  --certificate-oidc-issuer https://token.actions.githubusercontent.com"
+            echo '```'
+            echo
+            echo "### Changelog"
+            echo
+            echo "$CHANGELOG"
+          } > notes.md
+
+          n=1; max=5
+          until gh release create "$TAG" \
+            --title "Backend ${TAG}" \
+            --notes-file notes.md \
+            --target "${{ github.sha }}"; do
+            [ "$n" -ge "$max" ] && { echo "::error::gh release create failed after $max attempts"; exit 1; }
+            echo "::warning::gh release create failed (attempt $n/$max), retrying in $((n * 5))s"
+            sleep "$((n * 5))"; n=$((n + 1))
+          done
