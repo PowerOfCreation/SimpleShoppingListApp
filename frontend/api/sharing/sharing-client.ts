@@ -40,6 +40,18 @@ export type CreatedInvite = {
   expiresAt: number | null
 }
 
+/**
+ * The redeem response - deliberately name-less (sync-sharing-target.md §4.3):
+ * the server has nothing else to say about a list it never parses. The
+ * list's name arrives later, from the first `todo_list.created` event a
+ * post-redeem pull applies.
+ */
+export type RedeemedInvite = {
+  listId: string
+  role: string
+  alreadyMember: boolean
+}
+
 export type FetchLike = typeof fetch
 
 type WireInvite = {
@@ -52,6 +64,12 @@ type WireInvite = {
 type WireCreatedInvite = WireInvite & {
   list_id?: unknown
   token?: unknown
+}
+
+type WireRedeemedInvite = {
+  list_id?: unknown
+  role?: unknown
+  already_member?: unknown
 }
 
 /**
@@ -71,14 +89,14 @@ function parseTimestamp(value: unknown): number | null {
 }
 
 /**
- * 404 means two different things depending on what was addressed, and the
- * two have opposite remedies: a list the server doesn't know yet needs one
- * successful push, while an invite it doesn't know is simply gone. `subject`
- * is which of the two the request was about.
+ * 404 means different things depending on what was addressed - a list the
+ * server doesn't know yet needs one successful push, while an invite or
+ * redeem token it doesn't know is simply gone/invalid. `subject` is which of
+ * the three the request was about.
  */
 function errorForStatus(
   status: number,
-  subject: "list" | "invite"
+  subject: "list" | "invite" | "redeem"
 ): SharingError {
   const map: Record<number, [string, SharingErrorKind]> = {
     400: ["The server rejected the request", "invalid"],
@@ -101,7 +119,7 @@ type RequestSpec = {
   url: string
   method: "GET" | "POST" | "DELETE"
   body?: string
-  subject: "list" | "invite"
+  subject: "list" | "invite" | "redeem"
   networkErrorMessage: string
 }
 
@@ -314,6 +332,50 @@ export class SharingClient {
       return Result.fail(responseResult.getError())
     }
     return Result.ok<void, SharingError>(null)
+  }
+
+  /**
+   * Joins the list a token points at. Idempotent server-side: an already-a-
+   * member caller gets `already_member: true` back instead of an error, so a
+   * retry of a lost response is always safe (sync-design-decisions.md).
+   */
+  async redeemInvite(
+    token: string
+  ): Promise<Result<RedeemedInvite, SharingError>> {
+    const responseResult = await this.request({
+      url: sharingConfig.redeemInviteUrl(),
+      method: "POST",
+      body: JSON.stringify({ token }),
+      subject: "redeem",
+      networkErrorMessage: "Network error while joining the list",
+    })
+    if (!responseResult.success) {
+      return Result.fail(responseResult.getError())
+    }
+
+    const bodyResult = await this.parseJson(
+      responseResult.getValue()!,
+      "redeem"
+    )
+    if (!bodyResult.success) {
+      return Result.fail(bodyResult.getError())
+    }
+
+    const body = bodyResult.getValue() as WireRedeemedInvite
+    if (typeof body?.list_id !== "string") {
+      return Result.fail(
+        new SharingError(
+          "The server did not say which list this joins",
+          "server"
+        )
+      )
+    }
+
+    return Result.ok({
+      listId: body.list_id,
+      role: typeof body.role === "string" ? body.role : "member",
+      alreadyMember: body.already_member === true,
+    })
   }
 }
 

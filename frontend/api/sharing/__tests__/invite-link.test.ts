@@ -1,4 +1,8 @@
-import { buildInviteLink, INVITE_PATH } from "../invite-link"
+import {
+  buildInviteLink,
+  extractInviteToken,
+  INVITE_PATH,
+} from "../invite-link"
 import { getRedirectScheme } from "@/api/auth/redirect-uri"
 
 jest.mock("@/api/auth/redirect-uri", () => ({
@@ -41,5 +45,39 @@ describe("buildInviteLink", () => {
     mockGetRedirectScheme.mockReturnValue(null)
 
     expect(buildInviteLink("token-1")).toBeNull()
+  })
+})
+
+describe("extractInviteToken", () => {
+  it("pulls the token out of a full invite link", () => {
+    expect(
+      extractInviteToken(
+        `de.lightdevsolutions.sholist.dev://${INVITE_PATH}?token=abc123`
+      )
+    ).toBe("abc123")
+  })
+
+  it("decodes a url-escaped token", () => {
+    expect(
+      extractInviteToken(`app.test://${INVITE_PATH}?token=a%2Bb%2Fc%3D`)
+    ).toBe("a+b/c=")
+  })
+
+  it("stops at the next query param", () => {
+    expect(
+      extractInviteToken(`app.test://${INVITE_PATH}?token=abc123&other=xyz`)
+    ).toBe("abc123")
+  })
+
+  it("treats input without a token param as a raw token", () => {
+    expect(extractInviteToken("abc123")).toBe("abc123")
+  })
+
+  it("trims surrounding whitespace", () => {
+    expect(extractInviteToken("  abc123  ")).toBe("abc123")
+  })
+
+  it("returns null for empty input", () => {
+    expect(extractInviteToken("   ")).toBeNull()
   })
 })

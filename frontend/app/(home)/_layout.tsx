@@ -55,6 +55,12 @@ export default function HomeLayout() {
           headerTitle: "Invite people",
         }}
       />
+      <Stack.Screen
+        name="redeem_invite"
+        options={{
+          headerTitle: "Join list",
+        }}
+      />
     </Stack>
   )
 }
