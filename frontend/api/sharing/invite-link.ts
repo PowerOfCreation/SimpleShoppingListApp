@@ -1,11 +1,13 @@
 import { getRedirectScheme } from "@/api/auth/redirect-uri"
 
 /**
- * The deep-link path an invite points at. Redeeming is not implemented yet -
- * nothing in the app navigates here (see the note in
- * frontend/docs/sync-sharing-target.md §5) - but the link the owner shares
- * has to be built now, and its shape is what a future redeem handler will
- * have to match.
+ * The deep-link path an invite points at. Nothing in the app auto-opens on
+ * this path yet: the link uses the app's custom scheme, which isn't
+ * domain-verified, so any tap-to-open handling here would trust whichever
+ * app the OS resolves the scheme to - see redeem_invite.tsx and
+ * TODO_UNIVERSAL_LINKS_PROMPT.md. Redeeming instead goes through a manual
+ * paste entry point (`extractInviteToken` below) until real https
+ * Universal/App Links exist.
  */
 export const INVITE_PATH = "invite"
 
@@ -33,4 +35,33 @@ export function buildInviteLink(token: string): string | null {
   }
   const encodedToken = encodeURIComponent(token)
   return `${scheme}://${INVITE_PATH}?${INVITE_TOKEN_PARAM}=${encodedToken}`
+}
+
+/**
+ * Pulls a redeemable token out of whatever a person pasted: a full invite
+ * link, or the raw token by itself. `URL` can choke on a custom-scheme
+ * value depending on the runtime, so the query string is parsed by hand
+ * instead of relying on it - this only ever runs on manually pasted text
+ * (see redeem_invite.tsx), never on an incoming system deep link.
+ */
+export function extractInviteToken(input: string): string | null {
+  const trimmed = input.trim()
+  if (!trimmed) {
+    return null
+  }
+  const marker = `${INVITE_TOKEN_PARAM}=`
+  const markerIndex = trimmed.indexOf(marker)
+  if (markerIndex === -1) {
+    // No query param found - treat the whole input as a raw token.
+    return trimmed
+  }
+  const afterMarker = trimmed.slice(markerIndex + marker.length)
+  const nextParam = afterMarker.indexOf("&")
+  const rawToken =
+    nextParam === -1 ? afterMarker : afterMarker.slice(0, nextParam)
+  try {
+    return decodeURIComponent(rawToken)
+  } catch {
+    return rawToken
+  }
 }

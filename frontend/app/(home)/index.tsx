@@ -1,7 +1,13 @@
 import { ActionButton } from "@/components/ActionButton"
 import { Palette } from "@/constants/Colors"
 import React from "react"
-import { FlatList, StyleSheet, ActivityIndicator, View } from "react-native"
+import {
+  FlatList,
+  StyleSheet,
+  ActivityIndicator,
+  Pressable,
+  View,
+} from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { router, useFocusEffect } from "expo-router"
 import { getPreference } from "@/database/preferences-repository"
@@ -153,6 +159,10 @@ export default function Index() {
     router.push("/new_shopping_list")
   }
 
+  const handleJoinSharedList = () => {
+    router.push("/redeem_invite")
+  }
+
   const renderContent = () => {
     if (isLoading || isCheckingPreference) {
       return (
@@ -194,6 +204,14 @@ export default function Index() {
   return (
     <SafeAreaView style={styles.container} edges={["bottom"]}>
       <View style={[styles.headerDivider, { backgroundColor: dividerColor }]} />
+      <Pressable
+        testID="join-shared-list-link"
+        accessibilityRole="button"
+        onPress={handleJoinSharedList}
+        style={styles.joinLinkRow}
+      >
+        <ThemedText type="link">Join a shared list</ThemedText>
+      </Pressable>
       {renderContent()}
       <ActionButton testID="add-button" symbol="+" onPress={handleAddList} />
     </SafeAreaView>
@@ -207,6 +225,10 @@ const styles = StyleSheet.create({
   headerDivider: {
     height: 1,
     width: "100%",
+  },
+  joinLinkRow: {
+    paddingHorizontal: 20,
+    paddingVertical: 12,
   },
   centered: {
     flex: 1,
