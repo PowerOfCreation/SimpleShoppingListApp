@@ -7,8 +7,7 @@ on:
   workflow_dispatch:
 
 env:
-  # TODO: replace with the real Docker Hub namespace/repo before the first release.
-  IMAGE: docker.io/REPLACE_ME_DOCKERHUB_IMAGE
+  IMAGE: docker.io/powerofcreation/imp-list-backend
 
 concurrency:
   group: backend-release
