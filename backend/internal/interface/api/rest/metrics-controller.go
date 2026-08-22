@@ -27,3 +27,9 @@ func NewMetricsController(e *echo.Echo) *MetricsController {
 	e.GET("/metrics", echo.WrapHandler(promhttp.HandlerFor(registry, promhttp.HandlerOpts{})))
 	return controller
 }
+
+// Registry returns the Prometheus registry backing /metrics, so other
+// controllers can register their own collectors against it.
+func (c *MetricsController) Registry() *prometheus.Registry {
+	return c.registry
+}
