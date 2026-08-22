@@ -2,10 +2,14 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
+	"time"
 
 	"github.com/labstack/echo/v4"
 	echomw "github.com/labstack/echo/v4/middleware"
@@ -40,7 +44,9 @@ func run(logger *slog.Logger) error {
 	}
 	port := ":8080"
 
-	ctx := context.Background()
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+	defer stop()
+
 	pool, err := postgres2.NewConnection(ctx, dsn)
 	if err != nil {
 		return fmt.Errorf("failed to connect to database: %w", err)
@@ -92,17 +98,54 @@ func run(logger *slog.Logger) error {
 		return c.NoContent(http.StatusOK)
 	})
 
+	rest.NewMetricsController(e)
+
 	rest.NewEventController(e, logger, eventRepo, listAccessService, hub, authMW)
 	rest.NewSyncWebSocketController(e, hub, authMW)
 	rest.NewSyncStateController(e, logger, eventRepo, listAccessService, authMW)
 	rest.NewSyncPullController(e, logger, eventRepo, listAccessService, authMW)
 	rest.NewListSharingController(e, logger, listSharingService, authMW)
 
+	errCh := make(chan error, 1)
+	go func() {
+		if err := e.Start(port); err != nil && !errors.Is(err, http.ErrServerClosed) {
+			errCh <- err
+			return
+		}
+		errCh <- nil
+	}()
 	logger.Info("server starting", "port", port)
-	if err := e.Start(port); err != nil {
-		return fmt.Errorf("failed to start server: %w", err)
+
+	select {
+	case err := <-errCh:
+		if err != nil {
+			return fmt.Errorf("failed to start server: %w", err)
+		}
+		return nil
+	case <-ctx.Done():
+		logger.Info("shutdown signal received")
 	}
-	return nil
+
+	// Comfortably under Docker/Compose's default 10s SIGTERM->SIGKILL grace
+	// period.
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	defer cancel()
+
+	var shutdownErr error
+	if err := e.Shutdown(shutdownCtx); err != nil {
+		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("http server shutdown: %w", err))
+	}
+	// e.Shutdown does not close or wait for hijacked connections (the sync
+	// websocket), so the hub closes and waits for those separately.
+	if err := hub.Shutdown(shutdownCtx); err != nil {
+		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("hub shutdown: %w", err))
+	}
+	if err := <-errCh; err != nil {
+		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("server error during shutdown: %w", err))
+	}
+
+	logger.Info("server stopped")
+	return shutdownErr
 }
 
 // httpErrorHandler logs errors that never went through a controller's own
