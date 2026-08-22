@@ -79,10 +79,9 @@ affinity: {}
 podAnnotations: {}
 podLabels: {}
 
-# Non-secret environment variables.
-env:
-  logLevel: ""
-  logFormat: ""
+logging:
+  level: ""
+  format: ""
 
 # Required credentials. Choose ONE of:
 #   1. existingSecret — reference a Secret you create/manage out-of-band
