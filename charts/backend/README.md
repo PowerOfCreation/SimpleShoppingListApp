@@ -54,16 +54,19 @@ provided for this.
   signal that startup succeeded, but it never re-checks Postgres/Keycloak
   connectivity afterward, so a pod that loses its DB connection post-boot
   will keep reporting 200 on both probes.
-- **No graceful shutdown.** `cmd/api/main.go` has no SIGTERM handling or
-  `http.Server.Shutdown` — it exits immediately on SIGTERM, so rolling
-  updates or scale-downs can cut in-flight requests and the
-  `/api/v1/sync/ws` websocket abruptly. `preStopSleepSeconds` (0 = disabled
-  by default, requires Kubernetes 1.29+) delays the SIGTERM via K8s' native
-  preStop `sleep` action to give endpoint removal time to propagate first —
-  it narrows the window but doesn't make this a real graceful shutdown.
-- **`serviceMonitor` is a no-op today.** The backend has no `/metrics`
-  endpoint yet; the template exists (guarded on the prometheus-operator CRD
-  being present) as scaffolding for when it does.
+- **`preStopSleepSeconds` covers Service endpoint propagation, not app
+  shutdown.** `cmd/api/main.go` already handles SIGTERM/SIGINT gracefully
+  (`e.Shutdown` + `Hub.Shutdown`, bounded by an 8s timeout) — in-flight
+  requests and the `/api/v1/sync/ws` websocket drain cleanly. What that
+  can't fix: Service endpoint removal (kube-proxy/Ingress) propagates
+  asynchronously to SIGTERM, so a Terminating pod can still receive new
+  traffic for a moment. `preStopSleepSeconds` (0 = disabled by default,
+  requires Kubernetes 1.29+) delays SIGTERM via K8s' native preStop `sleep`
+  action to close that window. If increased, it adds to the app's 8s
+  shutdown budget against `terminationGracePeriodSeconds`.
+- **`serviceMonitor` defaults off.** `/metrics` exists on the backend now;
+  set `serviceMonitor.enabled=true` to scrape it (guarded on the
+  prometheus-operator CRD being present).
 - **`service.targetPort` must stay `8080`.** The backend doesn't read a
   `PORT` env var.
 

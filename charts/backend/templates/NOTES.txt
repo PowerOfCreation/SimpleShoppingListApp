@@ -9,8 +9,8 @@ Run the built-in connectivity test:
 
 Notes:
 {{- if not .Values.serviceMonitor.enabled }}
-  - serviceMonitor.enabled=false (default). The backend has no /metrics
-    endpoint yet, so there's nothing to scrape even with it on.
+  - serviceMonitor.enabled=false (default). Set it to scrape the backend's
+    /metrics endpoint.
 {{- end }}
-  - The backend does not yet handle SIGTERM gracefully — rolling updates or
-    scale-downs can cut in-flight requests/websockets. See README.md.
+  - preStopSleepSeconds=0 (default). See README.md "Known limitations" for
+    how it relates to the app's own graceful shutdown on SIGTERM.

@@ -53,16 +53,10 @@ resources: {}
 #   requests: { cpu: 100m, memory: 64Mi }
 #   limits: { cpu: 500m, memory: 256Mi }
 
-# The backend does not handle SIGTERM / drain in-flight requests yet (no
-# graceful shutdown in cmd/api/main.go — it exits immediately on SIGTERM).
-# preStopSleepSeconds (0 = disabled) delays the SIGTERM itself via K8s'
-# native preStop "sleep" action (the distroless app image has no shell to
-# exec a sleep command into), giving the endpoint controller time to remove
-# this pod from the Service before the process is killed — it does not make
-# in-flight requests finish cleanly, just reduces the window where traffic
-# is still routed to a pod that's about to die. Requires Kubernetes 1.29+;
-# left disabled by default so this chart still installs on older clusters.
-# Tracked as a known limitation, see README.md.
+# preStopSleepSeconds (0 = disabled) delays SIGTERM via K8s' native preStop
+# "sleep" action (no shell to exec into in the distroless image), giving
+# Service endpoint removal time to propagate. Requires K8s 1.29+; see
+# README.md "Known limitations" for how this relates to app-side shutdown.
 preStopSleepSeconds: 0
 terminationGracePeriodSeconds: 30
 
@@ -108,10 +102,10 @@ secret:
   keycloakIssuer: ""
   keycloakClientId: ""
 
-# Requires the prometheus-operator CRDs installed in-cluster. No-op today:
-# the backend has no /metrics endpoint yet, this is scaffolding for when it
-# does. The template itself also guards on the CRD actually being present,
-# so leaving this enabled on a cluster without prometheus-operator is safe.
+# Requires the prometheus-operator CRDs installed in-cluster. Defaults off;
+# /metrics exists on the backend, so set enabled=true to scrape it. The
+# template also guards on the CRD being present, so leaving this enabled on
+# a cluster without prometheus-operator is safe.
 serviceMonitor:
   enabled: false
   interval: 30s

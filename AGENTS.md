@@ -131,9 +131,10 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
   git-hygiene nicety, not a correctness dependency.
   Known chart-level limitations (see `charts/backend/README.md`):
   liveness/readiness share one probe (`/healthz`, no separate readiness
-  endpoint), no graceful shutdown yet (backend doesn't drain on SIGTERM),
-  `ServiceMonitor` template exists but is a no-op
-  (`serviceMonitor.enabled: false`, no `/metrics` endpoint yet).
+  endpoint), `preStopSleepSeconds` only covers Service endpoint propagation
+  (app-side graceful shutdown on SIGTERM already exists), `ServiceMonitor`
+  template exists but defaults off (`serviceMonitor.enabled: false`) even
+  though `/metrics` exists.
 
 ## Relevant docs
 
