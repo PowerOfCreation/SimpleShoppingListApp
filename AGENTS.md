@@ -123,9 +123,12 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
   git-cliff, package, `kind`-cluster smoke test via `helm install` +
   `helm test`, tag only after that passes). Published as an OCI artifact to
   `oci://registry-1.docker.io/powerofcreation/charts/backend`. The chart's
-  default `image.tag` (and `Chart.yaml`'s `appVersion`) is kept current
-  automatically by Renovate's built-in `helm-values` manager — no custom
-  config needed, it just needs `image.tag` to stay a plain semver string.
+  default `image.tag` is kept current automatically by Renovate's built-in
+  `helm-values` manager; `Chart.yaml`'s `appVersion` is kept in step by a
+  small custom regex manager in `renovate.json5` (the built-in manager
+  only touches `values.yaml`) — the released OCI chart's `appVersion` is
+  also always explicitly set at package time regardless, so this is a
+  git-hygiene nicety, not a correctness dependency.
   Known chart-level limitations (see `charts/backend/README.md`):
   liveness/readiness share one probe (`/healthz`, no separate readiness
   endpoint), no graceful shutdown yet (backend doesn't drain on SIGTERM),

@@ -54,9 +54,16 @@ resources: {}
 #   limits: { cpu: 500m, memory: 256Mi }
 
 # The backend does not handle SIGTERM / drain in-flight requests yet (no
-# graceful shutdown in cmd/api/main.go) — rolling updates or scale-downs can
-# cut active requests and the /api/v1/sync/ws websocket abruptly. Tracked as
-# a known limitation, see README.md.
+# graceful shutdown in cmd/api/main.go — it exits immediately on SIGTERM).
+# preStopSleepSeconds (0 = disabled) delays the SIGTERM itself via K8s'
+# native preStop "sleep" action (the distroless app image has no shell to
+# exec a sleep command into), giving the endpoint controller time to remove
+# this pod from the Service before the process is killed — it does not make
+# in-flight requests finish cleanly, just reduces the window where traffic
+# is still routed to a pod that's about to die. Requires Kubernetes 1.29+;
+# left disabled by default so this chart still installs on older clusters.
+# Tracked as a known limitation, see README.md.
+preStopSleepSeconds: 0
 terminationGracePeriodSeconds: 30
 
 podSecurityContext:

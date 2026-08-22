@@ -37,6 +37,15 @@ spec:
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           securityContext:
             {{- toYaml .Values.securityContext | nindent 12 }}
+          {{- if gt (int .Values.preStopSleepSeconds) 0 }}
+          lifecycle:
+            preStop:
+              # Native "sleep" action, not exec — the distroless app image has
+              # no shell/sleep binary to exec into. Requires Kubernetes 1.29+
+              # (stable since 1.32); on older clusters, set this to 0.
+              sleep:
+                seconds: {{ .Values.preStopSleepSeconds }}
+          {{- end }}
           ports:
             - name: http
               containerPort: {{ .Values.service.targetPort }}

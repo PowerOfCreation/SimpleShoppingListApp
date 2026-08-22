@@ -115,5 +115,20 @@
       datasourceTemplate: 'docker',
       versioningTemplate: 'semver',
     },
+    {
+      // Renovate's built-in helm-values manager only bumps values.yaml's
+      // image.tag - Chart.yaml's appVersion needs its own regex manager to
+      // stay in step with it.
+      customType: 'regex',
+      managerFilePatterns: [
+        '/^charts\\/backend\\/Chart\\.yaml$/',
+      ],
+      matchStrings: [
+        'appVersion: "(?<currentValue>[^"]+)"',
+      ],
+      depNameTemplate: 'powerofcreation/imp-list-backend',
+      datasourceTemplate: 'docker',
+      versioningTemplate: 'semver',
+    },
   ],
 }

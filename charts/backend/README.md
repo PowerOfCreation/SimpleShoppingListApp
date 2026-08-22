@@ -6,10 +6,14 @@ shopping list sync server).
 Deploys, as its own OCI artifact, independently of the backend Docker image:
 own semver, own git tag namespace (`backend-chart-v*`), own release
 workflow (`.github/workflows/backend-chart-release.yml`). The chart's
-default `image.tag` (and `Chart.yaml`'s `appVersion`) is kept current
-automatically by Renovate's built-in `helm-values` manager, which opens a PR
-whenever a new backend image is promoted — chart version and image version
-otherwise move independently.
+default `image.tag` in `values.yaml` is kept current automatically by
+Renovate's built-in `helm-values` manager, and a custom regex manager keeps
+`Chart.yaml`'s checked-in `appVersion` in step with it (see
+`renovate.json5`) — chart version and image version otherwise move
+independently. The published OCI chart's `appVersion` is also always
+explicitly set to the correct value at package time
+(`backend-chart-release.yml`'s `helm package --app-version`), regardless of
+what's committed in git.
 
 ## Install
 
@@ -44,14 +48,19 @@ provided for this.
 
 ## Known limitations
 
-- **One probe for both liveness and readiness.** The backend exposes a
-  single `GET /healthz` (no separate readiness endpoint), which only
-  returns 200 once DB migrations and Keycloak OIDC discovery have both
-  succeeded — a legitimate signal for both, but it means a slow Keycloak
-  lookup affects liveness too.
+- **One static probe for both liveness and readiness.** The backend exposes
+  a single `GET /healthz` (no separate readiness endpoint) that only checks
+  DB migrations + Keycloak OIDC discovery once, at boot — it's a legitimate
+  signal that startup succeeded, but it never re-checks Postgres/Keycloak
+  connectivity afterward, so a pod that loses its DB connection post-boot
+  will keep reporting 200 on both probes.
 - **No graceful shutdown.** `cmd/api/main.go` has no SIGTERM handling or
-  `http.Server.Shutdown` — rolling updates or scale-downs can cut in-flight
-  requests and the `/api/v1/sync/ws` websocket abruptly.
+  `http.Server.Shutdown` — it exits immediately on SIGTERM, so rolling
+  updates or scale-downs can cut in-flight requests and the
+  `/api/v1/sync/ws` websocket abruptly. `preStopSleepSeconds` (0 = disabled
+  by default, requires Kubernetes 1.29+) delays the SIGTERM via K8s' native
+  preStop `sleep` action to give endpoint removal time to propagate first —
+  it narrows the window but doesn't make this a real graceful shutdown.
 - **`serviceMonitor` is a no-op today.** The backend has no `/metrics`
   endpoint yet; the template exists (guarded on the prometheus-operator CRD
   being present) as scaffolding for when it does.
