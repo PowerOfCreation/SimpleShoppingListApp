@@ -3,7 +3,9 @@ kind: Pod
 metadata:
   name: {{ include "backend.fullname" . }}-test-connection
   labels:
-    {{- include "backend.labels" . | nindent 4 }}
+    # commonLabels, not labels: no readinessProbe means Ready immediately,
+    # so matching the Service selector would route real traffic here.
+    {{- include "backend.commonLabels" . | nindent 4 }}
   annotations:
     "helm.sh/hook": test
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded

@@ -25,15 +25,23 @@ Create a default fully qualified app name.
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
-{{- define "backend.labels" -}}
+{{/*
+Labels that don't select anything — safe to put on a Pod that must NOT
+become a Service endpoint (e.g. the test hook), unlike backend.selectorLabels.
+*/}}
+{{- define "backend.commonLabels" -}}
 helm.sh/chart: {{ include "backend.chart" . }}
-{{ include "backend.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
 app.kubernetes.io/component: backend
 app.kubernetes.io/part-of: imp-list
+{{- end }}
+
+{{- define "backend.labels" -}}
+{{ include "backend.commonLabels" . }}
+{{ include "backend.selectorLabels" . }}
 {{- end }}
 
 {{- define "backend.selectorLabels" -}}
