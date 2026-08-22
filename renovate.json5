@@ -101,6 +101,20 @@
       groupName: 'go version',
       groupSlug: 'go-version',
     },
+    {
+      // values.yaml's image.tag (helm-values manager) and Chart.yaml's
+      // appVersion (custom regex manager below) have different depNames,
+      // so without this they'd land in separate branches/PRs.
+      matchFileNames: [
+        'charts/backend/Chart.yaml',
+        'charts/backend/values.yaml',
+      ],
+      matchDatasources: [
+        'docker',
+      ],
+      groupName: 'backend chart appVersion',
+      groupSlug: 'backend-chart-appversion',
+    },
   ],
   customManagers: [
     {
