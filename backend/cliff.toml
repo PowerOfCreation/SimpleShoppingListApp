@@ -25,6 +25,7 @@ commit_parsers = [
   { message = "^ci", group = "CI" },
   { message = "^docs", group = "Documentation" },
   { message = "^test", group = "Testing" },
+  { message = "^chore\\(deps\\)", group = "Dependencies" },
   { message = ".*", group = "Other" },
 ]
 
