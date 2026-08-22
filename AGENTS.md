@@ -122,7 +122,7 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
   (`backend-chart-release.yml`, mirrors `backend-release.yml`: version via
   git-cliff, package, `kind`-cluster smoke test via `helm install` +
   `helm test`, tag only after that passes). Published as an OCI artifact to
-  `oci://registry-1.docker.io/powerofcreation/charts/backend`. The chart's
+  `oci://registry-1.docker.io/powerofcreation/imp-list-charts/backend`. The chart's
   default `image.tag` is kept current automatically by Renovate's built-in
   `helm-values` manager; `Chart.yaml`'s `appVersion` is kept in step by a
   small custom regex manager in `renovate.json5` (the built-in manager

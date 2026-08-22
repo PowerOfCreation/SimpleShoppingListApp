@@ -18,7 +18,7 @@ what's committed in git.
 ## Install
 
 ```console
-helm install my-backend oci://registry-1.docker.io/powerofcreation/charts/backend \
+helm install my-backend oci://registry-1.docker.io/powerofcreation/imp-list-charts/backend \
   --set secret.existingSecret=my-backend-credentials
 ```
 
