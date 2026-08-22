@@ -41,11 +41,11 @@ jobs:
         with:
           tool: git-cliff
 
-      # Only runs for workflow_dispatch (no trigger tag). The pushed tag uses
-      # GITHUB_TOKEN, which by GitHub's own loop-prevention design does NOT
-      # trigger a second run of this workflow - so this is the only place in
-      # this run that builds/signs/publishes, never a duplicate.
-      - name: 🔖 Compute next version and create tag
+      # Only runs for workflow_dispatch (no trigger tag). Just computes and
+      # reserves the version string - the tag itself is created later, only
+      # after the smoke test passes (see "🏷️ Create and push release tag"),
+      # so a failed run never leaves a dangling tag with no release behind it.
+      - name: 🔖 Compute next version
         if: steps.trigger.outputs.tag == ''
         id: bump
         run: |
@@ -55,10 +55,6 @@ jobs:
             echo "::error::Refusing to create release for already-existing tag ${NEXT_TAG}"
             exit 1
           fi
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "$NEXT_TAG" -m "$NEXT_TAG"
-          git push origin "$NEXT_TAG"
           echo "tag=${NEXT_TAG}" >> "$GITHUB_OUTPUT"
 
       - name: 🧮 Resolve release tag/version
@@ -167,6 +163,22 @@ jobs:
       - name: Smoke test logs on failure
         if: failure()
         run: docker logs api 2>&1 | tail -100 || true
+
+      # Only runs for workflow_dispatch (no trigger tag) - and only once the
+      # smoke test above has passed (this step is skipped like any other
+      # step here if a prior step failed). Pushed with GITHUB_TOKEN, which by
+      # GitHub's own loop-prevention design does NOT trigger a second run of
+      # this workflow.
+      - name: 🏷️ Create and push release tag (only after a passing smoke test)
+        if: steps.trigger.outputs.tag == ''
+        env:
+          TAG: ${{ steps.release.outputs.tag }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git tag -a "$TAG" -m "$TAG"
+          git push origin "$TAG"
 
       - name: 🎯 Promote tags (no rebuild - same manifest as the smoke test)
         env:
