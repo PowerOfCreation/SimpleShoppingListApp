@@ -313,6 +313,54 @@ func TestHub_Unregister_RemovesTheConnectionsSubscriptions(t *testing.T) {
 	assert.False(t, exists, "the reverse index entry should be cleaned up too")
 }
 
+// TestHub_Shutdown_ClosesConnectionsAndWaitsForServeToReturn guards the
+// wrinkle Shutdown exists for: e.Shutdown never touches hijacked
+// connections, so without this the sync websocket's Serve goroutine (and
+// its underlying socket) would outlive process shutdown.
+func TestHub_Shutdown_ClosesConnectionsAndWaitsForServeToReturn(t *testing.T) {
+	hub := NewHub(testLogger(), newFakeAccessFilter())
+	server := startTestServer(t, hub)
+	conn := dial(t, server, "user-1")
+
+	require.NoError(t, conn.WriteJSON(map[string]any{
+		"type":     "subscribe",
+		"list_ids": []string{uuid.New().String()},
+	}))
+	require.Eventually(t, func() bool {
+		hub.mu.RLock()
+		defer hub.mu.RUnlock()
+		return len(hub.conns) == 1
+	}, time.Second, time.Millisecond)
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	require.NoError(t, hub.Shutdown(shutdownCtx))
+
+	hub.mu.RLock()
+	remaining := len(hub.conns)
+	hub.mu.RUnlock()
+	assert.Zero(t, remaining, "Shutdown should wait for Serve's cleanup to unregister the connection")
+
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+	var msg map[string]any
+	assert.Error(t, conn.ReadJSON(&msg), "the server should have closed the connection")
+}
+
+// TestHub_Shutdown_ReturnsContextErrorOnTimeout guards the other half: a
+// Serve goroutine that never returns (e.g. stuck delivering to a stalled
+// peer) must not hang Shutdown forever - it should give up once ctx expires.
+func TestHub_Shutdown_ReturnsContextErrorOnTimeout(t *testing.T) {
+	hub := NewHub(testLogger(), newFakeAccessFilter())
+	hub.wg.Add(1)
+	t.Cleanup(hub.wg.Done)
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), 50*time.Millisecond)
+	defer cancel()
+
+	err := hub.Shutdown(shutdownCtx)
+	assert.ErrorIs(t, err, context.DeadlineExceeded)
+}
+
 func TestHub_ParseListIDs_SkipsMalformedEntriesRatherThanFailingTheWholeSubscribe(t *testing.T) {
 	valid := uuid.New()
 
