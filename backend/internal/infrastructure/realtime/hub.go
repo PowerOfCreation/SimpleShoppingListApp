@@ -201,11 +201,15 @@ func (h *Hub) Shutdown(ctx context.Context) error {
 	}
 	h.mu.Unlock()
 
-	// Closed outside the lock: ws.Close() can block on network I/O, and
-	// holding mu here would stall Serve's own unregister(), which needs it
-	// too.
+	// Closed outside the lock and concurrently: ws.Close() can block on
+	// network I/O, and holding mu here would stall Serve's own
+	// unregister(), which needs it too. One goroutine per connection so a
+	// single stuck Close() can't head-of-line block the rest, or delay
+	// reaching the select below that's meant to bound this by ctx.
 	for _, conn := range conns {
-		_ = conn.ws.Close()
+		go func() {
+			_ = conn.ws.Close()
+		}()
 	}
 
 	done := make(chan struct{})
