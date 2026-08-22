@@ -192,12 +192,11 @@ jobs:
           CHART_PATH: ${{ steps.package.outputs.path }}
         run: helm push "$CHART_PATH" "$CHART_OCI_REF"
 
-      - name: 🚀 Create release
+      - name: 🚀 Create draft release
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAG: ${{ steps.release.outputs.tag }}
           VERSION: ${{ steps.release.outputs.version }}
-          CHART_PATH: ${{ steps.package.outputs.path }}
           CHANGELOG: ${{ steps.changelog.outputs.content }}
         run: |
           set -euo pipefail
@@ -210,26 +209,36 @@ jobs:
             echo "$CHANGELOG"
           } > notes.md
 
-          # Idempotent across retries: if an earlier attempt created the
-          # release but failed later (e.g. asset upload timeout), a plain
-          # `gh release create` retry would just fail with "already exists"
-          # instead of recovering - fall back to uploading/clobbering the
-          # asset onto the existing release instead.
-          release_or_upload() {
-            if gh release view "$TAG" >/dev/null 2>&1; then
-              gh release upload "$TAG" "$CHART_PATH" --clobber
-            else
-              gh release create "$TAG" \
-                --title "Backend chart ${TAG}" \
-                --notes-file notes.md \
-                --target "${{ github.sha }}" \
-                "$CHART_PATH"
-            fi
-          }
-
+          # Draft, not published - stays mutable so the asset upload step
+          # below can safely retry/clobber even with immutable releases
+          # enabled. View-or-create keeps this idempotent across retries.
           n=1; max=5
-          until release_or_upload; do
-            [ "$n" -ge "$max" ] && { echo "::error::release create/upload failed after $max attempts"; exit 1; }
-            echo "::warning::release create/upload failed (attempt $n/$max), retrying in $((n * 5))s"
+          until gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" \
+            --draft \
+            --title "Backend chart ${TAG}" \
+            --notes-file notes.md \
+            --target "${{ github.sha }}"; do
+            [ "$n" -ge "$max" ] && { echo "::error::release create failed after $max attempts"; exit 1; }
+            echo "::warning::release create failed (attempt $n/$max), retrying in $((n * 5))s"
             sleep "$((n * 5))"; n=$((n + 1))
           done
+
+      - name: 📤 Upload chart asset
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+          CHART_PATH: ${{ steps.package.outputs.path }}
+        run: |
+          set -euo pipefail
+          n=1; max=5
+          until gh release upload "$TAG" "$CHART_PATH" --clobber; do
+            [ "$n" -ge "$max" ] && { echo "::error::asset upload failed after $max attempts"; exit 1; }
+            echo "::warning::asset upload failed (attempt $n/$max), retrying in $((n * 5))s"
+            sleep "$((n * 5))"; n=$((n + 1))
+          done
+
+      - name: ✅ Publish release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ steps.release.outputs.tag }}
+        run: gh release edit "$TAG" --draft=false
