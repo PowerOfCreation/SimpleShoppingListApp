@@ -128,6 +128,22 @@ jobs:
             -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=smoke -e POSTGRES_DB=todos \
             postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
 
+          # The app connects to Postgres once at boot and exits fatally if
+          # that fails (no retry) - wait for it to actually accept
+          # connections first, same as docker-compose's healthcheck +
+          # depends_on: condition: service_healthy.
+          for i in $(seq 1 30); do
+            if docker exec pg pg_isready -U postgres >/dev/null 2>&1; then
+              break
+            fi
+            if [ "$i" -eq 30 ]; then
+              echo "::error::Postgres did not become ready within 60s"
+              docker logs pg 2>&1 | tail -100 || true
+              exit 1
+            fi
+            sleep 2
+          done
+
           # KEYCLOAK_ISSUER points at the real, shared, hosted SSO instance
           # (never run locally, see AGENTS.md) purely for OIDC discovery -
           # exactly what the container does on every real boot.
