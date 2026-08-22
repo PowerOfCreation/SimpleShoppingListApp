@@ -72,6 +72,18 @@ type Hub struct {
 	// subscribed to) - needed so cleanup/resubscribe can remove exactly
 	// this connection's entries from `subscriptions` without scanning it.
 	subscribedLists map[*connection]map[uuid.UUID]struct{}
+	// conns holds every live connection, including ones that haven't
+	// subscribed to anything yet - Shutdown needs to reach those too.
+	conns map[*connection]struct{}
+	// wg tracks running Serve goroutines so Shutdown can wait for them to
+	// actually exit, not just for their sockets to close.
+	wg sync.WaitGroup
+	// closed is set under mu once Shutdown has taken its snapshot - a Serve
+	// that loses the race to register after that point must not join
+	// (registering, and calling wg.Add, after Shutdown has already started
+	// wg.Wait would be a WaitGroup misuse) since Shutdown will never see or
+	// close it.
+	closed bool
 }
 
 func NewHub(logger *slog.Logger, access ListAccessFilter) *Hub {
@@ -80,6 +92,7 @@ func NewHub(logger *slog.Logger, access ListAccessFilter) *Hub {
 		access:          access,
 		subscriptions:   make(map[uuid.UUID]map[*connection]struct{}),
 		subscribedLists: make(map[*connection]map[uuid.UUID]struct{}),
+		conns:           make(map[*connection]struct{}),
 	}
 }
 
@@ -87,6 +100,7 @@ func (h *Hub) unregister(conn *connection) {
 	h.mu.Lock()
 	defer h.mu.Unlock()
 	h.unsubscribeAllLocked(conn)
+	delete(h.conns, conn)
 }
 
 // subscribe replaces (not accumulates) the set of lists this connection is
@@ -173,6 +187,45 @@ func (h *Hub) PublishListEvent(listID uuid.UUID, seq int64) {
 	}
 }
 
+// Shutdown closes every live connection, which unblocks each one's blocked
+// ReadJSON in Serve and lets its deferred cleanup run, then waits for all
+// Serve goroutines to actually exit. Needed because http.Server.Shutdown
+// (which echo.Echo.Shutdown delegates to) explicitly does not close or wait
+// for hijacked connections like these on its own.
+func (h *Hub) Shutdown(ctx context.Context) error {
+	h.mu.Lock()
+	h.closed = true
+	conns := make([]*connection, 0, len(h.conns))
+	for conn := range h.conns {
+		conns = append(conns, conn)
+	}
+	h.mu.Unlock()
+
+	// Closed outside the lock and concurrently: ws.Close() can block on
+	// network I/O, and holding mu here would stall Serve's own
+	// unregister(), which needs it too. One goroutine per connection so a
+	// single stuck Close() can't head-of-line block the rest, or delay
+	// reaching the select below that's meant to bound this by ctx.
+	for _, conn := range conns {
+		go func() {
+			_ = conn.ws.Close()
+		}()
+	}
+
+	done := make(chan struct{})
+	go func() {
+		h.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
 // Serve blocks, running the connection's read loop, until it closes. Meant
 // to be called from the HTTP handler goroutine that performed the upgrade -
 // it owns the connection for its entire lifetime, and ctx (the still-live
@@ -185,10 +238,20 @@ func (h *Hub) PublishListEvent(listID uuid.UUID, seq int64) {
 // unregister on the way out is what removes it again.
 func (h *Hub) Serve(ctx context.Context, userID string, ws *websocket.Conn) {
 	conn := newConnection(ws)
+	h.mu.Lock()
+	if h.closed {
+		h.mu.Unlock()
+		_ = ws.Close()
+		return
+	}
+	h.conns[conn] = struct{}{}
+	h.wg.Add(1)
+	h.mu.Unlock()
 	h.logger.Debug("connection opened", "user_id", userID)
 	defer func() {
 		h.unregister(conn)
 		_ = ws.Close()
+		h.wg.Done()
 		h.logger.Debug("connection closed", "user_id", userID)
 	}()
 
