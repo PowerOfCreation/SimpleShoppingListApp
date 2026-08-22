@@ -40,9 +40,10 @@ jobs:
           tool: git-cliff
 
       # Only runs for workflow_dispatch (no trigger tag). Just computes and
-      # reserves the version string - the tag itself is created later, only
-      # after the smoke test passes (see "🏷️ Create and push release tag"),
-      # so a failed run never leaves a dangling tag with no release behind it.
+      # reserves the version string - the tag itself isn't created until
+      # "🚀 Create draft release" (via --target, only if it doesn't already
+      # exist), so a failed run up to and including the OCI push never
+      # leaves a dangling tag with no release behind it.
       - name: 🔖 Compute next version
         if: steps.trigger.outputs.tag == ''
         id: bump
@@ -77,8 +78,8 @@ jobs:
       - name: 🛠️ Install Helm
         uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
 
-      # Login early (before the tag is pushed below) so a Docker Hub auth
-      # failure never leaves a git tag behind with nothing published for it.
+      # Login early so a Docker Hub auth failure fails fast, before the
+      # (slower) kind/smoke-test steps run.
       - name: Login to Docker Hub
         uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
         with:
@@ -173,20 +174,6 @@ jobs:
         if: always()
         run: helm uninstall backend-smoke || true
 
-      # Only runs for workflow_dispatch (no trigger tag) - and only once the
-      # smoke test above has passed. Pushed with GITHUB_TOKEN, which does NOT
-      # trigger a second run of this workflow.
-      - name: 🏷️ Create and push release tag (only after a passing smoke test)
-        if: steps.trigger.outputs.tag == ''
-        env:
-          TAG: ${{ steps.release.outputs.tag }}
-        run: |
-          set -euo pipefail
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-          git tag -a "$TAG" -m "$TAG"
-          git push origin "$TAG"
-
       - name: 🚢 Push chart (OCI)
         env:
           CHART_PATH: ${{ steps.package.outputs.path }}
@@ -209,9 +196,10 @@ jobs:
             echo "$CHANGELOG"
           } > notes.md
 
-          # Draft, not published - stays mutable so the asset upload step
-          # below can safely retry/clobber even with immutable releases
-          # enabled. View-or-create keeps this idempotent across retries.
+          # --target creates the tag (only if missing) together with this
+          # release, so a failure before this point never leaves a dangling
+          # tag. Draft, not published - stays mutable so asset upload below
+          # can retry/clobber even with immutable releases enabled.
           n=1; max=5
           until gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" \
             --draft \
