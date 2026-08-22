@@ -78,6 +78,12 @@ type Hub struct {
 	// wg tracks running Serve goroutines so Shutdown can wait for them to
 	// actually exit, not just for their sockets to close.
 	wg sync.WaitGroup
+	// closed is set under mu once Shutdown has taken its snapshot - a Serve
+	// that loses the race to register after that point must not join
+	// (registering, and calling wg.Add, after Shutdown has already started
+	// wg.Wait would be a WaitGroup misuse) since Shutdown will never see or
+	// close it.
+	closed bool
 }
 
 func NewHub(logger *slog.Logger, access ListAccessFilter) *Hub {
@@ -188,10 +194,19 @@ func (h *Hub) PublishListEvent(listID uuid.UUID, seq int64) {
 // for hijacked connections like these on its own.
 func (h *Hub) Shutdown(ctx context.Context) error {
 	h.mu.Lock()
+	h.closed = true
+	conns := make([]*connection, 0, len(h.conns))
 	for conn := range h.conns {
-		_ = conn.ws.Close()
+		conns = append(conns, conn)
 	}
 	h.mu.Unlock()
+
+	// Closed outside the lock: ws.Close() can block on network I/O, and
+	// holding mu here would stall Serve's own unregister(), which needs it
+	// too.
+	for _, conn := range conns {
+		_ = conn.ws.Close()
+	}
 
 	done := make(chan struct{})
 	go func() {
@@ -220,9 +235,14 @@ func (h *Hub) Shutdown(ctx context.Context) error {
 func (h *Hub) Serve(ctx context.Context, userID string, ws *websocket.Conn) {
 	conn := newConnection(ws)
 	h.mu.Lock()
+	if h.closed {
+		h.mu.Unlock()
+		_ = ws.Close()
+		return
+	}
 	h.conns[conn] = struct{}{}
-	h.mu.Unlock()
 	h.wg.Add(1)
+	h.mu.Unlock()
 	h.logger.Debug("connection opened", "user_id", userID)
 	defer func() {
 		h.unregister(conn)

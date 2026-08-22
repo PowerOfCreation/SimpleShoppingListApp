@@ -361,6 +361,25 @@ func TestHub_Shutdown_ReturnsContextErrorOnTimeout(t *testing.T) {
 	assert.ErrorIs(t, err, context.DeadlineExceeded)
 }
 
+// TestHub_Serve_RejectsNewConnectionsAfterShutdown guards the race a
+// reviewer flagged: registration (h.conns / h.wg.Add) and Shutdown's
+// snapshot both happen under h.mu, so a connection arriving after Shutdown's
+// snapshot must never join - if it did, Shutdown could already be past
+// wg.Wait() with nothing left to observe its wg.Add.
+func TestHub_Serve_RejectsNewConnectionsAfterShutdown(t *testing.T) {
+	hub := NewHub(testLogger(), newFakeAccessFilter())
+	server := startTestServer(t, hub)
+
+	shutdownCtx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	require.NoError(t, hub.Shutdown(shutdownCtx))
+
+	conn := dial(t, server, "user-1")
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+	var msg map[string]any
+	assert.Error(t, conn.ReadJSON(&msg), "a connection established after Shutdown should be closed immediately")
+}
+
 func TestHub_ParseListIDs_SkipsMalformedEntriesRatherThanFailingTheWholeSubscribe(t *testing.T) {
 	valid := uuid.New()
 
