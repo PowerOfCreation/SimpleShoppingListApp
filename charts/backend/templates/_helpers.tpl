@@ -32,6 +32,8 @@ helm.sh/chart: {{ include "backend.chart" . }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
 app.kubernetes.io/managed-by: {{ .Release.Service }}
+app.kubernetes.io/component: backend
+app.kubernetes.io/part-of: imp-list
 {{- end }}
 
 {{- define "backend.selectorLabels" -}}
