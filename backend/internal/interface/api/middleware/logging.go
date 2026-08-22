@@ -13,10 +13,12 @@ import (
 // info). Skips the sync websocket route - those connections live for
 // minutes, and an access-log entry with a multi-minute "latency" would be
 // misleading; the hub logs its own connect/disconnect (see realtime.Hub).
+// Also skips /metrics - periodic scrapes aren't a meaningful access-log
+// entry and would just add noise.
 func RequestLogger(logger *slog.Logger) echo.MiddlewareFunc {
 	return echomw.RequestLoggerWithConfig(echomw.RequestLoggerConfig{
 		Skipper: func(c echo.Context) bool {
-			return c.Path() == "/api/v1/sync/ws"
+			return c.Path() == "/api/v1/sync/ws" || c.Path() == "/metrics"
 		},
 		LogRemoteIP:      true,
 		LogMethod:        true,
