@@ -1,11 +1,13 @@
+{{- if .Values.backend.enabled }}
 apiVersion: v1
 kind: Pod
 metadata:
-  name: {{ include "backend.fullname" . }}-test-connection
+  name: {{ include "imp-list.componentFullname" (dict "root" $ "component" "backend") }}-test-connection
   labels:
-    # commonLabels, not labels: no readinessProbe means Ready immediately,
-    # so matching the Service selector would route real traffic here.
-    {{- include "backend.commonLabels" . | nindent 4 }}
+    # commonLabels, not selectorLabels: no readinessProbe means Ready
+    # immediately, so matching the Service selector would route real
+    # traffic here.
+    {{- include "imp-list.commonLabels" (dict "root" $ "component" "backend" "version" .Values.backend.image.tag) | nindent 4 }}
   annotations:
     "helm.sh/hook": test
     "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
@@ -23,5 +25,6 @@ spec:
         - --show-error
         - --max-time
         - "5"
-        - "http://{{ include "backend.fullname" . }}:{{ .Values.service.port }}/healthz"
+        - "http://{{ include "imp-list.componentFullname" (dict "root" $ "component" "backend") }}:{{ .Values.backend.service.port }}/healthz"
   restartPolicy: Never
+{{- end }}

@@ -15,8 +15,8 @@ trim = true
 conventional_commits = true
 filter_unconventional = false
 protect_breaking_commits = true
-tag_pattern = "backend-chart-v[0-9]*"
-include_paths = ["charts/backend/**"]
+tag_pattern = "imp-list-chart-v[0-9]*"
+include_paths = ["charts/imp-list/**"]
 commit_parsers = [
   { message = "^feat", group = "Features" },
   { message = "^fix", group = "Bug Fixes" },
@@ -30,6 +30,6 @@ commit_parsers = [
 ]
 
 [bump]
-initial_tag = "backend-chart-v0.1.0"
+initial_tag = "imp-list-chart-v0.1.0"
 features_always_bump_minor = true
 breaking_always_bump_major = true

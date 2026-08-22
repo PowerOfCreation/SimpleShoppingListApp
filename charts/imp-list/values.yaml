@@ -1,0 +1,129 @@
+# Default values for the imp-list chart.
+#
+# Shared/cross-component settings stay top-level; everything specific to one
+# deployable component lives under its own key (backend: today, frontend:
+# later) so a second component is additive, not a values-file rewrite.
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# One Ingress object, one host, path-routing per component (e.g. "/" for the
+# web frontend, "/api" for the backend). Each component's path lives under
+# its own key (backend.ingress.path) — see below.
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  host: ""
+  tls:
+    enabled: false
+    secretName: ""
+
+backend:
+  enabled: true
+  replicaCount: 1
+
+  image:
+    repository: docker.io/powerofcreation/imp-list-backend
+    # Kept current automatically by Renovate's built-in helm-values manager
+    # whenever .github/workflows/backend-release.yml promotes a new tag.
+    tag: "0.1.0"
+    pullPolicy: IfNotPresent
+
+  # The backend listens on a hardcoded :8080 (no PORT env var) — targetPort
+  # must stay 8080 unless cmd/api/main.go is changed to read one.
+  service:
+    type: ClusterIP
+    port: 80
+    targetPort: 8080
+
+  # Backend routes all live under /api/v1/*; /healthz and /metrics are
+  # intentionally not exposed through this path (probes run in-cluster, the
+  # ServiceMonitor scrapes the Service directly). For a dedicated API host
+  # instead of path-routing, set ingress.host=api.example.com and
+  # backend.ingress.path=/.
+  ingress:
+    path: /api
+    pathType: Prefix
+
+  # GET /healthz is unauthenticated and only starts responding 200 after DB
+  # migrations + Keycloak OIDC discovery have both succeeded at boot — a
+  # legitimate signal for both liveness and readiness. There is no separate
+  # readiness endpoint, so both probes intentionally point at the same path.
+  probes:
+    liveness:
+      path: /healthz
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+    readiness:
+      path: /healthz
+      initialDelaySeconds: 5
+      periodSeconds: 10
+      timeoutSeconds: 3
+      failureThreshold: 3
+
+  resources: {}
+  # Empty by default — set explicit requests/limits before production use, e.g.:
+  # resources:
+  #   requests: { cpu: 100m, memory: 64Mi }
+  #   limits: { cpu: 500m, memory: 256Mi }
+
+  # preStopSleepSeconds (0 = disabled) delays SIGTERM via K8s' native preStop
+  # "sleep" action (no shell to exec into in the distroless image), giving
+  # Service endpoint removal time to propagate. Requires K8s 1.29+; see
+  # README.md "Known limitations" for how this relates to app-side shutdown.
+  preStopSleepSeconds: 0
+  terminationGracePeriodSeconds: 30
+
+  podSecurityContext:
+    runAsNonRoot: true
+    runAsUser: 65532
+    runAsGroup: 65532
+    fsGroup: 65532
+
+  securityContext:
+    readOnlyRootFilesystem: true
+    allowPrivilegeEscalation: false
+    capabilities:
+      drop: ["ALL"]
+
+  nodeSelector: {}
+  tolerations: []
+  affinity: {}
+
+  podAnnotations: {}
+  podLabels: {}
+
+  logging:
+    level: ""
+    format: ""
+
+  # Required credentials. Choose ONE of:
+  #   1. existingSecret — reference a Secret you create/manage out-of-band
+  #      (recommended for anything beyond local dev/testing; keeps real
+  #      credentials out of values.yaml / git entirely).
+  #   2. The inline databaseUrl/keycloakIssuer/keycloakClientId fields below
+  #      — only meant for local dev/testing via `--set`, never for a
+  #      values file committed to git.
+  secret:
+    existingSecret: ""
+    existingSecretKeys:
+      databaseUrl: DATABASE_URL
+      keycloakIssuer: KEYCLOAK_ISSUER
+      keycloakClientId: KEYCLOAK_CLIENT_ID
+    # Only used when existingSecret is empty.
+    databaseUrl: ""
+    keycloakIssuer: ""
+    keycloakClientId: ""
+
+  # Requires the prometheus-operator CRDs installed in-cluster. Defaults off;
+  # /metrics exists on the backend, so set enabled=true to scrape it. The
+  # template also guards on the CRD being present, so leaving this enabled on
+  # a cluster without prometheus-operator is safe.
+  serviceMonitor:
+    enabled: false
+    interval: 30s
+    labels: {}
