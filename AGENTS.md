@@ -113,6 +113,24 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
   only the owner may call it. `POST /api/v1/invites/redeem` joins as
   `member`, idempotently. See `backend/internal/application/services/list-access-service.go`
   and `frontend/docs/sync-sharing-target.md` §2–3.
+- **Helm chart delivery:** `charts/backend/` packages the backend image for
+  K8s (Deployment/Service/Ingress/optional ServiceMonitor + a `helm test`
+  connectivity hook). Versioned independently of the image — own
+  `charts/backend/cliff.toml` (`tag_pattern = "backend-chart-v[0-9]*"`,
+  `include_paths = ["charts/backend/**"]`), own tag namespace
+  (`backend-chart-v*`), own release workflow
+  (`backend-chart-release.yml`, mirrors `backend-release.yml`: version via
+  git-cliff, package, `kind`-cluster smoke test via `helm install` +
+  `helm test`, tag only after that passes). Published as an OCI artifact to
+  `oci://registry-1.docker.io/powerofcreation/charts/backend`. The chart's
+  default `image.tag` (and `Chart.yaml`'s `appVersion`) is kept current
+  automatically by Renovate's built-in `helm-values` manager — no custom
+  config needed, it just needs `image.tag` to stay a plain semver string.
+  Known chart-level limitations (see `charts/backend/README.md`):
+  liveness/readiness share one probe (`/healthz`, no separate readiness
+  endpoint), no graceful shutdown yet (backend doesn't drain on SIGTERM),
+  `ServiceMonitor` template exists but is a no-op
+  (`serviceMonitor.enabled: false`, no `/metrics` endpoint yet).
 
 ## Relevant docs
 

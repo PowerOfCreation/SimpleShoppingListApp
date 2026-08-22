@@ -41,6 +41,14 @@
     },
     {
       matchFileNames: [
+        'charts/**',
+      ],
+      addLabels: [
+        'helm',
+      ],
+    },
+    {
+      matchFileNames: [
         'frontend/**',
       ],
       matchPackageNames: [

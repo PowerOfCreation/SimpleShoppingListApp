@@ -1,0 +1,25 @@
+{{/*
+No-op today — the backend has no /metrics endpoint yet. This is scaffolding
+for when it does. Guarded on the CRD actually being present in-cluster so
+flipping serviceMonitor.enabled=true never hard-fails `helm install` on a
+cluster without prometheus-operator.
+*/}}
+{{- if and .Values.serviceMonitor.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1") }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "backend.fullname" . }}
+  labels:
+    {{- include "backend.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "backend.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+{{- end }}

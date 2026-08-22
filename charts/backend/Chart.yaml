@@ -1,0 +1,17 @@
+apiVersion: v2
+name: backend
+description: Imp List backend API (Go/Echo/Postgres) — offline-first shopping list sync server
+type: application
+# version is set at package time by .github/workflows/backend-chart-release.yml
+# (git-cliff, tag backend-chart-vX.Y.Z) — the value here is a placeholder only.
+version: 0.0.0-unreleased
+# appVersion mirrors values.yaml's default image.tag. Kept current by
+# Renovate's built-in helm-values manager whenever backend-release.yml
+# promotes a new image tag.
+appVersion: "0.1.0"
+home: https://github.com/PowerOfCreation/SimpleShoppingListApp
+sources:
+  - https://github.com/PowerOfCreation/SimpleShoppingListApp
+maintainers:
+  - name: PowerOfCreation
+    url: https://github.com/PowerOfCreation
