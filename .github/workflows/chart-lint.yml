@@ -1,0 +1,52 @@
+name: Chart Lint
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "charts/imp-list/**"
+      - ".github/workflows/chart-lint.yml"
+  pull_request:
+    paths:
+      - "charts/imp-list/**"
+      - ".github/workflows/chart-lint.yml"
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 📦 Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: 🛠️ Install Helm
+        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+
+      - name: 🔎 helm lint
+        run: |
+          set -euo pipefail
+          helm lint charts/imp-list \
+            --set backend.secret.databaseUrl=postgres-placeholder \
+            --set backend.secret.keycloakIssuer=https://example.invalid/realms/placeholder \
+            --set backend.secret.keycloakClientId=placeholder
+
+      - name: 🧾 helm template (default values)
+        run: |
+          set -euo pipefail
+          helm template charts/imp-list \
+            --set backend.secret.databaseUrl=postgres-placeholder \
+            --set backend.secret.keycloakIssuer=https://example.invalid/realms/placeholder \
+            --set backend.secret.keycloakClientId=placeholder \
+            > /dev/null
+
+      - name: 🧾 helm template (ingress + serviceMonitor enabled)
+        run: |
+          set -euo pipefail
+          helm template charts/imp-list \
+            --set backend.secret.databaseUrl=postgres-placeholder \
+            --set backend.secret.keycloakIssuer=https://example.invalid/realms/placeholder \
+            --set backend.secret.keycloakClientId=placeholder \
+            --set ingress.enabled=true \
+            --set ingress.host=example.invalid \
+            --set backend.serviceMonitor.enabled=true \
+            --api-versions monitoring.coreos.com/v1 \
+            > /dev/null

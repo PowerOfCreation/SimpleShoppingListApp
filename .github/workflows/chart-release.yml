@@ -1,16 +1,16 @@
-name: Backend Chart Release
+name: Chart Release
 
 on:
   push:
     tags:
-      - "backend-chart-v[0-9]+.[0-9]+.[0-9]+"
+      - "imp-list-chart-v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
 
 env:
-  CHART_OCI_REF: oci://registry-1.docker.io/powerofcreation/imp-list-charts
+  CHART_OCI_REF: oci://registry-1.docker.io/powerofcreation
 
 concurrency:
-  group: backend-chart-release
+  group: chart-release
   cancel-in-progress: false
 
 jobs:
@@ -49,7 +49,7 @@ jobs:
         id: bump
         run: |
           set -euo pipefail
-          NEXT_TAG=$(git-cliff --config charts/backend/cliff.toml --bumped-version)
+          NEXT_TAG=$(git-cliff --config charts/imp-list/cliff.toml --bumped-version)
           if [ -n "$(git ls-remote --tags origin "refs/tags/${NEXT_TAG}")" ]; then
             echo "::error::Refusing to create release for already-existing tag ${NEXT_TAG}"
             exit 1
@@ -66,13 +66,13 @@ jobs:
             exit 1
           fi
           echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "version=${TAG#backend-chart-v}" >> "$GITHUB_OUTPUT"
+          echo "version=${TAG#imp-list-chart-v}" >> "$GITHUB_OUTPUT"
 
-      - name: 📝 Generate changelog (charts/backend/** commits only)
+      - name: 📝 Generate changelog (charts/imp-list/** commits only)
         id: changelog
         uses: orhun/git-cliff-action@f50e11560dce63f7c33227798f90b924471a88b5 # v4.8.0
         with:
-          config: charts/backend/cliff.toml
+          config: charts/imp-list/cliff.toml
           args: --latest --tag ${{ steps.release.outputs.tag }} --strip header
 
       - name: 🛠️ Install Helm
@@ -93,9 +93,9 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          IMAGE_TAG=$(yq '.image.tag' charts/backend/values.yaml)
-          helm package charts/backend --version "$VERSION" --app-version "$IMAGE_TAG" -d dist/
-          echo "path=dist/backend-${VERSION}.tgz" >> "$GITHUB_OUTPUT"
+          IMAGE_TAG=$(yq '.backend.image.tag' charts/imp-list/values.yaml)
+          helm package charts/imp-list --version "$VERSION" --app-version "$IMAGE_TAG" -d dist/
+          echo "path=dist/imp-list-${VERSION}.tgz" >> "$GITHUB_OUTPUT"
 
       - name: 🔎 helm lint (packaged artifact)
         env:
@@ -103,7 +103,7 @@ jobs:
         run: |
           set -euo pipefail
           helm lint "$CHART_PATH" \
-            --set secret.databaseUrl=x --set secret.keycloakIssuer=x --set secret.keycloakClientId=x
+            --set backend.secret.databaseUrl=x --set backend.secret.keycloakIssuer=x --set backend.secret.keycloakClientId=x
 
       - name: 🛠️ Create kind cluster
         uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
@@ -155,24 +155,24 @@ jobs:
           # KEYCLOAK_ISSUER points at the real, shared, hosted SSO instance
           # (never run locally, see AGENTS.md) - same one the backend image's
           # own smoke test uses.
-          helm install backend-smoke "$CHART_PATH" \
-            --set secret.databaseUrl="host=postgres user=postgres password=smoke dbname=todos port=5432 sslmode=disable" \
-            --set secret.keycloakIssuer="https://sso.ops.light-dev-solutions.de/realms/user-apps" \
-            --set secret.keycloakClientId="shopping-list" \
+          helm install imp-list-smoke "$CHART_PATH" \
+            --set backend.secret.databaseUrl="host=postgres user=postgres password=smoke dbname=todos port=5432 sslmode=disable" \
+            --set backend.secret.keycloakIssuer="https://sso.ops.light-dev-solutions.de/realms/user-apps" \
+            --set backend.secret.keycloakClientId="shopping-list" \
             --wait --timeout 90s
-          helm test backend-smoke --logs
+          helm test imp-list-smoke --logs
 
       - name: Smoke test debug info on failure
         if: failure()
         run: |
           kubectl get pods -o wide || true
-          kubectl describe pod -l app.kubernetes.io/instance=backend-smoke || true
-          kubectl logs -l app.kubernetes.io/instance=backend-smoke --all-containers --tail=200 || true
+          kubectl describe pod -l app.kubernetes.io/instance=imp-list-smoke || true
+          kubectl logs -l app.kubernetes.io/instance=imp-list-smoke --all-containers --tail=200 || true
           kubectl logs pod/postgres --tail=100 || true
 
       - name: 🧹 Tear down smoke test release
         if: always()
-        run: helm uninstall backend-smoke || true
+        run: helm uninstall imp-list-smoke || true
 
       - name: 🚢 Push chart (OCI)
         env:
@@ -188,10 +188,10 @@ jobs:
         run: |
           set -euo pipefail
           {
-            echo "## Backend chart ${VERSION}"; echo
-            echo "**Chart:** \`${CHART_OCI_REF}/backend:${VERSION}\`"; echo
+            echo "## imp-list chart ${VERSION}"; echo
+            echo "**Chart:** \`${CHART_OCI_REF}/imp-list:${VERSION}\`"; echo
             echo "### Pull"; echo '```'
-            echo "helm pull ${CHART_OCI_REF}/backend --version ${VERSION}"; echo '```'; echo
+            echo "helm pull ${CHART_OCI_REF}/imp-list --version ${VERSION}"; echo '```'; echo
             echo "### Changelog"; echo
             echo "$CHANGELOG"
           } > notes.md
@@ -203,7 +203,7 @@ jobs:
           n=1; max=5
           until gh release view "$TAG" >/dev/null 2>&1 || gh release create "$TAG" \
             --draft \
-            --title "Backend chart ${TAG}" \
+            --title "imp-list chart ${TAG}" \
             --notes-file notes.md \
             --target "${{ github.sha }}"; do
             [ "$n" -ge "$max" ] && { echo "::error::release create failed after $max attempts"; exit 1; }

@@ -102,18 +102,19 @@
       groupSlug: 'go-version',
     },
     {
-      // values.yaml's image.tag (helm-values manager) and Chart.yaml's
-      // appVersion (custom regex manager below) have different depNames,
-      // so without this they'd land in separate branches/PRs.
+      // values.yaml's backend.image.tag (helm-values manager) and
+      // Chart.yaml's appVersion (custom regex manager below) have
+      // different depNames, so without this they'd land in separate
+      // branches/PRs.
       matchFileNames: [
-        'charts/backend/Chart.yaml',
-        'charts/backend/values.yaml',
+        'charts/imp-list/Chart.yaml',
+        'charts/imp-list/values.yaml',
       ],
       matchDatasources: [
         'docker',
       ],
-      groupName: 'backend chart appVersion',
-      groupSlug: 'backend-chart-appversion',
+      groupName: 'imp-list chart appVersion',
+      groupSlug: 'imp-list-chart-appversion',
     },
   ],
   customManagers: [
@@ -131,11 +132,11 @@
     },
     {
       // Renovate's built-in helm-values manager only bumps values.yaml's
-      // image.tag - Chart.yaml's appVersion needs its own regex manager to
-      // stay in step with it.
+      // backend.image.tag - Chart.yaml's appVersion needs its own regex
+      // manager to stay in step with it.
       customType: 'regex',
       managerFilePatterns: [
-        '/^charts\\/backend\\/Chart\\.yaml$/',
+        '/^charts\\/imp-list\\/Chart\\.yaml$/',
       ],
       matchStrings: [
         'appVersion: "(?<currentValue>[^"]+)"',
