@@ -92,6 +92,8 @@ func run(logger *slog.Logger) error {
 		return c.NoContent(http.StatusOK)
 	})
 
+	rest.NewMetricsController(e)
+
 	rest.NewEventController(e, logger, eventRepo, listAccessService, hub, authMW)
 	rest.NewSyncWebSocketController(e, hub, authMW)
 	rest.NewSyncStateController(e, logger, eventRepo, listAccessService, authMW)
