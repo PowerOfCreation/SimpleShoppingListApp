@@ -1,0 +1,30 @@
+{{- if .Values.backend.enabled }}
+apiVersion: v1
+kind: Pod
+metadata:
+  name: {{ include "imp-list.componentFullname" (dict "root" $ "component" "backend") }}-test-connection
+  labels:
+    # commonLabels, not selectorLabels: no readinessProbe means Ready
+    # immediately, so matching the Service selector would route real
+    # traffic here.
+    {{- include "imp-list.commonLabels" (dict "root" $ "component" "backend" "version" .Values.backend.image.tag) | nindent 4 }}
+  annotations:
+    "helm.sh/hook": test
+    "helm.sh/hook-delete-policy": before-hook-creation,hook-succeeded
+spec:
+  # The app image is distroless (no shell, no curl) — the test hook runs
+  # from a separate curl image against the Service instead of exec-ing into
+  # the app container.
+  containers:
+    - name: curl
+      image: docker.io/curlimages/curl:8.21.0@sha256:7c12af72ceb38b7432ab85e1a265cff6ae58e06f95539d539b654f2cfa64bb13
+      command:
+        - curl
+        - --fail
+        - --silent
+        - --show-error
+        - --max-time
+        - "5"
+        - "http://{{ include "imp-list.componentFullname" (dict "root" $ "component" "backend") }}:{{ .Values.backend.service.port }}/healthz"
+  restartPolicy: Never
+{{- end }}

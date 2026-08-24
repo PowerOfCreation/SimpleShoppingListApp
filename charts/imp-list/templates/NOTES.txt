@@ -1,0 +1,19 @@
+{{- if .Values.backend.enabled }}
+Backend deployed as {{ include "imp-list.componentFullname" (dict "root" $ "component" "backend") }} in namespace {{ .Release.Namespace }}.
+
+To check it's reachable:
+  kubectl port-forward svc/{{ include "imp-list.componentFullname" (dict "root" $ "component" "backend") }} 8080:{{ .Values.backend.service.port }} -n {{ .Release.Namespace }}
+  curl http://localhost:8080/healthz
+
+Run the built-in connectivity test:
+  helm test {{ .Release.Name }} -n {{ .Release.Namespace }}
+
+Notes:
+{{- if not .Values.backend.serviceMonitor.enabled }}
+  - backend.serviceMonitor.enabled=false (default). Set it to scrape the
+    backend's /metrics endpoint.
+{{- end }}
+  - backend.preStopSleepSeconds=0 (default). See README.md "Known
+    limitations" for how it relates to the app's own graceful shutdown on
+    SIGTERM.
+{{- end }}

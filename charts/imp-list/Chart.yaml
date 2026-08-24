@@ -1,0 +1,22 @@
+apiVersion: v2
+name: imp-list
+description: "Imp List — offline-first shopping list: backend API (Go/Echo/Postgres) now, web frontend later"
+type: application
+# version is set at package time by .github/workflows/chart-release.yml
+# (git-cliff, tag imp-list-chart-vX.Y.Z) — the value here is a placeholder only.
+version: 0.0.0-unreleased
+# appVersion mirrors values.yaml's backend.image.tag default — the only
+# component today. Kept current in git by a custom regex manager in
+# renovate.json5 (the built-in helm-values manager only updates
+# values.yaml, not Chart.yaml) — also always set explicitly at package
+# time by chart-release.yml regardless. Once a second component (frontend)
+# exists, this becomes an orientation value only — the authoritative
+# per-component version is the app.kubernetes.io/version label, set per
+# Deployment from that component's own image.tag (see _helpers.tpl).
+appVersion: "0.1.0"
+home: https://github.com/PowerOfCreation/SimpleShoppingListApp
+sources:
+  - https://github.com/PowerOfCreation/SimpleShoppingListApp
+maintainers:
+  - name: PowerOfCreation
+    url: https://github.com/PowerOfCreation

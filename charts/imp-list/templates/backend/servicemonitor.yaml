@@ -1,0 +1,25 @@
+{{/*
+Defaults off; opt in via backend.serviceMonitor.enabled=true now that
+/metrics exists. Guarded on the CRD actually being present in-cluster so
+flipping it on never hard-fails `helm install` on a cluster without
+prometheus-operator.
+*/}}
+{{- if and .Values.backend.enabled .Values.backend.serviceMonitor.enabled (.Capabilities.APIVersions.Has "monitoring.coreos.com/v1") }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "imp-list.componentFullname" (dict "root" $ "component" "backend") }}
+  labels:
+    {{- include "imp-list.labels" (dict "root" $ "component" "backend" "version" .Values.backend.image.tag) | nindent 4 }}
+    {{- with .Values.backend.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "imp-list.selectorLabels" (dict "root" $ "component" "backend") | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.backend.serviceMonitor.interval }}
+{{- end }}

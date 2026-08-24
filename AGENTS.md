@@ -113,6 +113,39 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
   only the owner may call it. `POST /api/v1/invites/redeem` joins as
   `member`, idempotently. See `backend/internal/application/services/list-access-service.go`
   and `frontend/docs/sync-sharing-target.md` §2–3.
+- **Helm chart delivery:** `charts/imp-list/` is one chart for the whole app,
+  not one per component — components are grouped under their own values key
+  (`backend:` today; a `frontend:` key + `templates/frontend/` will land the
+  same way once a web image exists) so a second component is additive, not
+  a values-file rewrite. Shared bits (`imagePullSecrets`, one `ingress.*`
+  with path-routing per component) stay top-level; per-component templates
+  live under `templates/<component>/` (currently
+  `templates/backend/{deployment,service,secret,servicemonitor}.yaml`) and
+  render a Deployment/Service/optional ServiceMonitor + a `helm test`
+  connectivity hook for the backend. `_helpers.tpl`'s `imp-list.*` helpers
+  take a component via `(dict "root" $ "component" "backend")`;
+  `app.kubernetes.io/component` is part of the *selector* labels (not just
+  descriptive ones) so components' selectors never overlap once there's more
+  than one. Versioned independently of any component's image — own
+  `charts/imp-list/cliff.toml` (`tag_pattern = "imp-list-chart-v[0-9]*"`,
+  `include_paths = ["charts/imp-list/**"]`), own tag namespace
+  (`imp-list-chart-v*`), own release workflow (`chart-release.yml`, mirrors
+  `backend-release.yml`: version via git-cliff, package, `kind`-cluster
+  smoke test via `helm install` + `helm test`, tag only after that passes).
+  Published as an OCI artifact to
+  `oci://registry-1.docker.io/powerofcreation/imp-list`. The chart's default
+  `backend.image.tag` is kept current automatically by Renovate's built-in
+  `helm-values` manager; `Chart.yaml`'s `appVersion` is kept in step by a
+  small custom regex manager in `renovate.json5` (the built-in manager
+  only touches `values.yaml`) — the released OCI chart's `appVersion` is
+  also always explicitly set at package time regardless, so this is a
+  git-hygiene nicety, not a correctness dependency.
+  Known chart-level limitations (see `charts/imp-list/README.md`):
+  liveness/readiness share one probe (`/healthz`, no separate readiness
+  endpoint), `backend.preStopSleepSeconds` only covers Service endpoint
+  propagation (app-side graceful shutdown on SIGTERM already exists),
+  `ServiceMonitor` template exists but defaults off
+  (`backend.serviceMonitor.enabled: false`) even though `/metrics` exists.
 
 ## Relevant docs
 
