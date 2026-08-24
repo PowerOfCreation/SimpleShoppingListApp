@@ -8,7 +8,21 @@
       "type": "object",
       "properties": {
         "enabled": { "type": "boolean" },
-        "host": { "type": "string" }
+        "host": { "type": "string" },
+        "tls": {
+          "type": "object",
+          "properties": {
+            "enabled": { "type": "boolean" },
+            "secretName": { "type": "string" }
+          },
+          "if": {
+            "properties": { "enabled": { "const": true } }
+          },
+          "then": {
+            "properties": { "secretName": { "type": "string", "minLength": 1 } },
+            "required": ["secretName"]
+          }
+        }
       },
       "if": {
         "properties": { "enabled": { "const": true } }
@@ -62,6 +76,14 @@
           "type": "object",
           "properties": {
             "existingSecret": { "type": "string" },
+            "existingSecretKeys": {
+              "type": "object",
+              "properties": {
+                "databaseUrl": { "type": "string", "pattern": "^[-._a-zA-Z0-9]+$" },
+                "keycloakIssuer": { "type": "string", "pattern": "^[-._a-zA-Z0-9]+$" },
+                "keycloakClientId": { "type": "string", "pattern": "^[-._a-zA-Z0-9]+$" }
+              }
+            },
             "databaseUrl": { "type": "string" },
             "keycloakIssuer": { "type": "string" },
             "keycloakClientId": { "type": "string" }

@@ -47,6 +47,8 @@ jobs:
             --set backend.secret.keycloakClientId=placeholder \
             --set ingress.enabled=true \
             --set ingress.host=example.invalid \
+            --set ingress.tls.enabled=true \
+            --set ingress.tls.secretName=example-tls \
             --set backend.serviceMonitor.enabled=true \
             --api-versions monitoring.coreos.com/v1 \
             > /dev/null
