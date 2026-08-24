@@ -175,9 +175,19 @@ jobs:
         run: helm uninstall imp-list-smoke || true
 
       - name: 🚢 Push chart (OCI)
+        id: push
         env:
           CHART_PATH: ${{ steps.package.outputs.path }}
-        run: helm push "$CHART_PATH" "$CHART_OCI_REF"
+        run: |
+          set -euo pipefail
+          PUSH_OUTPUT=$(helm push "$CHART_PATH" "$CHART_OCI_REF")
+          echo "$PUSH_OUTPUT"
+          DIGEST=$(printf '%s\n' "$PUSH_OUTPUT" | sed -n 's/^Digest: //p' | tail -n1)
+          if [ -z "$DIGEST" ]; then
+            echo "::error::Could not determine chart digest from helm push output"
+            exit 1
+          fi
+          echo "digest=${DIGEST}" >> "$GITHUB_OUTPUT"
 
       - name: 🚀 Create draft release
         env:
@@ -185,11 +195,13 @@ jobs:
           TAG: ${{ steps.release.outputs.tag }}
           VERSION: ${{ steps.release.outputs.version }}
           CHANGELOG: ${{ steps.changelog.outputs.content }}
+          CHART_DIGEST: ${{ steps.push.outputs.digest }}
         run: |
           set -euo pipefail
           {
             echo "## imp-list chart ${VERSION}"; echo
             echo "**Chart:** \`${CHART_OCI_REF}/imp-list:${VERSION}\`"; echo
+            echo "**Digest:** \`${CHART_DIGEST}\`"; echo
             echo "### Pull"; echo '```'
             echo "helm pull ${CHART_OCI_REF}/imp-list --version ${VERSION}"; echo '```'; echo
             echo "### Changelog"; echo
