@@ -66,15 +66,33 @@ spec:
                   name: {{ include "imp-list.backend.secretName" . }}
                   key: {{ .Values.backend.secret.existingSecretKeys.databaseUrl }}
             - name: KEYCLOAK_ISSUER
+              {{- if .Values.backend.keycloak.existingConfigMap }}
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.backend.keycloak.existingConfigMap }}
+                  key: {{ .Values.backend.keycloak.existingConfigMapKeys.issuer }}
+              {{- else if .Values.backend.keycloak.issuer }}
+              value: {{ .Values.backend.keycloak.issuer | quote }}
+              {{- else }}
               valueFrom:
                 secretKeyRef:
                   name: {{ include "imp-list.backend.secretName" . }}
                   key: {{ .Values.backend.secret.existingSecretKeys.keycloakIssuer }}
+              {{- end }}
             - name: KEYCLOAK_CLIENT_ID
+              {{- if .Values.backend.keycloak.existingConfigMap }}
+              valueFrom:
+                configMapKeyRef:
+                  name: {{ .Values.backend.keycloak.existingConfigMap }}
+                  key: {{ .Values.backend.keycloak.existingConfigMapKeys.clientId }}
+              {{- else if .Values.backend.keycloak.clientId }}
+              value: {{ .Values.backend.keycloak.clientId | quote }}
+              {{- else }}
               valueFrom:
                 secretKeyRef:
                   name: {{ include "imp-list.backend.secretName" . }}
                   key: {{ .Values.backend.secret.existingSecretKeys.keycloakClientId }}
+              {{- end }}
           livenessProbe:
             httpGet:
               path: {{ .Values.backend.probes.liveness.path }}

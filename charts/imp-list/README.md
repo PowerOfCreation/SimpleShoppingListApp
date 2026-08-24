@@ -20,7 +20,9 @@ committed in git.
 
 ```console
 helm install my-imp-list oci://registry-1.docker.io/powerofcreation/imp-list \
-  --set backend.secret.existingSecret=my-backend-credentials
+  --set backend.secret.existingSecret=my-backend-credentials \
+  --set backend.keycloak.issuer=https://sso.ops.light-dev-solutions.de/realms/user-apps \
+  --set backend.keycloak.clientId=shopping-list
 ```
 
 ## Ingress and path routing
@@ -38,16 +40,21 @@ path-routing, set `ingress.host=api.example.com` and
 
 The backend requires `DATABASE_URL`, `KEYCLOAK_ISSUER`, and
 `KEYCLOAK_CLIENT_ID` at boot (it fails to start without the latter two).
-Provide them one of two ways:
+Configure them as follows:
 
-- **`backend.secret.existingSecret`** (recommended): the name of a Secret
-  you create and manage out-of-band, with the keys named per
-  `backend.secret.existingSecretKeys` (defaults: `DATABASE_URL`,
-  `KEYCLOAK_ISSUER`, `KEYCLOAK_CLIENT_ID`). Real credentials never need to
-  touch `values.yaml` or git this way.
-- **`backend.secret.databaseUrl` / `backend.secret.keycloakIssuer` /
-  `backend.secret.keycloakClientId`** inline values — only intended for
-  local dev/testing via `--set`, not for a values file committed to git.
+- **`DATABASE_URL` (secret):**
+  - Preferred: set `backend.secret.existingSecret` and map key names via
+    `backend.secret.existingSecretKeys.databaseUrl` (default `DATABASE_URL`).
+  - Dev/test only: set `backend.secret.databaseUrl` inline via `--set`.
+- **`KEYCLOAK_ISSUER` + `KEYCLOAK_CLIENT_ID` (non-secret config):**
+  - Inline values: `backend.keycloak.issuer` and `backend.keycloak.clientId`.
+  - Existing ConfigMap: set `backend.keycloak.existingConfigMap` and map key
+    names via `backend.keycloak.existingConfigMapKeys`.
+- **Legacy fallback (still supported):** keycloak values can still be read
+  from the backend secret keys (`backend.secret.existingSecretKeys.*` or
+  `backend.secret.keycloakIssuer` / `backend.secret.keycloakClientId`) if
+  neither `backend.keycloak.existingConfigMap` nor inline keycloak values are
+  set.
 
 Keycloak is a single shared hosted instance
 (`sso.ops.light-dev-solutions.de`) used for both dev and prod — it is never
