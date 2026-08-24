@@ -34,7 +34,7 @@
     },
     "backend": {
       "type": "object",
-      "required": ["image", "service", "secret"],
+      "required": ["image", "service", "secret", "keycloak"],
       "properties": {
         "replicaCount": { "type": "integer", "minimum": 0 },
         "preStopSleepSeconds": { "type": "integer", "minimum": 0 },
@@ -72,6 +72,35 @@
             "enabled": { "type": "boolean" }
           }
         },
+        "keycloak": {
+          "type": "object",
+          "properties": {
+            "existingConfigMap": { "type": "string" },
+            "existingConfigMapKeys": {
+              "type": "object",
+              "properties": {
+                "issuer": { "type": "string", "pattern": "^[-._a-zA-Z0-9]+$" },
+                "clientId": { "type": "string", "pattern": "^[-._a-zA-Z0-9]+$" }
+              }
+            },
+            "issuer": { "type": "string" },
+            "clientId": { "type": "string" }
+          },
+          "oneOf": [
+            {
+              "properties": { "existingConfigMap": { "type": "string", "minLength": 1 } },
+              "required": ["existingConfigMap"]
+            },
+            {
+              "properties": {
+                "existingConfigMap": { "type": "string", "maxLength": 0 },
+                "issuer": { "type": "string", "minLength": 1 },
+                "clientId": { "type": "string", "minLength": 1 }
+              },
+              "required": ["issuer", "clientId"]
+            }
+          ]
+        },
         "secret": {
           "type": "object",
           "properties": {
@@ -79,14 +108,10 @@
             "existingSecretKeys": {
               "type": "object",
               "properties": {
-                "databaseUrl": { "type": "string", "pattern": "^[-._a-zA-Z0-9]+$" },
-                "keycloakIssuer": { "type": "string", "pattern": "^[-._a-zA-Z0-9]+$" },
-                "keycloakClientId": { "type": "string", "pattern": "^[-._a-zA-Z0-9]+$" }
+                "databaseUrl": { "type": "string", "pattern": "^[-._a-zA-Z0-9]+$" }
               }
             },
-            "databaseUrl": { "type": "string" },
-            "keycloakIssuer": { "type": "string" },
-            "keycloakClientId": { "type": "string" }
+            "databaseUrl": { "type": "string" }
           },
           "oneOf": [
             {
@@ -96,11 +121,9 @@
             {
               "properties": {
                 "existingSecret": { "type": "string", "maxLength": 0 },
-                "databaseUrl": { "type": "string", "minLength": 1 },
-                "keycloakIssuer": { "type": "string", "minLength": 1 },
-                "keycloakClientId": { "type": "string", "minLength": 1 }
+                "databaseUrl": { "type": "string", "minLength": 1 }
               },
-              "required": ["databaseUrl", "keycloakIssuer", "keycloakClientId"]
+              "required": ["databaseUrl"]
             }
           ]
         }

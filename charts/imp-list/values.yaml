@@ -101,23 +101,29 @@ backend:
     level: ""
     format: ""
 
-  # Required credentials. Choose ONE of:
+  # Keycloak config (not secret by itself). Choose ONE of:
+  #   1. existingConfigMap — read issuer/client_id from an existing ConfigMap.
+  #   2. The inline issuer/clientId fields below — easiest for explicit values.
+  keycloak:
+    existingConfigMap: ""
+    existingConfigMapKeys:
+      issuer: KEYCLOAK_ISSUER
+      clientId: KEYCLOAK_CLIENT_ID
+    issuer: ""
+    clientId: ""
+
+  # Required secret material (DATABASE_URL). Choose ONE of:
   #   1. existingSecret — reference a Secret you create/manage out-of-band
   #      (recommended for anything beyond local dev/testing; keeps real
   #      credentials out of values.yaml / git entirely).
-  #   2. The inline databaseUrl/keycloakIssuer/keycloakClientId fields below
-  #      — only meant for local dev/testing via `--set`, never for a
-  #      values file committed to git.
+  #   2. The inline databaseUrl field below — only meant for local dev/testing
+  #      via `--set`, never for a values file committed to git.
   secret:
     existingSecret: ""
     existingSecretKeys:
       databaseUrl: DATABASE_URL
-      keycloakIssuer: KEYCLOAK_ISSUER
-      keycloakClientId: KEYCLOAK_CLIENT_ID
     # Only used when existingSecret is empty.
     databaseUrl: ""
-    keycloakIssuer: ""
-    keycloakClientId: ""
 
   # Requires the prometheus-operator CRDs installed in-cluster. Defaults off;
   # /metrics exists on the backend, so set enabled=true to scrape it. The

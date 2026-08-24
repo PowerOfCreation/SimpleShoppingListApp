@@ -26,16 +26,16 @@ jobs:
           set -euo pipefail
           helm lint charts/imp-list \
             --set backend.secret.databaseUrl=postgres-placeholder \
-            --set backend.secret.keycloakIssuer=https://example.invalid/realms/placeholder \
-            --set backend.secret.keycloakClientId=placeholder
+            --set backend.keycloak.issuer=https://example.invalid/realms/placeholder \
+            --set backend.keycloak.clientId=placeholder
 
       - name: 🧾 helm template (default values)
         run: |
           set -euo pipefail
           helm template charts/imp-list \
             --set backend.secret.databaseUrl=postgres-placeholder \
-            --set backend.secret.keycloakIssuer=https://example.invalid/realms/placeholder \
-            --set backend.secret.keycloakClientId=placeholder \
+            --set backend.keycloak.issuer=https://example.invalid/realms/placeholder \
+            --set backend.keycloak.clientId=placeholder \
             > /dev/null
 
       - name: 🧾 helm template (ingress + serviceMonitor enabled)
@@ -43,8 +43,8 @@ jobs:
           set -euo pipefail
           helm template charts/imp-list \
             --set backend.secret.databaseUrl=postgres-placeholder \
-            --set backend.secret.keycloakIssuer=https://example.invalid/realms/placeholder \
-            --set backend.secret.keycloakClientId=placeholder \
+            --set backend.keycloak.issuer=https://example.invalid/realms/placeholder \
+            --set backend.keycloak.clientId=placeholder \
             --set ingress.enabled=true \
             --set ingress.host=example.invalid \
             --set ingress.tls.enabled=true \
