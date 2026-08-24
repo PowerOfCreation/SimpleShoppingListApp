@@ -204,6 +204,8 @@ jobs:
             echo "**Digest:** \`${CHART_DIGEST}\`"; echo
             echo "### Pull"; echo '```'
             echo "helm pull ${CHART_OCI_REF}/imp-list --version ${VERSION}"; echo '```'; echo
+            echo "### Show values"; echo '```'
+            echo "helm show values ${CHART_OCI_REF}/imp-list --version ${VERSION}"; echo '```'; echo
             echo "### Changelog"; echo
             echo "$CHANGELOG"
           } > notes.md
