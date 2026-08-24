@@ -71,13 +71,8 @@ spec:
                 configMapKeyRef:
                   name: {{ .Values.backend.keycloak.existingConfigMap }}
                   key: {{ .Values.backend.keycloak.existingConfigMapKeys.issuer }}
-              {{- else if .Values.backend.keycloak.issuer }}
-              value: {{ .Values.backend.keycloak.issuer | quote }}
               {{- else }}
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "imp-list.backend.secretName" . }}
-                  key: {{ .Values.backend.secret.existingSecretKeys.keycloakIssuer }}
+              value: {{ .Values.backend.keycloak.issuer | quote }}
               {{- end }}
             - name: KEYCLOAK_CLIENT_ID
               {{- if .Values.backend.keycloak.existingConfigMap }}
@@ -85,13 +80,8 @@ spec:
                 configMapKeyRef:
                   name: {{ .Values.backend.keycloak.existingConfigMap }}
                   key: {{ .Values.backend.keycloak.existingConfigMapKeys.clientId }}
-              {{- else if .Values.backend.keycloak.clientId }}
-              value: {{ .Values.backend.keycloak.clientId | quote }}
               {{- else }}
-              valueFrom:
-                secretKeyRef:
-                  name: {{ include "imp-list.backend.secretName" . }}
-                  key: {{ .Values.backend.secret.existingSecretKeys.keycloakClientId }}
+              value: {{ .Values.backend.keycloak.clientId | quote }}
               {{- end }}
           livenessProbe:
             httpGet:

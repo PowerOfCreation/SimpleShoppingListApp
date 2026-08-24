@@ -103,7 +103,7 @@ jobs:
         run: |
           set -euo pipefail
           helm lint "$CHART_PATH" \
-            --set backend.secret.databaseUrl=x --set backend.secret.keycloakIssuer=x --set backend.secret.keycloakClientId=x
+            --set backend.secret.databaseUrl=x --set backend.keycloak.issuer=x --set backend.keycloak.clientId=x
 
       - name: 🛠️ Create kind cluster
         uses: helm/kind-action@ef37e7f390d99f746eb8b610417061a60e82a6cc # v1.14.0
@@ -157,8 +157,8 @@ jobs:
           # own smoke test uses.
           helm install imp-list-smoke "$CHART_PATH" \
             --set backend.secret.databaseUrl="host=postgres user=postgres password=smoke dbname=todos port=5432 sslmode=disable" \
-            --set backend.secret.keycloakIssuer="https://sso.ops.light-dev-solutions.de/realms/user-apps" \
-            --set backend.secret.keycloakClientId="shopping-list" \
+            --set backend.keycloak.issuer="https://sso.ops.light-dev-solutions.de/realms/user-apps" \
+            --set backend.keycloak.clientId="shopping-list" \
             --wait --timeout 90s
           helm test imp-list-smoke --logs
 

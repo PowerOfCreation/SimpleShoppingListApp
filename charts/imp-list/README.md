@@ -50,11 +50,6 @@ Configure them as follows:
   - Inline values: `backend.keycloak.issuer` and `backend.keycloak.clientId`.
   - Existing ConfigMap: set `backend.keycloak.existingConfigMap` and map key
     names via `backend.keycloak.existingConfigMapKeys`.
-- **Legacy fallback (still supported):** keycloak values can still be read
-  from the backend secret keys (`backend.secret.existingSecretKeys.*` or
-  `backend.secret.keycloakIssuer` / `backend.secret.keycloakClientId`) if
-  neither `backend.keycloak.existingConfigMap` nor inline keycloak values are
-  set.
 
 Keycloak is a single shared hosted instance
 (`sso.ops.light-dev-solutions.de`) used for both dev and prod — it is never

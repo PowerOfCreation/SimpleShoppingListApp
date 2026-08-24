@@ -104,7 +104,6 @@ backend:
   # Keycloak config (not secret by itself). Choose ONE of:
   #   1. existingConfigMap — read issuer/client_id from an existing ConfigMap.
   #   2. The inline issuer/clientId fields below — easiest for explicit values.
-  #   3. Legacy fallback: backend.secret.keycloakIssuer/keycloakClientId.
   keycloak:
     existingConfigMap: ""
     existingConfigMapKeys:
@@ -123,13 +122,8 @@ backend:
     existingSecret: ""
     existingSecretKeys:
       databaseUrl: DATABASE_URL
-      keycloakIssuer: KEYCLOAK_ISSUER
-      keycloakClientId: KEYCLOAK_CLIENT_ID
     # Only used when existingSecret is empty.
     databaseUrl: ""
-    # Deprecated fallback path; prefer backend.keycloak.*.
-    keycloakIssuer: ""
-    keycloakClientId: ""
 
   # Requires the prometheus-operator CRDs installed in-cluster. Defaults off;
   # /metrics exists on the backend, so set enabled=true to scrape it. The
