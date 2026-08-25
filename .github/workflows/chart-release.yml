@@ -76,7 +76,7 @@ jobs:
           args: --latest --tag ${{ steps.release.outputs.tag }} --strip header
 
       - name: 🛠️ Install Helm
-        uses: azure/setup-helm@b9e51907a09c216f16ebe8536097933489208112 # v4.3.0
+        uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
 
       # Login early so a Docker Hub auth failure fails fast, before the
       # (slower) kind/smoke-test steps run.
