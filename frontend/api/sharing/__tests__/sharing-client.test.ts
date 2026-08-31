@@ -220,4 +220,74 @@ describe("SharingClient", () => {
       expect(result.getError().kind).toBe("inviteGone")
     })
   })
+
+  describe("redeemInvite", () => {
+    it("posts the token and returns the joined list", async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        jsonResponse(200, {
+          list_id: "list-1",
+          role: "member",
+          already_member: false,
+        })
+      )
+      const client = new SharingClient(fetchMock)
+
+      const result = await client.redeemInvite("plaintext-token")
+
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toEqual({
+        listId: "list-1",
+        role: "member",
+        alreadyMember: false,
+      })
+
+      const [url, options] = fetchMock.mock.calls[0]
+      expect(url).toContain("/api/v1/invites/redeem")
+      expect(options.method).toBe("POST")
+      expect(JSON.parse(options.body)).toEqual({ token: "plaintext-token" })
+    })
+
+    it("reports an idempotent retry as already a member", async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        jsonResponse(200, {
+          list_id: "list-1",
+          role: "member",
+          already_member: true,
+        })
+      )
+      const client = new SharingClient(fetchMock)
+
+      const result = await client.redeemInvite("plaintext-token")
+
+      expect(result.getValue()?.alreadyMember).toBe(true)
+    })
+
+    it("fails when the response carries no list id", async () => {
+      const fetchMock = jest.fn().mockResolvedValue(jsonResponse(200, {}))
+      const client = new SharingClient(fetchMock)
+
+      const result = await client.redeemInvite("plaintext-token")
+
+      expect(result.success).toBe(false)
+      expect(result.getError().kind).toBe("server")
+    })
+
+    it("maps an unknown/expired token to inviteGone", async () => {
+      const fetchMock = jest.fn().mockResolvedValue(jsonResponse(410, {}))
+      const client = new SharingClient(fetchMock)
+
+      const result = await client.redeemInvite("plaintext-token")
+
+      expect(result.getError().kind).toBe("inviteGone")
+    })
+
+    it("maps a malformed token to invalid", async () => {
+      const fetchMock = jest.fn().mockResolvedValue(jsonResponse(400, {}))
+      const client = new SharingClient(fetchMock)
+
+      const result = await client.redeemInvite("not-a-real-token")
+
+      expect(result.getError().kind).toBe("invalid")
+    })
+  })
 })
