@@ -40,6 +40,18 @@ export type CreatedInvite = {
   expiresAt: number | null
 }
 
+/**
+ * The result of redeeming an invite. No list name: the server holds no list
+ * content, so the client learns it by pulling the list's log from seq 0
+ * (sync-sharing-target.md §4.3).
+ */
+export type RedeemResult = {
+  listId: string
+  role: string
+  /** True when the caller was already a member - a successful no-op, not an error. */
+  alreadyMember: boolean
+}
+
 export type FetchLike = typeof fetch
 
 type WireInvite = {
@@ -52,6 +64,12 @@ type WireInvite = {
 type WireCreatedInvite = WireInvite & {
   list_id?: unknown
   token?: unknown
+}
+
+type WireRedeemResult = {
+  list_id?: unknown
+  role?: unknown
+  already_member?: unknown
 }
 
 /**
@@ -296,6 +314,52 @@ export class SharingClient {
       token: body.token,
       createdAt: parseTimestamp(body.created_at),
       expiresAt: parseTimestamp(body.expires_at),
+    })
+  }
+
+  /**
+   * Joins the list an invite points at. Idempotent: redeeming a token for a
+   * list the caller already belongs to just re-identifies them
+   * (alreadyMember: true) rather than erroring, even if the token has since
+   * been revoked or expired - see RedeemInvite in
+   * list-sharing-service.go.
+   */
+  async redeemInvite(
+    token: string
+  ): Promise<Result<RedeemResult, SharingError>> {
+    const responseResult = await this.request({
+      url: sharingConfig.redeemInviteUrl(),
+      method: "POST",
+      body: JSON.stringify({ token }),
+      subject: "invite",
+      networkErrorMessage: "Network error while joining the list",
+    })
+    if (!responseResult.success) {
+      return Result.fail(responseResult.getError())
+    }
+
+    const bodyResult = await this.parseJson(
+      responseResult.getValue()!,
+      "redeem"
+    )
+    if (!bodyResult.success) {
+      return Result.fail(bodyResult.getError())
+    }
+
+    const body = bodyResult.getValue() as WireRedeemResult
+    if (typeof body?.list_id !== "string" || typeof body.role !== "string") {
+      return Result.fail(
+        new SharingError(
+          "The server did not return a usable membership",
+          "server"
+        )
+      )
+    }
+
+    return Result.ok({
+      listId: body.list_id,
+      role: body.role,
+      alreadyMember: body.already_member === true,
     })
   }
 

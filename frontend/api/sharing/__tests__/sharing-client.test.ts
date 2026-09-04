@@ -220,4 +220,72 @@ describe("SharingClient", () => {
       expect(result.getError().kind).toBe("inviteGone")
     })
   })
+
+  describe("redeemInvite", () => {
+    it("posts the token and returns the resulting membership", async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        jsonResponse(200, {
+          list_id: "list-1",
+          role: "member",
+          already_member: false,
+        })
+      )
+      const client = new SharingClient(fetchMock)
+
+      const result = await client.redeemInvite("plaintext-token")
+
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toEqual({
+        listId: "list-1",
+        role: "member",
+        alreadyMember: false,
+      })
+
+      const [url, options] = fetchMock.mock.calls[0]
+      expect(url).toContain("/api/v1/invites/redeem")
+      expect(options.method).toBe("POST")
+      expect(options.headers["Content-Type"]).toBe("application/json")
+      expect(JSON.parse(options.body)).toEqual({ token: "plaintext-token" })
+    })
+
+    it("surfaces already_member rather than treating it as an error", async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        jsonResponse(200, {
+          list_id: "list-1",
+          role: "owner",
+          already_member: true,
+        })
+      )
+      const client = new SharingClient(fetchMock)
+
+      const result = await client.redeemInvite("plaintext-token")
+
+      expect(result.getValue()).toEqual({
+        listId: "list-1",
+        role: "owner",
+        alreadyMember: true,
+      })
+    })
+
+    it("fails when the response carries no usable list_id/role", async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(jsonResponse(200, { already_member: false }))
+      const client = new SharingClient(fetchMock)
+
+      const result = await client.redeemInvite("plaintext-token")
+
+      expect(result.success).toBe(false)
+      expect(result.getError().kind).toBe("server")
+    })
+
+    it("maps a 404/410 on the invite to inviteGone", async () => {
+      const fetchMock = jest.fn().mockResolvedValue(jsonResponse(410, {}))
+      const client = new SharingClient(fetchMock)
+
+      const result = await client.redeemInvite("plaintext-token")
+
+      expect(result.getError().kind).toBe("inviteGone")
+    })
+  })
 })
