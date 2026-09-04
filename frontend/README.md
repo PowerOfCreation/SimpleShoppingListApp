@@ -123,10 +123,11 @@ For pull, `POST /api/v1/sync/head` +
 locally, and the same WebSocket connection - after sending
 `{"type":"subscribe","list_ids":[...]}` - gets a live `{"type":"event"}`
 notification whenever one of those lists changes on another device, instead
-of waiting for the next periodic pull. Not implemented: restoring/discovering
-lists after a reinstall (pull only ever fetches lists already known and
-sync-enabled locally) and user-scoping on the backend (see
-`docs/sync-design-decisions.md`).
+of waiting for the next periodic pull. The backend scopes all of this to the
+authenticated user: every `/api/v1/events` and `/api/v1/sync/*` call requires
+membership (owner or member) of every list involved. Not implemented:
+restoring/discovering lists after a reinstall (pull only ever fetches lists
+already known and sync-enabled locally — see `docs/sync-sharing-target.md` §8).
 
 ### Sharing a list (invite links)
 

@@ -1,9 +1,9 @@
 # Keycloak Login
 
 Optional OIDC login against Keycloak. The app stays fully usable without it —
-all shopping lists live in local SQLite and no request needs a token yet. The
-login sits behind the "Account" drawer entry and exists to prepare the backend
-sync.
+all shopping lists live in local SQLite and work without backend or login.
+The login sits behind the "Account" drawer entry and gates backend sync: sync
+runs only while signed in, and every sync request carries the access token.
 
 ## Status
 
@@ -190,5 +190,13 @@ current patch train exactly. When Renovate moves the SDK forward,
 
 ## Open issues
 
-1. **Backend is untouched.** No JWT/JWKS middleware, no user scoping of events,
-   Keycloak is not in `docker-compose.yml`. The token is not sent anywhere yet.
+1. **Token refresh only happens on demand.** `getValidAccessToken()` refreshes
+   when the sync client needs a token; there is no proactive refresh while the
+   app sits idle on a screen that doesn't sync.
+2. **Keycloak is not in `docker-compose.yml`** — intentional: dev and prod share
+   the one hosted instance (`sso.ops.light-dev-solutions.de`), which is never
+   started locally (see `../AGENTS.md`).
+
+The backend side (JWT/JWKS middleware, user scoping of events) is built and
+enforced on every `/api/v1/events` and `/api/v1/sync/*` route — see
+`../../backend/README.md` and `sync-sharing-target.md` §2/§7.1.
