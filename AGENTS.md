@@ -1,4 +1,4 @@
-# CLAUDE.md
+# ShoList — Agent Guidance
 
 Guidance for working with this monorepo (frontend + backend of the offline-first shopping list app).
 
@@ -43,113 +43,24 @@ Clean Architecture: `cmd/api` (wiring) → `internal/domain` (entities/repos/eve
 
 - **Validated types:** repos only accept validated domain types — invalid state unrepresentable at compile time.
 - **sqlc workflow:** edit `sql/queries/*.sql`, run `sqlc generate`, implement in `postgres/`. Never edit `internal/infrastructure/db/sqlc/` manually.
-- **Events:** the server is content-blind — it stores and relays `events` rows without ever parsing `payload` (structure only: envelope shape, JSON validity, size caps in `event-controller.go`). There is no dispatch to a domain handler and no per-type routing; an unknown `event_type` is simply appended like any other, which is what forward compat actually looks like now (R1/R2 in `frontend/docs/sync-sharing-target.md` §6).
+- **Events:** the server is content-blind — it stores and relays `events` rows without ever parsing `payload` (structure only: envelope shape, JSON validity, size caps in `event-controller.go`). An unknown `event_type` is simply appended like any other; that *is* the forward compat (R1/R2 in `frontend/docs/sync-sharing-target.md` §6).
 - **Testing:** real Postgres via testcontainers (`testhelpers.SetupTestDB(t)`), no DB mocking; Docker must be running.
 - **Logging:** structured JSON via `log/slog` (`internal/infrastructure/logging`), stdout, level via `LOG_LEVEL`. Logger is passed by constructor DI — every service/controller that logs takes a `*slog.Logger` param; no `log.Printf`/`fmt.Print*`. `slog.SetDefault` is set once in `main` purely to catch stray stdlib `log` output from dependencies, not as a substitute for DI.
 
 ## Architecture notes
 
 - **Offline-first:** SQLite is the source of truth; the app works without backend or login.
-- **Keycloak:** optional OIDC/PKCE login; the same hosted Keycloak
-  (`sso.ops.light-dev-solutions.de`) is shared for dev and prod, runs in K8s,
-  and is **never started locally**.
-- **Dev app id != prod app id:** `de.lightdevsolutions.sholist.dev` (dev) vs
-  `de.lightdevsolutions.sholist` (prod), controlled via `APP_VARIANT` in `app.config.js`.
-- **Env/config:** backend URL via `.env.development` / `.env.production`
-  (`EXPO_PUBLIC_API_URL`, checked in); Keycloak via local `.env`. Backend
-  target via `DATABASE_URL`.
-- **Sync (bidirectional, list content included):** offline mutations (both
-  `todo_list.*` and `ingredient.*` events) → `POST /api/v1/events` (REST, 200).
-  The push endpoint is synchronous: authorize the whole batch (403), validate
-  its structure (400), then durably append it — one transaction per list,
-  row-locking that list's `synced_lists` entry to assign `seq` (see
-  `EventRepository.AppendToList`) — before the response is sent. Once
-  appended, an event is a fact; nothing downstream can still reject it.
-  **The push response is the confirmation:** its `acked: [{event_id, seq}]`
-  is what marks outbox rows synced (`SyncEngine.sendGroup`). There is no
-  WebSocket ack — a lost response leaves the row pending, and the next
-  flush re-pushes it, which the server answers idempotently with the same
-  `seq`. **WebSocket** (`/api/v1/sync/ws`) carries only what a
-  request/response can't: a **`{"type":"event"}`** notification to clients
-  subscribed (via `{"type":"subscribe","list_ids":[...]}`) to a list that
-  just got a new event, so a device hears about *other* devices' writes
-  without polling. It's a debounced pull trigger, not an ordering token
-  (the fan-out is detached from the push request and deliberately
-  unordered). Pull: `POST /api/v1/sync/head` reports each list's current
-  server cursor (`seq` + latest event id); `GET /api/v1/sync/events`
-  returns a list's event history since a given `seq`, applied locally by
-  rebuilding that list's projection from its full merged (local + pulled)
-  history. `POST /api/v1/sync/state` reconciles the other direction —
-  events the server has no record of go back to pending, keyed by
-  `list_id`. Pull only ever fetches lists already known and sync-enabled
-  locally — there is **no** "restore my lists after reinstall" / discovery
-  endpoint. Replay order is a rebase on the server's `seq` (confirmed prefix,
-  server-authoritative) with our own unconfirmed writes as a local tail
-  (`byServerSeqThenLocal`), not wall-clock `occurred_at` — see
-  `frontend/docs/sync-design-decisions.md`. Whether *this device* syncs a
-  list is a device-local setting (`list_sync_settings`, see
-  `list-sync-settings-repository.ts`), not a domain event and not a column on
-  the `ingredient_lists` projection — that projection rebuilds from the
-  event log on every pull, and a rebuildable table is the wrong place for
-  a fact a rebuild must never be able to reset.
-- **Backend auth:** mandatory. Verifies Keycloak bearer tokens (see
-  `backend/internal/interface/api/middleware`) on `/api/v1/events` and every
-  `/api/v1/sync/*` route; the API refuses to start if
-  `KEYCLOAK_ISSUER`/`KEYCLOAK_CLIENT_ID` aren't set or the issuer is
-  unreachable. Verifying the token is only identity, not authorization —
-  see **List sharing** below for the access check.
-- **List sharing (invite links) and user scoping:** ownership is granted
-  the first time anyone pushes an event for a list
-  (`ListAccessService.AuthorizeWrite`, called synchronously from
-  `POST /api/v1/events` before anything is appended — the push handler is
-  the only place with a verified request context). Every
-  `/api/v1/events` and `/api/v1/sync/*` call, including the WebSocket
-  upgrade, requires the caller to be a member (owner or member) of every
-  list_id involved — read paths (`/sync/head`, `/sync/state`) silently omit
-  a list the caller can't access rather than erroring, to avoid an
-  enumeration oracle. `POST /api/v1/todo-lists/:listId/invites` creates a
-  multi-use link with a TTL preset (`1h`\|`24h`\|`7d`\|`30d`); only the
-  token's sha256 hash is persisted, the plaintext is returned once, and
-  only the owner may call it. `POST /api/v1/invites/redeem` joins as
-  `member`, idempotently. See `backend/internal/application/services/list-access-service.go`
-  and `frontend/docs/sync-sharing-target.md` §2–3.
-- **Helm chart delivery:** `charts/imp-list/` is one chart for the whole app,
-  not one per component — components are grouped under their own values key
-  (`backend:` today; a `frontend:` key + `templates/frontend/` will land the
-  same way once a web image exists) so a second component is additive, not
-  a values-file rewrite. Shared bits (`imagePullSecrets`, one `ingress.*`
-  with path-routing per component) stay top-level; per-component templates
-  live under `templates/<component>/` (currently
-  `templates/backend/{deployment,service,secret,servicemonitor}.yaml`) and
-  render a Deployment/Service/optional ServiceMonitor + a `helm test`
-  connectivity hook for the backend. `_helpers.tpl`'s `imp-list.*` helpers
-  take a component via `(dict "root" $ "component" "backend")`;
-  `app.kubernetes.io/component` is part of the *selector* labels (not just
-  descriptive ones) so components' selectors never overlap once there's more
-  than one. Versioned independently of any component's image — own
-  `charts/imp-list/cliff.toml` (`tag_pattern = "imp-list-chart-v[0-9]*"`,
-  `include_paths = ["charts/imp-list/**"]`), own tag namespace
-  (`imp-list-chart-v*`), own release workflow (`chart-release.yml`, mirrors
-  `backend-release.yml`: version via git-cliff, package, `kind`-cluster
-  smoke test via `helm install` + `helm test`, tag only after that passes).
-  Published as an OCI artifact to
-  `oci://registry-1.docker.io/powerofcreation/imp-list`. The chart's default
-  `backend.image.tag` is kept current automatically by Renovate's built-in
-  `helm-values` manager; `Chart.yaml`'s `appVersion` is kept in step by a
-  small custom regex manager in `renovate.json5` (the built-in manager
-  only touches `values.yaml`) — the released OCI chart's `appVersion` is
-  also always explicitly set at package time regardless, so this is a
-  git-hygiene nicety, not a correctness dependency.
-  Known chart-level limitations (see `charts/imp-list/README.md`):
-  liveness/readiness share one probe (`/healthz`, no separate readiness
-  endpoint), `backend.preStopSleepSeconds` only covers Service endpoint
-  propagation (app-side graceful shutdown on SIGTERM already exists),
-  `ServiceMonitor` template exists but defaults off
-  (`backend.serviceMonitor.enabled: false`) even though `/metrics` exists.
+- **Keycloak:** optional OIDC/PKCE login; the same hosted Keycloak (`sso.ops.light-dev-solutions.de`) is shared for dev and prod, runs in K8s, and is **never started locally**. Setup/debugging: `frontend/docs/keycloak-login.md`.
+- **Dev app id != prod app id:** `de.lightdevsolutions.sholist.dev` (dev) vs `de.lightdevsolutions.sholist` (prod), controlled via `APP_VARIANT` in `app.config.js`.
+- **Env/config:** backend URL via `.env.development` / `.env.production` (`EXPO_PUBLIC_API_URL`, checked in); Keycloak via local `.env`. Backend target via `DATABASE_URL`.
+- **Sync & sharing:** bidirectional event sync (push, pull, reconcile, WebSocket pull-trigger) and invite-link sharing. Backend auth is mandatory and every `/api/v1/events` + `/api/v1/sync/*` call requires membership of every list involved. This area has many non-obvious invariants (push response is the *only* confirmation — no WS ack; no "restore after reinstall"; device-local sync setting never lives in a projection; replay order is `byServerSeqThenLocal`, never wall-clock). **`frontend/docs/sync-sharing-target.md` is the authoritative spec — bei Widerspruch maßgeblich.** PRs in this area must be checkable against its §2 and §6. Decision log: `frontend/docs/sync-design-decisions.md`.
+- **Helm chart delivery:** `charts/imp-list/` is one chart for the whole app (per-component values keys and templates, own release pipeline as OCI artifact). Details and known limitations: `charts/imp-list/README.md`.
 
 ## Relevant docs
 
-- `frontend/docs/sync-sharing-target.md` — Sollzustand Sync & Teilen: Rollen, Lebenszyklus, Invarianten (§6 inkl. R1–R4: Annahme synchron, Server parst nie einen Payload, Registry ist die Ref, Projektionen sind total); bei Widerspruch maßgeblich gegenüber dem Entscheidungsprotokoll
-- `frontend/docs/project-overview.md`
-- `frontend/docs/sync-design-decisions.md`
-- `backend/README.md` (run/sync details)
+- `frontend/docs/sync-sharing-target.md` — Sollzustand Sync & Teilen (Spezifikation, maßgeblich): Rollen, Lebenszyklus, Invarianten §6 inkl. R1–R4, offene Entscheidungen §7
+- `frontend/docs/sync-design-decisions.md` — Entscheidungsprotokoll (rückblickend: „warum ist X so")
+- `frontend/docs/project-overview.md` — Frontend-Architektur & Patterns (Layering, Result, BaseRepository)
+- `frontend/docs/keycloak-login.md` — OIDC/PKCE-Login: Setup, Konfiguration, Debugging
+- `backend/README.md` — Run, Sync-API, List sharing, Releasing
+- `charts/imp-list/README.md` — Helm-Chart: Values, Ingress, Credentials, Limitierungen
