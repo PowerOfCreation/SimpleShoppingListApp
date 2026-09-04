@@ -74,6 +74,24 @@ const config = {
       backgroundColor: "#ffffff",
     },
     package: BUNDLE_ID,
+    // Verified App Link: assetlinks.json for both BUNDLE_ID variants is
+    // hosted at static.ops.light-dev-solutions.de (see docs/.well-known/
+    // at the repo root, served via GitHub Pages). autoVerify lets Android
+    // open the app directly instead of showing a browser/app chooser.
+    intentFilters: [
+      {
+        action: "VIEW",
+        autoVerify: true,
+        data: [
+          {
+            scheme: "https",
+            host: "static.ops.light-dev-solutions.de",
+            pathPrefix: "/invite",
+          },
+        ],
+        category: ["BROWSABLE", "DEFAULT"],
+      },
+    ],
   },
   web: {
     bundler: "metro",
