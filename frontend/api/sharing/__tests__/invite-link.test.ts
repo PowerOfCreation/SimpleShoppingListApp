@@ -11,21 +11,21 @@ describe("buildInviteLink", () => {
     jest.clearAllMocks()
   })
 
-  it("builds a deep link from the app's own scheme", () => {
+  it("builds a verified https App Link when a native scheme is available", () => {
     mockGetRedirectScheme.mockReturnValue("de.lightdevsolutions.sholist.dev")
 
     expect(buildInviteLink("token-1")).toBe(
-      `de.lightdevsolutions.sholist.dev://${INVITE_PATH}?token=token-1`
+      `https://static.ops.light-dev-solutions.de/${INVITE_PATH}?token=token-1`
     )
   })
 
-  // The scheme comes from the running binary, so a dev build never hands out
-  // a link that would open the production app.
-  it("uses whatever scheme the running build reports", () => {
+  // The scheme is only a gate on "is this a native build" - the App Link
+  // itself is the same regardless of which build reports it.
+  it("builds the same App Link regardless of which build's scheme is reported", () => {
     mockGetRedirectScheme.mockReturnValue("de.lightdevsolutions.sholist")
 
-    expect(buildInviteLink("token-1")).toContain(
-      "de.lightdevsolutions.sholist://"
+    expect(buildInviteLink("token-1")).toBe(
+      `https://static.ops.light-dev-solutions.de/${INVITE_PATH}?token=token-1`
     )
   })
 
@@ -33,7 +33,7 @@ describe("buildInviteLink", () => {
     mockGetRedirectScheme.mockReturnValue("app.test")
 
     expect(buildInviteLink("a+b/c=")).toBe(
-      `app.test://${INVITE_PATH}?token=a%2Bb%2Fc%3D`
+      `https://static.ops.light-dev-solutions.de/${INVITE_PATH}?token=a%2Bb%2Fc%3D`
     )
   })
 
