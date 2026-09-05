@@ -37,7 +37,7 @@ const DEFAULT_TTL: InviteTTL = "7d"
  * for its own role yet - GET /todo-lists/:id/membership is still open (§5).
  */
 export default function ShareShoppingList() {
-  const { listId } = useLocalSearchParams<{
+  const { listId, listName } = useLocalSearchParams<{
     listId: string
     listName: string
   }>()
@@ -59,7 +59,7 @@ export default function ShareShoppingList() {
     dismissNewInvite,
     revokeInvite,
     revokingInviteId,
-  } = useListInvites(listId, canManageInvites)
+  } = useListInvites(listId, listName ?? "", canManageInvites)
 
   const backgroundColor = useThemeColor({}, "background")
   const surfaceColor = useThemeColor({}, "surface")

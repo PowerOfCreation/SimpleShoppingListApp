@@ -303,6 +303,11 @@ export class SharingClient {
   /**
    * Creates a multi-use invite link valid for `ttl`.
    *
+   * `listName` is sent because the server holds no list content (it only
+   * relays/stores events, see sync-sharing-target.md R2) and cannot look the
+   * name up itself - it's stored as a snapshot on the invite and echoed back
+   * by preview/redeem, so it can go stale if the list is renamed afterwards.
+   *
    * The token in the response cannot be fetched again later, so a body that
    * doesn't parse is a real (if rare) loss: the invite exists server-side but
    * its link is gone. That surfaces as a "server" error, and the invite shows
@@ -310,12 +315,13 @@ export class SharingClient {
    */
   async createInvite(
     listId: string,
-    ttl: InviteTTL
+    ttl: InviteTTL,
+    listName: string
   ): Promise<Result<CreatedInvite, SharingError>> {
     const responseResult = await this.request({
       url: sharingConfig.listInvitesUrl(listId),
       method: "POST",
-      body: JSON.stringify({ ttl }),
+      body: JSON.stringify({ ttl, list_name: listName }),
       subject: "list",
       networkErrorMessage: "Network error while creating an invite link",
     })

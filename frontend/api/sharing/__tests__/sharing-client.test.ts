@@ -154,7 +154,7 @@ describe("SharingClient", () => {
       )
       const client = new SharingClient(fetchMock)
 
-      const result = await client.createInvite("list-1", "24h")
+      const result = await client.createInvite("list-1", "24h", "Lidl")
 
       expect(result.success).toBe(true)
       expect(result.getValue()).toEqual({
@@ -169,7 +169,10 @@ describe("SharingClient", () => {
       expect(url).toContain("/api/v1/todo-lists/list-1/invites")
       expect(options.method).toBe("POST")
       expect(options.headers["Content-Type"]).toBe("application/json")
-      expect(JSON.parse(options.body)).toEqual({ ttl: "24h" })
+      expect(JSON.parse(options.body)).toEqual({
+        ttl: "24h",
+        list_name: "Lidl",
+      })
     })
 
     // A created invite without a readable token is unusable: the plaintext
@@ -181,7 +184,7 @@ describe("SharingClient", () => {
         .mockResolvedValue(jsonResponse(201, { invite_id: "invite-1" }))
       const client = new SharingClient(fetchMock)
 
-      const result = await client.createInvite("list-1", "24h")
+      const result = await client.createInvite("list-1", "24h", "Lidl")
 
       expect(result.success).toBe(false)
       expect(result.getError().kind).toBe("server")
@@ -191,7 +194,7 @@ describe("SharingClient", () => {
       const fetchMock = jest.fn().mockResolvedValue(jsonResponse(400, {}))
       const client = new SharingClient(fetchMock)
 
-      const result = await client.createInvite("list-1", "24h")
+      const result = await client.createInvite("list-1", "24h", "Lidl")
 
       expect(result.getError().kind).toBe("invalid")
     })
