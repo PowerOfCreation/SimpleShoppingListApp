@@ -30,12 +30,30 @@ type ListInvitesResponse struct {
 	Invites []ListInviteResponse `json:"invites"`
 }
 
-// No list name: the server holds no list content. The client creates the
-// list locally by pulling its log from seq 0 (see sync-sharing-target.md 4.3).
 type RedeemListInviteResponse struct {
 	ListID uuid.UUID `json:"list_id"`
 	Role   string    `json:"role"`
 	// AlreadyMember is true when the caller was already a member before
 	// this redeem - a successful no-op, not an error.
 	AlreadyMember bool `json:"already_member"`
+	// ListName is a client-supplied snapshot from when the invite was
+	// created - it can be stale if the list was renamed since. See
+	// entities.ListInvite.ListName.
+	ListName    string `json:"list_name"`
+	MemberCount int    `json:"member_count"`
+	// InvitedByName/InvitedByPictureURL are null when the inviter's
+	// Keycloak profile didn't carry them at invite-creation time.
+	InvitedByName       *string `json:"invited_by_name"`
+	InvitedByPictureURL *string `json:"invited_by_picture_url"`
+}
+
+// InvitePreviewResponse is the read-only counterpart of
+// RedeemListInviteResponse - same fields, but resolving the token never
+// joins the caller to the list.
+type InvitePreviewResponse struct {
+	ListID              uuid.UUID `json:"list_id"`
+	ListName            string    `json:"list_name"`
+	MemberCount         int       `json:"member_count"`
+	InvitedByName       *string   `json:"invited_by_name"`
+	InvitedByPictureURL *string   `json:"invited_by_picture_url"`
 }

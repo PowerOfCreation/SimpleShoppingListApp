@@ -76,6 +76,17 @@ func (q *Queries) ClaimListOwnership(ctx context.Context, arg ClaimListOwnership
 	return list_id, err
 }
 
+const countListMembers = `-- name: CountListMembers :one
+SELECT COUNT(*) FROM list_members WHERE list_id = $1
+`
+
+func (q *Queries) CountListMembers(ctx context.Context, listID uuid.UUID) (int64, error) {
+	row := q.db.QueryRow(ctx, countListMembers, listID)
+	var count int64
+	err := row.Scan(&count)
+	return count, err
+}
+
 const getAccessibleListIDs = `-- name: GetAccessibleListIDs :many
 SELECT list_id
 FROM list_members
@@ -114,7 +125,7 @@ func (q *Queries) GetAccessibleListIDs(ctx context.Context, arg GetAccessibleLis
 }
 
 const getActiveListInvites = `-- name: GetActiveListInvites :many
-SELECT id, list_id, token_hash, created_by, created_at, expires_at, revoked_at
+SELECT id, list_id, token_hash, created_by, created_at, expires_at, revoked_at, list_name, created_by_name, created_by_picture_url
 FROM list_invites
 WHERE list_id = $1
   AND revoked_at IS NULL
@@ -147,6 +158,9 @@ func (q *Queries) GetActiveListInvites(ctx context.Context, arg GetActiveListInv
 			&i.CreatedAt,
 			&i.ExpiresAt,
 			&i.RevokedAt,
+			&i.ListName,
+			&i.CreatedByName,
+			&i.CreatedByPictureUrl,
 		); err != nil {
 			return nil, err
 		}
@@ -190,7 +204,7 @@ func (q *Queries) GetClaimedListIDs(ctx context.Context, listIds []uuid.UUID) ([
 }
 
 const getListInviteById = `-- name: GetListInviteById :one
-SELECT id, list_id, token_hash, created_by, created_at, expires_at, revoked_at
+SELECT id, list_id, token_hash, created_by, created_at, expires_at, revoked_at, list_name, created_by_name, created_by_picture_url
 FROM list_invites
 WHERE id = $1
 `
@@ -206,12 +220,15 @@ func (q *Queries) GetListInviteById(ctx context.Context, id uuid.UUID) (ListInvi
 		&i.CreatedAt,
 		&i.ExpiresAt,
 		&i.RevokedAt,
+		&i.ListName,
+		&i.CreatedByName,
+		&i.CreatedByPictureUrl,
 	)
 	return i, err
 }
 
 const getListInviteByTokenHash = `-- name: GetListInviteByTokenHash :one
-SELECT id, list_id, token_hash, created_by, created_at, expires_at, revoked_at
+SELECT id, list_id, token_hash, created_by, created_at, expires_at, revoked_at, list_name, created_by_name, created_by_picture_url
 FROM list_invites
 WHERE token_hash = $1
 `
@@ -227,6 +244,9 @@ func (q *Queries) GetListInviteByTokenHash(ctx context.Context, tokenHash string
 		&i.CreatedAt,
 		&i.ExpiresAt,
 		&i.RevokedAt,
+		&i.ListName,
+		&i.CreatedByName,
+		&i.CreatedByPictureUrl,
 	)
 	return i, err
 }
@@ -294,17 +314,20 @@ func (q *Queries) GetListsForUser(ctx context.Context, userID string) ([]ListMem
 }
 
 const insertListInvite = `-- name: InsertListInvite :exec
-INSERT INTO list_invites (id, list_id, token_hash, created_by, created_at, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO list_invites (id, list_id, token_hash, created_by, created_at, expires_at, list_name, created_by_name, created_by_picture_url)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 `
 
 type InsertListInviteParams struct {
-	ID        uuid.UUID          `db:"id" json:"id"`
-	ListID    uuid.UUID          `db:"list_id" json:"list_id"`
-	TokenHash string             `db:"token_hash" json:"token_hash"`
-	CreatedBy string             `db:"created_by" json:"created_by"`
-	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
-	ExpiresAt pgtype.Timestamptz `db:"expires_at" json:"expires_at"`
+	ID                  uuid.UUID          `db:"id" json:"id"`
+	ListID              uuid.UUID          `db:"list_id" json:"list_id"`
+	TokenHash           string             `db:"token_hash" json:"token_hash"`
+	CreatedBy           string             `db:"created_by" json:"created_by"`
+	CreatedAt           pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	ExpiresAt           pgtype.Timestamptz `db:"expires_at" json:"expires_at"`
+	ListName            string             `db:"list_name" json:"list_name"`
+	CreatedByName       pgtype.Text        `db:"created_by_name" json:"created_by_name"`
+	CreatedByPictureUrl pgtype.Text        `db:"created_by_picture_url" json:"created_by_picture_url"`
 }
 
 func (q *Queries) InsertListInvite(ctx context.Context, arg InsertListInviteParams) error {
@@ -315,6 +338,9 @@ func (q *Queries) InsertListInvite(ctx context.Context, arg InsertListInvitePara
 		arg.CreatedBy,
 		arg.CreatedAt,
 		arg.ExpiresAt,
+		arg.ListName,
+		arg.CreatedByName,
+		arg.CreatedByPictureUrl,
 	)
 	return err
 }

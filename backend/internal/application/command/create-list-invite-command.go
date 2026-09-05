@@ -11,6 +11,14 @@ type CreateListInviteCommand struct {
 	// the request body, see sync-design-decisions.md.
 	UserID string
 	TTLKey string
+	// ListName is the client-supplied snapshot of the list's current name -
+	// see entities.ListInvite.ListName.
+	ListName string
+	// CreatedByName and CreatedByPictureURL are the caller's own profile
+	// claims, read from their verified JWT (middleware.UserProfileFromContext)
+	// - never taken from the request body.
+	CreatedByName       string
+	CreatedByPictureURL string
 }
 
 type CreateListInviteCommandResult struct {

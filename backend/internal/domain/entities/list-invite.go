@@ -18,6 +18,17 @@ type ListInvite struct {
 	CreatedAt time.Time
 	ExpiresAt time.Time
 	RevokedAt *time.Time
+	// ListName is a snapshot of the list's name at the moment this invite
+	// was created, handed in by the client - the server is content-blind
+	// and has no other way to know it (sync-sharing-target.md R2). Can go
+	// stale if the list is renamed afterwards; that's an accepted tradeoff
+	// for showing something on the redeem screen at all.
+	ListName string
+	// CreatedByName and CreatedByPictureURL are the inviter's own profile
+	// claims from their JWT at creation time - both empty when Keycloak
+	// doesn't populate them for that user.
+	CreatedByName       string
+	CreatedByPictureURL string
 }
 
 func (i *ListInvite) validate() error {
@@ -39,19 +50,30 @@ func (i *ListInvite) validate() error {
 // NewListInvite creates a new invite for listID and returns both the invite
 // (carrying only the token's hash, safe to persist) and the plaintext token
 // (safe to hand back to createdBy exactly once, never stored).
-func NewListInvite(listID uuid.UUID, createdBy string, ttl InviteTTL, now time.Time) (*ListInvite, InviteToken, error) {
+func NewListInvite(
+	listID uuid.UUID,
+	createdBy string,
+	ttl InviteTTL,
+	now time.Time,
+	listName string,
+	createdByName string,
+	createdByPictureURL string,
+) (*ListInvite, InviteToken, error) {
 	token, err := NewInviteToken()
 	if err != nil {
 		return nil, "", err
 	}
 
 	invite := &ListInvite{
-		ID:        uuid.New(),
-		ListID:    listID,
-		TokenHash: token.Hash(),
-		CreatedBy: createdBy,
-		CreatedAt: now,
-		ExpiresAt: ttl.ExpiresAt(now),
+		ID:                  uuid.New(),
+		ListID:              listID,
+		TokenHash:           token.Hash(),
+		CreatedBy:           createdBy,
+		CreatedAt:           now,
+		ExpiresAt:           ttl.ExpiresAt(now),
+		ListName:            listName,
+		CreatedByName:       createdByName,
+		CreatedByPictureURL: createdByPictureURL,
 	}
 	if err := invite.validate(); err != nil {
 		return nil, "", err

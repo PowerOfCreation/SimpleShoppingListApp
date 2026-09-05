@@ -276,3 +276,24 @@ func TestPassthrough_AlwaysCallsNext(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.True(t, *called)
 }
+
+func TestSanitizePictureURL(t *testing.T) {
+	cases := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"empty", "", ""},
+		{"valid https", "https://example.com/alice.png", "https://example.com/alice.png"},
+		{"plain http is dropped", "http://example.com/alice.png", ""},
+		{"javascript scheme is dropped", "javascript:alert(1)", ""},
+		{"data scheme is dropped", "data:image/png;base64,AAAA", ""},
+		{"schemeless is dropped", "example.com/alice.png", ""},
+		{"unparseable is dropped", "https://[::1", ""},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, sanitizePictureURL(tc.in))
+		})
+	}
+}

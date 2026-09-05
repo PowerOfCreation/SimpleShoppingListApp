@@ -23,12 +23,15 @@ func NewSqlcListInviteRepository(queries *db.Queries) repositories.ListInviteRep
 
 func (r *SqlcListInviteRepository) Create(ctx context.Context, invite *entities.ListInvite) error {
 	return r.queries.InsertListInvite(ctx, db.InsertListInviteParams{
-		ID:        invite.ID,
-		ListID:    invite.ListID,
-		TokenHash: invite.TokenHash,
-		CreatedBy: invite.CreatedBy,
-		CreatedAt: timestamptzFromTime(invite.CreatedAt),
-		ExpiresAt: timestamptzFromTime(invite.ExpiresAt),
+		ID:                  invite.ID,
+		ListID:              invite.ListID,
+		TokenHash:           invite.TokenHash,
+		CreatedBy:           invite.CreatedBy,
+		CreatedAt:           timestamptzFromTime(invite.CreatedAt),
+		ExpiresAt:           timestamptzFromTime(invite.ExpiresAt),
+		ListName:            invite.ListName,
+		CreatedByName:       pgtypeTextFromString(invite.CreatedByName),
+		CreatedByPictureUrl: pgtypeTextFromString(invite.CreatedByPictureURL),
 	})
 }
 
@@ -83,12 +86,15 @@ func (r *SqlcListInviteRepository) Revoke(ctx context.Context, id uuid.UUID, rev
 
 func fromSqlcListInviteRow(row *db.ListInvite) *entities.ListInvite {
 	return &entities.ListInvite{
-		ID:        row.ID,
-		ListID:    row.ListID,
-		TokenHash: row.TokenHash,
-		CreatedBy: row.CreatedBy,
-		CreatedAt: timeFromTimestamptz(row.CreatedAt),
-		ExpiresAt: timeFromTimestamptz(row.ExpiresAt),
-		RevokedAt: timePtrFromTimestamptz(row.RevokedAt),
+		ID:                  row.ID,
+		ListID:              row.ListID,
+		TokenHash:           row.TokenHash,
+		CreatedBy:           row.CreatedBy,
+		CreatedAt:           timeFromTimestamptz(row.CreatedAt),
+		ExpiresAt:           timeFromTimestamptz(row.ExpiresAt),
+		RevokedAt:           timePtrFromTimestamptz(row.RevokedAt),
+		ListName:            row.ListName,
+		CreatedByName:       stringFromPgtypeText(row.CreatedByName),
+		CreatedByPictureURL: stringFromPgtypeText(row.CreatedByPictureUrl),
 	}
 }

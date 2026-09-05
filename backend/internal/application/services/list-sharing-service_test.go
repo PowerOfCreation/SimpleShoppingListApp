@@ -168,6 +168,18 @@ func (f *fakeListMemberRepo) FindListsForUser(ctx context.Context, userID string
 	return result, nil
 }
 
+func (f *fakeListMemberRepo) CountByList(ctx context.Context, listID uuid.UUID) (int, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	count := 0
+	for key := range f.members {
+		if key.listID == listID {
+			count++
+		}
+	}
+	return count, nil
+}
+
 func (f *fakeListMemberRepo) FindClaimedListIDs(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -329,6 +341,28 @@ func TestListSharingService_CreateInvite_OnlyTheTokenHashIsPersisted(t *testing.
 	assert.Equal(t, entities.HashInviteToken(result.Token), stored.TokenHash)
 }
 
+func TestListSharingService_CreateInvite_PersistsListNameAndInviterProfile(t *testing.T) {
+	listID := testListID()
+	svc, invites, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
+
+	result, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{
+		ListID:              listID,
+		UserID:              "alice",
+		TTLKey:              "1h",
+		ListName:            "Groceries",
+		CreatedByName:       "Alice",
+		CreatedByPictureURL: "https://example.com/alice.png",
+	})
+	require.NoError(t, err)
+
+	stored, err := invites.FindByID(context.Background(), result.Result.ID)
+	require.NoError(t, err)
+	assert.Equal(t, "Groceries", stored.ListName)
+	assert.Equal(t, "Alice", stored.CreatedByName)
+	assert.Equal(t, "https://example.com/alice.png", stored.CreatedByPictureURL)
+}
+
 func TestListSharingService_CreateInvite_TwoCallsProduceDifferentTokens(t *testing.T) {
 	listID := testListID()
 	svc, _, members := newSharingTestService(listID)
@@ -356,7 +390,7 @@ func TestListSharingService_FindActiveInvites_ExcludesExpiredAndRevoked(t *testi
 	require.NoError(t, invites.Revoke(context.Background(), toRevoke.Result.ID, time.Now().UTC()))
 
 	// An invite that's already expired.
-	expired, _, err := entities.NewListInvite(listID, "alice", mustTTL(t, "1h"), time.Now().UTC().Add(-2*time.Hour))
+	expired, _, err := entities.NewListInvite(listID, "alice", mustTTL(t, "1h"), time.Now().UTC().Add(-2*time.Hour), "list", "", "")
 	require.NoError(t, err)
 	require.NoError(t, invites.Create(context.Background(), expired))
 
@@ -470,7 +504,14 @@ func TestListSharingService_RedeemInvite_ValidTokenGrantsMembership(t *testing.T
 	svc, _, members := newSharingTestService(listID)
 	seedOwner(t, members, listID, "alice")
 
-	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "1h"})
+	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{
+		ListID:              listID,
+		UserID:              "alice",
+		TTLKey:              "1h",
+		ListName:            "Groceries",
+		CreatedByName:       "Alice",
+		CreatedByPictureURL: "https://example.com/alice.png",
+	})
 	require.NoError(t, err)
 
 	result, err := svc.RedeemInvite(context.Background(), &command.RedeemListInviteCommand{Token: created.Token, UserID: "bob"})
@@ -478,6 +519,11 @@ func TestListSharingService_RedeemInvite_ValidTokenGrantsMembership(t *testing.T
 	assert.Equal(t, listID, result.ListID)
 	assert.Equal(t, entities.RoleMember, result.Role)
 	assert.False(t, result.AlreadyMember)
+	assert.Equal(t, "Groceries", result.ListName)
+	assert.Equal(t, "Alice", result.InvitedByName)
+	assert.Equal(t, "https://example.com/alice.png", result.InvitedByPictureURL)
+	// alice (owner) + bob, who this call just added.
+	assert.Equal(t, 2, result.MemberCount)
 
 	member, err := members.FindByListAndUser(context.Background(), listID, "bob")
 	require.NoError(t, err)
@@ -490,7 +536,7 @@ func TestListSharingService_RedeemInvite_ExpiredTokenIsRejected(t *testing.T) {
 	listID := testListID()
 	svc, invites, _ := newSharingTestService(listID)
 
-	expired, token, err := entities.NewListInvite(listID, "alice", mustTTL(t, "1h"), time.Now().UTC().Add(-2*time.Hour))
+	expired, token, err := entities.NewListInvite(listID, "alice", mustTTL(t, "1h"), time.Now().UTC().Add(-2*time.Hour), "list", "", "")
 	require.NoError(t, err)
 	require.NoError(t, invites.Create(context.Background(), expired))
 
@@ -615,4 +661,68 @@ func TestListSharingService_FindMyLists_UnknownUserReturnsEmptyResult(t *testing
 	result, err := svc.FindMyLists(context.Background(), &query.GetMyListsQuery{UserID: "nobody"})
 	require.NoError(t, err)
 	assert.Empty(t, result.Result)
+}
+
+// --- PreviewInvite ---
+
+func TestListSharingService_PreviewInvite_ReturnsListNameMemberCountAndInviterWithoutJoining(t *testing.T) {
+	listID := testListID()
+	svc, _, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
+
+	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{
+		ListID:              listID,
+		UserID:              "alice",
+		TTLKey:              "1h",
+		ListName:            "Groceries",
+		CreatedByName:       "Alice",
+		CreatedByPictureURL: "https://example.com/alice.png",
+	})
+	require.NoError(t, err)
+
+	result, err := svc.PreviewInvite(context.Background(), &query.PreviewInviteQuery{Token: created.Token})
+	require.NoError(t, err)
+	assert.Equal(t, listID, result.ListID)
+	assert.Equal(t, "Groceries", result.ListName)
+	assert.Equal(t, "Alice", result.InvitedByName)
+	assert.Equal(t, "https://example.com/alice.png", result.InvitedByPictureURL)
+	// Only alice (owner) so far - previewing must not add bob.
+	assert.Equal(t, 1, result.MemberCount)
+
+	member, err := members.FindByListAndUser(context.Background(), listID, "bob")
+	require.NoError(t, err)
+	assert.Nil(t, member)
+}
+
+func TestListSharingService_PreviewInvite_UnknownTokenReturnsNotFound(t *testing.T) {
+	svc, _, _ := newSharingTestService(testListID())
+
+	_, err := svc.PreviewInvite(context.Background(), &query.PreviewInviteQuery{Token: "does-not-exist"})
+	assert.ErrorIs(t, err, interfaces.ErrInviteNotFound)
+}
+
+func TestListSharingService_PreviewInvite_ExpiredTokenIsRejected(t *testing.T) {
+	listID := testListID()
+	svc, invites, _ := newSharingTestService(listID)
+
+	expired, token, err := entities.NewListInvite(listID, "alice", mustTTL(t, "1h"), time.Now().UTC().Add(-2*time.Hour), "list", "", "")
+	require.NoError(t, err)
+	require.NoError(t, invites.Create(context.Background(), expired))
+
+	_, err = svc.PreviewInvite(context.Background(), &query.PreviewInviteQuery{Token: string(token)})
+	assert.ErrorIs(t, err, interfaces.ErrInviteExpired)
+}
+
+func TestListSharingService_PreviewInvite_RevokedTokenIsRejected(t *testing.T) {
+	listID := testListID()
+	svc, _, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
+
+	created, err := svc.CreateInvite(context.Background(), &command.CreateListInviteCommand{ListID: listID, UserID: "alice", TTLKey: "1h"})
+	require.NoError(t, err)
+	_, err = svc.RevokeInvite(context.Background(), &command.RevokeListInviteCommand{InviteID: created.Result.ID, UserID: "alice"})
+	require.NoError(t, err)
+
+	_, err = svc.PreviewInvite(context.Background(), &query.PreviewInviteQuery{Token: created.Token})
+	assert.ErrorIs(t, err, interfaces.ErrInviteRevoked)
 }

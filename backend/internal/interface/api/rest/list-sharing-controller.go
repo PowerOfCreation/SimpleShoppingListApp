@@ -17,6 +17,12 @@ import (
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/rest/dto/response"
 )
 
+// maxInviteListNameBytes bounds the client-supplied list-name snapshot
+// (see entities.ListInvite.ListName). List names are realistically well
+// under this; it exists to stop an invite row (and every future preview/
+// redeem response for it) from growing unbounded.
+const maxInviteListNameBytes = 200
+
 type ListSharingController struct {
 	logger  *slog.Logger
 	service interfaces.ListSharingService
@@ -33,6 +39,7 @@ func NewListSharingController(
 	e.GET("/api/v1/todo-lists/:listId/invites", controller.GetInvites, authMW)
 	e.DELETE("/api/v1/invites/:inviteId", controller.RevokeInvite, authMW)
 	e.POST("/api/v1/invites/redeem", controller.RedeemInvite, authMW)
+	e.POST("/api/v1/invites/preview", controller.PreviewInvite, authMW)
 	e.GET("/api/v1/todo-lists", controller.GetMyLists, authMW)
 	return controller
 }
@@ -56,11 +63,20 @@ func (lsc *ListSharingController) CreateInvite(c echo.Context) error {
 			"error": "Failed to parse request body",
 		})
 	}
+	if len(req.ListName) > maxInviteListNameBytes {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "list_name is too long",
+		})
+	}
 
+	createdByName, createdByPictureURL := middleware.UserProfileFromContext(c)
 	result, err := lsc.service.CreateInvite(c.Request().Context(), &command.CreateListInviteCommand{
-		ListID: listID,
-		UserID: userID,
-		TTLKey: req.TTL,
+		ListID:              listID,
+		UserID:              userID,
+		TTLKey:              req.TTL,
+		ListName:            req.ListName,
+		CreatedByName:       createdByName,
+		CreatedByPictureURL: createdByPictureURL,
 	})
 	if err != nil {
 		return lsc.errorResponse(c, err, "failed to create invite")
@@ -124,20 +140,13 @@ func (lsc *ListSharingController) RedeemInvite(c echo.Context) error {
 		return unauthorized(c)
 	}
 
-	var req request.RedeemListInviteRequest
-	if err := c.Bind(&req); err != nil {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "Failed to parse request body",
-		})
-	}
-	if req.Token == "" {
-		return c.JSON(http.StatusBadRequest, map[string]string{
-			"error": "token must not be empty",
-		})
+	token, err := bindInviteToken(c)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
 	}
 
 	result, err := lsc.service.RedeemInvite(c.Request().Context(), &command.RedeemListInviteCommand{
-		Token:  req.Token,
+		Token:  token,
 		UserID: userID,
 	})
 	if err != nil {
@@ -145,6 +154,46 @@ func (lsc *ListSharingController) RedeemInvite(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, mapper.ToRedeemListInviteResponse(result))
+}
+
+// PreviewInvite resolves a token without joining - authenticated (like every
+// sharing route), but it never touches list_members, so it's safe to call
+// repeatedly (e.g. before showing an "accept invite" screen).
+func (lsc *ListSharingController) PreviewInvite(c echo.Context) error {
+	if _, ok := middleware.UserIDFromContext(c); !ok {
+		return unauthorized(c)
+	}
+
+	token, err := bindInviteToken(c)
+	if err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{"error": err.Error()})
+	}
+
+	result, err := lsc.service.PreviewInvite(c.Request().Context(), &query.PreviewInviteQuery{
+		Token: token,
+	})
+	if err != nil {
+		return lsc.errorResponse(c, err, "failed to preview invite")
+	}
+
+	return c.JSON(http.StatusOK, mapper.ToInvitePreviewResponse(result))
+}
+
+// bindInviteToken parses the {token} body shared by RedeemInvite and
+// PreviewInvite and rejects an empty one - a blank token must not reach the
+// service, where hashing "" and looking it up would surface as
+// ErrInviteNotFound (404), conflating a missing request field with a
+// genuinely unknown invite. Callers turn a non-nil error into a 400 with
+// its message; nothing here writes to the response itself.
+func bindInviteToken(c echo.Context) (string, error) {
+	var req request.RedeemListInviteRequest
+	if err := c.Bind(&req); err != nil {
+		return "", errors.New("Failed to parse request body")
+	}
+	if req.Token == "" {
+		return "", errors.New("token must not be empty")
+	}
+	return req.Token, nil
 }
 
 func (lsc *ListSharingController) GetMyLists(c echo.Context) error {

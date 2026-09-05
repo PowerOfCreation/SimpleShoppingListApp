@@ -73,7 +73,10 @@ func (s *ListSharingService) CreateInvite(ctx context.Context, cmd *command.Crea
 	}
 
 	now := time.Now().UTC()
-	invite, token, err := entities.NewListInvite(cmd.ListID, cmd.UserID, ttl, now)
+	invite, token, err := entities.NewListInvite(
+		cmd.ListID, cmd.UserID, ttl, now,
+		cmd.ListName, cmd.CreatedByName, cmd.CreatedByPictureURL,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -164,10 +167,18 @@ func (s *ListSharingService) RedeemInvite(ctx context.Context, cmd *command.Rede
 	if existing, err := s.members.FindByListAndUser(ctx, invite.ListID, cmd.UserID); err != nil {
 		return nil, err
 	} else if existing != nil {
+		memberCount, err := s.members.CountByList(ctx, invite.ListID)
+		if err != nil {
+			return nil, err
+		}
 		return &command.RedeemListInviteCommandResult{
-			ListID:        invite.ListID,
-			Role:          existing.Role,
-			AlreadyMember: true,
+			ListID:              invite.ListID,
+			Role:                existing.Role,
+			AlreadyMember:       true,
+			ListName:            invite.ListName,
+			MemberCount:         memberCount,
+			InvitedByName:       invite.CreatedByName,
+			InvitedByPictureURL: invite.CreatedByPictureURL,
 		}, nil
 	}
 
@@ -188,10 +199,59 @@ func (s *ListSharingService) RedeemInvite(ctx context.Context, cmd *command.Rede
 		return nil, err
 	}
 
+	// Counted after Add, not derived as "count before + 1": ListInvite is
+	// multi-use, so two callers can redeem the same token concurrently -
+	// counting post-write reflects whatever actually landed instead of an
+	// assumption that only this call changed membership.
+	memberCount, err := s.members.CountByList(ctx, invite.ListID)
+	if err != nil {
+		return nil, err
+	}
+
 	return &command.RedeemListInviteCommandResult{
-		ListID:        invite.ListID,
-		Role:          entities.RoleMember,
-		AlreadyMember: false,
+		ListID:              invite.ListID,
+		Role:                entities.RoleMember,
+		AlreadyMember:       false,
+		ListName:            invite.ListName,
+		MemberCount:         memberCount,
+		InvitedByName:       invite.CreatedByName,
+		InvitedByPictureURL: invite.CreatedByPictureURL,
+	}, nil
+}
+
+// PreviewInvite looks an invite up by token without joining - no row is
+// written to list_members, unlike RedeemInvite. Applies the same
+// existence/expiry/revoked checks as RedeemInvite so a dead link reports
+// the same errors either way.
+func (s *ListSharingService) PreviewInvite(ctx context.Context, qry *query.PreviewInviteQuery) (*query.PreviewInviteQueryResult, error) {
+	invite, err := s.invites.FindByTokenHash(ctx, entities.HashInviteToken(qry.Token))
+	if err != nil {
+		return nil, err
+	}
+	if invite == nil {
+		return nil, interfaces.ErrInviteNotFound
+	}
+	if err := s.requireList(ctx, invite.ListID); err != nil {
+		return nil, err
+	}
+	if invite.RevokedAt != nil {
+		return nil, interfaces.ErrInviteRevoked
+	}
+	if !invite.ExpiresAt.After(time.Now().UTC()) {
+		return nil, interfaces.ErrInviteExpired
+	}
+
+	memberCount, err := s.members.CountByList(ctx, invite.ListID)
+	if err != nil {
+		return nil, err
+	}
+
+	return &query.PreviewInviteQueryResult{
+		ListID:              invite.ListID,
+		ListName:            invite.ListName,
+		MemberCount:         memberCount,
+		InvitedByName:       invite.CreatedByName,
+		InvitedByPictureURL: invite.CreatedByPictureURL,
 	}, nil
 }
 

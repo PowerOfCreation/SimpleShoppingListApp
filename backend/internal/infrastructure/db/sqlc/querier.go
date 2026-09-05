@@ -28,6 +28,7 @@ type Querier interface {
 	// registry row is therefore not representable - which is what makes the
 	// foreign key added in 00008 truthful rather than aspirational.
 	ClaimListOwnership(ctx context.Context, arg ClaimListOwnershipParams) (uuid.UUID, error)
+	CountListMembers(ctx context.Context, listID uuid.UUID) (int64, error)
 	// Which of the given list ids the caller is a member (owner or member) of -
 	// the filter behind every read path (ListAccessService.FilterAccessible).
 	// Deliberately returns a subset rather than erroring on a list the caller
