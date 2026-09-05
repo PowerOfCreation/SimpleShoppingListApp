@@ -111,3 +111,14 @@ WHERE list_id = ANY(sqlc.arg(list_ids)::uuid[]);
 SELECT list_id
 FROM list_members
 WHERE list_id = ANY(sqlc.arg(list_ids)::uuid[]) AND user_id = sqlc.arg(user_id);
+
+-- name: GetListsForUser :many
+-- Every list the caller owns or is a member of - the discovery endpoint
+-- behind "restore my lists after reinstall" (sync-sharing-target.md §7.1/§8).
+-- Self-scoped by the caller's own verified user_id, so unlike
+-- GetAccessibleListIDs this needs no candidate list_ids and raises no
+-- enumeration concern.
+SELECT list_id, user_id, role, joined_at, invite_id
+FROM list_members
+WHERE user_id = sqlc.arg(user_id)
+ORDER BY joined_at;

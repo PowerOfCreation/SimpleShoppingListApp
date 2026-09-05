@@ -362,3 +362,47 @@ func TestSqlcListMemberRepository_ClaimOwnershipIfUnowned_LoserOfADeterministicR
 	require.NoError(t, err)
 	require.NotNil(t, owner, "the committed claim (user-a) must be the one that stuck")
 }
+
+func TestSqlcListMemberRepository_FindListsForUser_ReturnsEveryListRegardlessOfRole(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
+	ctx := context.Background()
+
+	owned := registerTestList(t, testDB)
+	joined := registerTestList(t, testDB)
+	unrelated := registerTestList(t, testDB)
+
+	_, err := repo.ClaimOwnershipIfUnowned(ctx, owned, "alice", time.Now().UTC())
+	require.NoError(t, err)
+	_, err = repo.ClaimOwnershipIfUnowned(ctx, joined, "mallory", time.Now().UTC())
+	require.NoError(t, err)
+	member, err := entities.NewListMember(joined, "alice", entities.RoleMember, time.Now().UTC().Truncate(time.Millisecond), nil)
+	require.NoError(t, err)
+	require.NoError(t, repo.Add(ctx, member))
+	_, err = repo.ClaimOwnershipIfUnowned(ctx, unrelated, "mallory", time.Now().UTC())
+	require.NoError(t, err)
+
+	lists, err := repo.FindListsForUser(ctx, "alice")
+
+	require.NoError(t, err)
+	require.Len(t, lists, 2)
+	byListID := make(map[uuid.UUID]entities.ListMemberRole, len(lists))
+	for _, m := range lists {
+		byListID[m.ListID] = m.Role
+	}
+	assert.Equal(t, entities.RoleOwner, byListID[owned])
+	assert.Equal(t, entities.RoleMember, byListID[joined])
+	assert.NotContains(t, byListID, unrelated)
+}
+
+func TestSqlcListMemberRepository_FindListsForUser_UnknownUserReturnsEmpty(t *testing.T) {
+	testDB := testhelpers.SetupTestDB(t)
+	defer testDB.Close(t)
+	repo := NewSqlcListMemberRepository(NewQueries(testDB.Conn))
+
+	lists, err := repo.FindListsForUser(context.Background(), "nobody")
+
+	require.NoError(t, err)
+	assert.Empty(t, lists)
+}

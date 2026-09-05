@@ -9,6 +9,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/command"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/common"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/interfaces"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/mapper"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/query"
@@ -192,4 +193,25 @@ func (s *ListSharingService) RedeemInvite(ctx context.Context, cmd *command.Rede
 		Role:          entities.RoleMember,
 		AlreadyMember: false,
 	}, nil
+}
+
+// FindMyLists is self-scoped by the caller's own verified UserID, unlike
+// every other method here - there is no listID to check requireList/
+// RequireOwner against, and none is needed: a user is always allowed to
+// know their own memberships.
+func (s *ListSharingService) FindMyLists(ctx context.Context, qry *query.GetMyListsQuery) (*query.GetMyListsQueryResult, error) {
+	members, err := s.members.FindListsForUser(ctx, qry.UserID)
+	if err != nil {
+		return nil, err
+	}
+
+	result := &query.GetMyListsQueryResult{}
+	for _, member := range members {
+		result.Result = append(result.Result, &common.ListMembershipResult{
+			ListID:   member.ListID,
+			Role:     string(member.Role),
+			JoinedAt: member.JoinedAt,
+		})
+	}
+	return result, nil
 }

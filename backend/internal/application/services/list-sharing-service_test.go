@@ -155,6 +155,19 @@ func (f *fakeListMemberRepo) FindAccessibleListIDs(ctx context.Context, userID s
 	return accessible, nil
 }
 
+func (f *fakeListMemberRepo) FindListsForUser(ctx context.Context, userID string) ([]*entities.ListMember, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	var result []*entities.ListMember
+	for key, member := range f.members {
+		if key.userID == userID {
+			stored := *member
+			result = append(result, &stored)
+		}
+	}
+	return result, nil
+}
+
 func (f *fakeListMemberRepo) FindClaimedListIDs(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
@@ -572,4 +585,34 @@ func TestListSharingService_RedeemInvite_RevokingAnInviteDoesNotRemoveExistingMe
 	member, err := members.FindByListAndUser(context.Background(), listID, "bob")
 	require.NoError(t, err)
 	assert.NotNil(t, member)
+}
+
+func TestListSharingService_FindMyLists_ReturnsEveryListTheCallerBelongsTo(t *testing.T) {
+	listID := testListID()
+	otherListID := testListID()
+	svc, _, members := newSharingTestService(listID)
+	seedOwner(t, members, listID, "alice")
+	seedOwner(t, members, otherListID, "bob")
+	aliceOnOtherList, err := entities.NewListMember(otherListID, "alice", entities.RoleMember, time.Now().UTC(), nil)
+	require.NoError(t, err)
+	require.NoError(t, members.Add(context.Background(), aliceOnOtherList))
+
+	result, err := svc.FindMyLists(context.Background(), &query.GetMyListsQuery{UserID: "alice"})
+	require.NoError(t, err)
+	require.Len(t, result.Result, 2)
+
+	byListID := make(map[uuid.UUID]string, len(result.Result))
+	for _, membership := range result.Result {
+		byListID[membership.ListID] = membership.Role
+	}
+	assert.Equal(t, string(entities.RoleOwner), byListID[listID])
+	assert.Equal(t, string(entities.RoleMember), byListID[otherListID])
+}
+
+func TestListSharingService_FindMyLists_UnknownUserReturnsEmptyResult(t *testing.T) {
+	svc, _, _ := newSharingTestService(testListID())
+
+	result, err := svc.FindMyLists(context.Background(), &query.GetMyListsQuery{UserID: "nobody"})
+	require.NoError(t, err)
+	assert.Empty(t, result.Result)
 }

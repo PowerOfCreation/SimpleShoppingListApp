@@ -4,8 +4,12 @@ import { ListSyncSettingsRepository } from "@/database/list-sync-settings-reposi
 import { SyncEngine } from "@/api/sync/sync-engine"
 import { SyncSocket } from "@/api/sync/sync-socket"
 import { onOutboxChanged } from "@/api/sync/outbox-events"
-import { onSyncListsChanged } from "@/api/sync/sync-events"
+import {
+  onSyncListsChanged,
+  notifySyncListsChanged,
+} from "@/api/sync/sync-events"
 import { createLogger } from "@/api/common/logger"
+import { SharingClient } from "@/api/sharing/sharing-client"
 
 const logger = createLogger("SyncCoordinator")
 
@@ -45,7 +49,8 @@ export class SyncCoordinator {
 
   constructor(
     private readonly engine: SyncEngine,
-    private readonly listSyncSettingsRepository: ListSyncSettingsRepository
+    private readonly listSyncSettingsRepository: ListSyncSettingsRepository,
+    private readonly sharingClient: Pick<SharingClient, "listMyLists">
   ) {
     this.socket = new SyncSocket(
       () => {
@@ -117,6 +122,66 @@ export class SyncCoordinator {
     await this.reconcileNow()
   }
 
+  /**
+   * Restores this account's lists after a reinstall/re-login: asks the
+   * server which lists this account owns or is a member of and enables
+   * device-local sync for any this device doesn't already know about. Reuses
+   * exactly the bootstrap useRedeemInvite does for a single redeemed invite
+   * (setEnabled + notifySyncListsChanged, which the onSyncListsChanged
+   * handler wired in start() turns into a re-subscribe + re-pull) - just
+   * discovering many list ids from the account instead of one from a token.
+   *
+   * Diffs against getKnownIds(), not getEnabledIds(): a list the user
+   * explicitly turned sync off for still has a (disabled) row and must stay
+   * off - only a list with no local row at all is "new" here. Diffing
+   * against getEnabledIds() would silently flip that user choice back on
+   * every time this runs, since the server still lists the account as a
+   * member regardless of this device's local setting.
+   */
+  private async discoverLists(): Promise<void> {
+    const myListsResult = await this.sharingClient.listMyLists()
+    if (!myListsResult.success) {
+      logger.warn(
+        "Discover: failed to fetch my lists",
+        myListsResult.getError()
+      )
+      return
+    }
+
+    const knownIdsResult = await this.listSyncSettingsRepository.getKnownIds()
+    if (!knownIdsResult.success) {
+      logger.error(
+        "Discover: failed to load known list ids",
+        knownIdsResult.getError()
+      )
+      return
+    }
+    const knownIds = new Set(knownIdsResult.getValue()!)
+
+    let discoveredNew = false
+    for (const { listId } of myListsResult.getValue()!) {
+      if (knownIds.has(listId)) {
+        continue
+      }
+      const enableResult = await this.listSyncSettingsRepository.setEnabled(
+        listId,
+        true
+      )
+      if (!enableResult.success) {
+        logger.error(
+          `Discover: could not enable sync for list ${listId}`,
+          enableResult.getError()
+        )
+        continue
+      }
+      discoveredNew = true
+    }
+
+    if (discoveredNew) {
+      notifySyncListsChanged()
+    }
+  }
+
   private async subscribeNow(): Promise<void> {
     const idsResult = await this.listSyncSettingsRepository.getEnabledIds()
     if (!idsResult.success) {
@@ -161,6 +226,14 @@ export class SyncCoordinator {
       .finally(() => this.flush())
     this.socket.connect().catch((error) => {
       logger.error("Failed to connect sync socket", error)
+    })
+
+    // Fire-and-forget, same as the calls above - its notifySyncListsChanged()
+    // (if it finds anything new) can only resolve after the onSyncListsChanged
+    // listener below is registered, since everything up to that point in
+    // start() runs synchronously before this promise's first await settles.
+    this.discoverLists().catch((error) => {
+      logger.error("Discover on mount failed", error)
     })
 
     this.unsubscribeOutbox = onOutboxChanged(() => this.flush())

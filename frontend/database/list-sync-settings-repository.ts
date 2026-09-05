@@ -30,6 +30,25 @@ export class ListSyncSettingsRepository extends BaseRepository {
     }, "getEnabledIds")
   }
 
+  /**
+   * Ids of every list this device has a row for, enabled or not - "has this
+   * device ever made a sync decision about this list", as opposed to
+   * getEnabledIds()'s "is it on right now". Distinct on purpose: a list the
+   * user explicitly turned sync off for (setEnabled(id, false)) keeps its
+   * row here so a later discovery pass (SyncCoordinator.discoverLists) can
+   * tell "known, deliberately off" apart from "never seen" and only enable
+   * the latter - the same row is why a disabled list is invisible to
+   * getEnabledIds() without this being ambiguous.
+   */
+  async getKnownIds(): Promise<Result<string[], DbQueryError>> {
+    return this._executeQuery(async () => {
+      const result = await this.db.getAllAsync<{ list_id: string }>(
+        `SELECT list_id FROM list_sync_settings`
+      )
+      return result.map((row) => row.list_id)
+    }, "getKnownIds")
+  }
+
   async isEnabled(listId: string): Promise<Result<boolean, DbQueryError>> {
     return this._executeQuery(async () => {
       const row = await this.db.getFirstAsync<{ enabled: number }>(

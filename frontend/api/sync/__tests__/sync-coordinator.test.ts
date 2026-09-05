@@ -5,6 +5,7 @@ import { SyncEngine } from "@/api/sync/sync-engine"
 import { SyncSocket } from "@/api/sync/sync-socket"
 import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
 import { Result } from "@/api/common/result"
+import { SharingError } from "@/api/common/error-types"
 import { notifyOutboxChanged } from "@/api/sync/outbox-events"
 import { notifySyncListsChanged } from "@/api/sync/sync-events"
 import { flushMicrotasks } from "../test-helpers"
@@ -33,6 +34,10 @@ describe("SyncCoordinator", () => {
   let listEventHandler: ((listId: string, seq: number) => void) | undefined
   let appStateRemoveMock: jest.Mock
   let coordinators: SyncCoordinator[]
+  let listMyListsMock: jest.Mock
+  let setEnabledMock: jest.Mock
+  let getEnabledIdsMock: jest.Mock
+  let getKnownIdsMock: jest.Mock
 
   function buildCoordinator(): SyncCoordinator {
     const coordinator = new SyncCoordinator(
@@ -44,7 +49,8 @@ describe("SyncCoordinator", () => {
         {} as never,
         {} as never
       ),
-      new MockListSyncSettingsRepository({} as never)
+      new MockListSyncSettingsRepository({} as never),
+      { listMyLists: listMyListsMock }
     )
     coordinators.push(coordinator)
     return coordinator
@@ -96,12 +102,20 @@ describe("SyncCoordinator", () => {
       } as unknown as SyncSocket
     })
 
+    listMyListsMock = jest.fn().mockResolvedValue(Result.ok([]))
+    setEnabledMock = jest.fn().mockResolvedValue(Result.ok(undefined))
+    getEnabledIdsMock = jest
+      .fn()
+      .mockResolvedValue(Result.ok(["list-1", "list-2"]))
+    getKnownIdsMock = jest
+      .fn()
+      .mockResolvedValue(Result.ok(["list-1", "list-2"]))
     MockListSyncSettingsRepository.mockImplementation(
       () =>
         ({
-          getEnabledIds: jest
-            .fn()
-            .mockResolvedValue(Result.ok(["list-1", "list-2"])),
+          getEnabledIds: getEnabledIdsMock,
+          getKnownIds: getKnownIdsMock,
+          setEnabled: setEnabledMock,
         }) as unknown as ListSyncSettingsRepository
     )
   })
@@ -197,6 +211,67 @@ describe("SyncCoordinator", () => {
 
     expect(socketSubscribeMock).toHaveBeenCalledWith(["list-1", "list-2"])
     expect(pullMock).toHaveBeenCalledWith(["list-1", "list-2"])
+  })
+
+  it("on start(), enables sync for lists the server reports but this device doesn't know yet, then re-subscribes and re-pulls", async () => {
+    listMyListsMock.mockResolvedValue(
+      Result.ok([
+        { listId: "list-1", role: "owner" },
+        { listId: "list-3", role: "member" },
+      ])
+    )
+    socketSubscribeMock.mockClear()
+
+    buildCoordinator().start()
+    await flushMicrotasks()
+
+    // list-1 already has a local row (getKnownIds) - only the unknown
+    // list-3 is new.
+    expect(setEnabledMock).toHaveBeenCalledTimes(1)
+    expect(setEnabledMock).toHaveBeenCalledWith("list-3", true)
+    // notifySyncListsChanged() re-reads getEnabledIds(), still mocked to
+    // return list-1/list-2 - discoverLists doesn't change what that mock
+    // returns, it only proves the follow-up subscribe/pull fired.
+    expect(socketSubscribeMock).toHaveBeenCalledWith(["list-1", "list-2"])
+  })
+
+  it("on start(), does nothing further when the server reports no lists this device doesn't already have", async () => {
+    listMyListsMock.mockResolvedValue(
+      Result.ok([{ listId: "list-1", role: "owner" }])
+    )
+
+    buildCoordinator().start()
+    await flushMicrotasks()
+
+    expect(setEnabledMock).not.toHaveBeenCalled()
+  })
+
+  it("on start(), does not re-enable a list the user explicitly turned sync off for", async () => {
+    // list-1 has a local row (enabled=0, e.g. the user toggled sync off) -
+    // getEnabledIds() no longer reports it, but getKnownIds() still does,
+    // since the row itself wasn't removed.
+    getEnabledIdsMock.mockResolvedValue(Result.ok(["list-2"]))
+    getKnownIdsMock.mockResolvedValue(Result.ok(["list-1", "list-2"]))
+    listMyListsMock.mockResolvedValue(
+      Result.ok([{ listId: "list-1", role: "owner" }])
+    )
+
+    buildCoordinator().start()
+    await flushMicrotasks()
+
+    expect(setEnabledMock).not.toHaveBeenCalled()
+  })
+
+  it("on start(), logs and continues when fetching my lists fails", async () => {
+    listMyListsMock.mockResolvedValue(
+      Result.fail(new SharingError("network error", "network"))
+    )
+
+    const coordinator = buildCoordinator()
+    expect(() => coordinator.start()).not.toThrow()
+    await flushMicrotasks()
+
+    expect(setEnabledMock).not.toHaveBeenCalled()
   })
 
   it("flushes, pulls, reconciles, and reconnects when the app comes to the foreground", async () => {

@@ -45,6 +45,7 @@ type stubListSharingService struct {
 	findInvites  func(ctx context.Context, qry *query.GetListInvitesQuery) (*query.GetListInvitesQueryResult, error)
 	revokeInvite func(ctx context.Context, cmd *command.RevokeListInviteCommand) (*command.RevokeListInviteCommandResult, error)
 	redeemInvite func(ctx context.Context, cmd *command.RedeemListInviteCommand) (*command.RedeemListInviteCommandResult, error)
+	findMyLists  func(ctx context.Context, qry *query.GetMyListsQuery) (*query.GetMyListsQueryResult, error)
 }
 
 func (s *stubListSharingService) CreateInvite(ctx context.Context, cmd *command.CreateListInviteCommand) (*command.CreateListInviteCommandResult, error) {
@@ -73,6 +74,13 @@ func (s *stubListSharingService) RedeemInvite(ctx context.Context, cmd *command.
 		panic("RedeemInvite not used by this test")
 	}
 	return s.redeemInvite(ctx, cmd)
+}
+
+func (s *stubListSharingService) FindMyLists(ctx context.Context, qry *query.GetMyListsQuery) (*query.GetMyListsQueryResult, error) {
+	if s.findMyLists == nil {
+		panic("FindMyLists not used by this test")
+	}
+	return s.findMyLists(ctx, qry)
 }
 
 func TestListSharingController_CreateInvite_ReturnsTokenAndUsesContextUserID(t *testing.T) {
@@ -468,4 +476,58 @@ func TestListSharingController_RedeemInvite_ErrorMapping(t *testing.T) {
 			assert.Equal(t, tc.wantStatus, rec.Code)
 		})
 	}
+}
+
+func TestListSharingController_GetMyLists_ReturnsMembershipsForContextUserID(t *testing.T) {
+	listID := uuid.New()
+	now := time.Now().UTC()
+	service := &stubListSharingService{
+		findMyLists: func(ctx context.Context, qry *query.GetMyListsQuery) (*query.GetMyListsQueryResult, error) {
+			assert.Equal(t, "user-1", qry.UserID)
+			return &query.GetMyListsQueryResult{Result: []*common.ListMembershipResult{
+				{ListID: listID, Role: "owner", JoinedAt: now},
+			}}, nil
+		},
+	}
+	e := echo.New()
+	NewListSharingController(e, testLogger(), service, withUserID("user-1"))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/todo-lists", nil)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t, fmt.Sprintf(`{"lists":[{"list_id":"%s","role":"owner"}]}`, listID), rec.Body.String())
+}
+
+func TestListSharingController_GetMyLists_ReturnsEmptyListAsArray(t *testing.T) {
+	service := &stubListSharingService{
+		findMyLists: func(ctx context.Context, qry *query.GetMyListsQuery) (*query.GetMyListsQueryResult, error) {
+			return &query.GetMyListsQueryResult{Result: nil}, nil
+		},
+	}
+	e := echo.New()
+	NewListSharingController(e, testLogger(), service, withUserID("user-1"))
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/todo-lists", nil)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t, `{"lists":[]}`, rec.Body.String())
+}
+
+func TestListSharingController_GetMyLists_MissingUserIDReturns401(t *testing.T) {
+	service := &stubListSharingService{}
+	e := echo.New()
+	NewListSharingController(e, testLogger(), service, middleware.Passthrough)
+
+	req := httptest.NewRequest(http.MethodGet, "/api/v1/todo-lists", nil)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
 }
