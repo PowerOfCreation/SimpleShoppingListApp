@@ -104,11 +104,6 @@ export default function Invite() {
 
     return (
       <View style={styles.joinRow}>
-        <PrimaryButton
-          testID="invite-join"
-          label="Join list"
-          onPress={() => redeem(token)}
-        />
         <Pressable
           testID="invite-decline"
           onPress={() => router.replace("/(home)")}
@@ -119,6 +114,11 @@ export default function Invite() {
             Not now
           </ThemedText>
         </Pressable>
+        <PrimaryButton
+          testID="invite-join"
+          label="Join list"
+          onPress={() => redeem(token)}
+        />
       </View>
     )
   }
