@@ -1,14 +1,14 @@
 -- name: InsertListInvite :exec
-INSERT INTO list_invites (id, list_id, token_hash, created_by, created_at, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6);
+INSERT INTO list_invites (id, list_id, token_hash, created_by, created_at, expires_at, list_name, created_by_name, created_by_picture_url)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9);
 
 -- name: GetListInviteById :one
-SELECT id, list_id, token_hash, created_by, created_at, expires_at, revoked_at
+SELECT id, list_id, token_hash, created_by, created_at, expires_at, revoked_at, list_name, created_by_name, created_by_picture_url
 FROM list_invites
 WHERE id = $1;
 
 -- name: GetListInviteByTokenHash :one
-SELECT id, list_id, token_hash, created_by, created_at, expires_at, revoked_at
+SELECT id, list_id, token_hash, created_by, created_at, expires_at, revoked_at, list_name, created_by_name, created_by_picture_url
 FROM list_invites
 WHERE token_hash = $1;
 
@@ -16,7 +16,7 @@ WHERE token_hash = $1;
 -- An invite is active if it hasn't been revoked and hasn't expired as of
 -- sqlc.arg(now) - the caller passes the current time rather than this query
 -- using NOW() so results are reproducible in tests.
-SELECT id, list_id, token_hash, created_by, created_at, expires_at, revoked_at
+SELECT id, list_id, token_hash, created_by, created_at, expires_at, revoked_at, list_name, created_by_name, created_by_picture_url
 FROM list_invites
 WHERE list_id = sqlc.arg(list_id)
   AND revoked_at IS NULL
@@ -90,6 +90,9 @@ ON CONFLICT (list_id, user_id) DO NOTHING;
 SELECT list_id, user_id, role, joined_at, invite_id
 FROM list_members
 WHERE list_id = $1 AND user_id = $2;
+
+-- name: CountListMembers :one
+SELECT COUNT(*) FROM list_members WHERE list_id = $1;
 
 -- name: GetClaimedListIDs :many
 -- Which of the given list ids already have at least one member, regardless

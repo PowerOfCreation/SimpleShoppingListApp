@@ -18,4 +18,13 @@ type RedeemListInviteCommandResult struct {
 	// AlreadyMember is true when the caller was already a member of the
 	// list before this redeem - a successful no-op, not an error.
 	AlreadyMember bool
+	// ListName, MemberCount, InvitedByName, InvitedByPictureURL mirror
+	// PreviewInviteQueryResult - see there for what each means. Included
+	// here too so a client that only ever calls redeem (the current
+	// auto-join flow) doesn't need a second round trip to show the same
+	// invite info.
+	ListName            string
+	MemberCount         int
+	InvitedByName       string
+	InvitedByPictureURL string
 }

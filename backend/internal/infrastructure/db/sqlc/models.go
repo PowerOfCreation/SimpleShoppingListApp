@@ -24,13 +24,16 @@ type Event struct {
 }
 
 type ListInvite struct {
-	ID        uuid.UUID          `db:"id" json:"id"`
-	ListID    uuid.UUID          `db:"list_id" json:"list_id"`
-	TokenHash string             `db:"token_hash" json:"token_hash"`
-	CreatedBy string             `db:"created_by" json:"created_by"`
-	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
-	ExpiresAt pgtype.Timestamptz `db:"expires_at" json:"expires_at"`
-	RevokedAt pgtype.Timestamptz `db:"revoked_at" json:"revoked_at"`
+	ID                  uuid.UUID          `db:"id" json:"id"`
+	ListID              uuid.UUID          `db:"list_id" json:"list_id"`
+	TokenHash           string             `db:"token_hash" json:"token_hash"`
+	CreatedBy           string             `db:"created_by" json:"created_by"`
+	CreatedAt           pgtype.Timestamptz `db:"created_at" json:"created_at"`
+	ExpiresAt           pgtype.Timestamptz `db:"expires_at" json:"expires_at"`
+	RevokedAt           pgtype.Timestamptz `db:"revoked_at" json:"revoked_at"`
+	ListName            string             `db:"list_name" json:"list_name"`
+	CreatedByName       pgtype.Text        `db:"created_by_name" json:"created_by_name"`
+	CreatedByPictureUrl pgtype.Text        `db:"created_by_picture_url" json:"created_by_picture_url"`
 }
 
 type ListMember struct {

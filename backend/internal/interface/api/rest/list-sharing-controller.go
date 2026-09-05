@@ -33,6 +33,7 @@ func NewListSharingController(
 	e.GET("/api/v1/todo-lists/:listId/invites", controller.GetInvites, authMW)
 	e.DELETE("/api/v1/invites/:inviteId", controller.RevokeInvite, authMW)
 	e.POST("/api/v1/invites/redeem", controller.RedeemInvite, authMW)
+	e.POST("/api/v1/invites/preview", controller.PreviewInvite, authMW)
 	e.GET("/api/v1/todo-lists", controller.GetMyLists, authMW)
 	return controller
 }
@@ -57,10 +58,14 @@ func (lsc *ListSharingController) CreateInvite(c echo.Context) error {
 		})
 	}
 
+	createdByName, createdByPictureURL := middleware.UserProfileFromContext(c)
 	result, err := lsc.service.CreateInvite(c.Request().Context(), &command.CreateListInviteCommand{
-		ListID: listID,
-		UserID: userID,
-		TTLKey: req.TTL,
+		ListID:              listID,
+		UserID:              userID,
+		TTLKey:              req.TTL,
+		ListName:            req.ListName,
+		CreatedByName:       createdByName,
+		CreatedByPictureURL: createdByPictureURL,
 	})
 	if err != nil {
 		return lsc.errorResponse(c, err, "failed to create invite")
@@ -145,6 +150,36 @@ func (lsc *ListSharingController) RedeemInvite(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, mapper.ToRedeemListInviteResponse(result))
+}
+
+// PreviewInvite resolves a token without joining - authenticated (like every
+// sharing route), but it never touches list_members, so it's safe to call
+// repeatedly (e.g. before showing an "accept invite" screen).
+func (lsc *ListSharingController) PreviewInvite(c echo.Context) error {
+	if _, ok := middleware.UserIDFromContext(c); !ok {
+		return unauthorized(c)
+	}
+
+	var req request.RedeemListInviteRequest
+	if err := c.Bind(&req); err != nil {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "Failed to parse request body",
+		})
+	}
+	if req.Token == "" {
+		return c.JSON(http.StatusBadRequest, map[string]string{
+			"error": "token must not be empty",
+		})
+	}
+
+	result, err := lsc.service.PreviewInvite(c.Request().Context(), &query.PreviewInviteQuery{
+		Token: req.Token,
+	})
+	if err != nil {
+		return lsc.errorResponse(c, err, "failed to preview invite")
+	}
+
+	return c.JSON(http.StatusOK, mapper.ToInvitePreviewResponse(result))
 }
 
 func (lsc *ListSharingController) GetMyLists(c echo.Context) error {

@@ -41,11 +41,12 @@ func withUserID(userID string) echo.MiddlewareFunc {
 // other method panics so an unexpected call fails loudly instead of
 // returning a misleading zero value.
 type stubListSharingService struct {
-	createInvite func(ctx context.Context, cmd *command.CreateListInviteCommand) (*command.CreateListInviteCommandResult, error)
-	findInvites  func(ctx context.Context, qry *query.GetListInvitesQuery) (*query.GetListInvitesQueryResult, error)
-	revokeInvite func(ctx context.Context, cmd *command.RevokeListInviteCommand) (*command.RevokeListInviteCommandResult, error)
-	redeemInvite func(ctx context.Context, cmd *command.RedeemListInviteCommand) (*command.RedeemListInviteCommandResult, error)
-	findMyLists  func(ctx context.Context, qry *query.GetMyListsQuery) (*query.GetMyListsQueryResult, error)
+	createInvite  func(ctx context.Context, cmd *command.CreateListInviteCommand) (*command.CreateListInviteCommandResult, error)
+	findInvites   func(ctx context.Context, qry *query.GetListInvitesQuery) (*query.GetListInvitesQueryResult, error)
+	revokeInvite  func(ctx context.Context, cmd *command.RevokeListInviteCommand) (*command.RevokeListInviteCommandResult, error)
+	redeemInvite  func(ctx context.Context, cmd *command.RedeemListInviteCommand) (*command.RedeemListInviteCommandResult, error)
+	previewInvite func(ctx context.Context, qry *query.PreviewInviteQuery) (*query.PreviewInviteQueryResult, error)
+	findMyLists   func(ctx context.Context, qry *query.GetMyListsQuery) (*query.GetMyListsQueryResult, error)
 }
 
 func (s *stubListSharingService) CreateInvite(ctx context.Context, cmd *command.CreateListInviteCommand) (*command.CreateListInviteCommandResult, error) {
@@ -76,6 +77,13 @@ func (s *stubListSharingService) RedeemInvite(ctx context.Context, cmd *command.
 	return s.redeemInvite(ctx, cmd)
 }
 
+func (s *stubListSharingService) PreviewInvite(ctx context.Context, qry *query.PreviewInviteQuery) (*query.PreviewInviteQueryResult, error) {
+	if s.previewInvite == nil {
+		panic("PreviewInvite not used by this test")
+	}
+	return s.previewInvite(ctx, qry)
+}
+
 func (s *stubListSharingService) FindMyLists(ctx context.Context, qry *query.GetMyListsQuery) (*query.GetMyListsQueryResult, error) {
 	if s.findMyLists == nil {
 		panic("FindMyLists not used by this test")
@@ -93,6 +101,7 @@ func TestListSharingController_CreateInvite_ReturnsTokenAndUsesContextUserID(t *
 			assert.Equal(t, listID, cmd.ListID)
 			assert.Equal(t, "user-1", cmd.UserID)
 			assert.Equal(t, "7d", cmd.TTLKey)
+			assert.Equal(t, "Groceries", cmd.ListName)
 			return &command.CreateListInviteCommandResult{
 				Result: &common.ListInviteResult{
 					ID: inviteID, ListID: listID, CreatedBy: "user-1",
@@ -106,7 +115,7 @@ func TestListSharingController_CreateInvite_ReturnsTokenAndUsesContextUserID(t *
 	e := echo.New()
 	NewListSharingController(e, testLogger(), service, withUserID("user-1"))
 
-	req := httptest.NewRequest(http.MethodPost, "/api/v1/todo-lists/"+listID.String()+"/invites", strings.NewReader(`{"ttl":"7d"}`))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/todo-lists/"+listID.String()+"/invites", strings.NewReader(`{"ttl":"7d","list_name":"Groceries"}`))
 	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 	rec := httptest.NewRecorder()
 
@@ -368,6 +377,8 @@ func TestListSharingController_RedeemInvite_ReturnsAlreadyMemberFlag(t *testing.
 			assert.Equal(t, "user-2", cmd.UserID)
 			return &command.RedeemListInviteCommandResult{
 				ListID: listID, Role: entities.RoleMember, AlreadyMember: true,
+				ListName: "Groceries", MemberCount: 2,
+				InvitedByName: "Alice", InvitedByPictureURL: "https://example.com/alice.png",
 			}, nil
 		},
 	}
@@ -382,7 +393,9 @@ func TestListSharingController_RedeemInvite_ReturnsAlreadyMemberFlag(t *testing.
 
 	require.Equal(t, http.StatusOK, rec.Code)
 	assert.JSONEq(t,
-		`{"list_id":"`+listID.String()+`","role":"member","already_member":true}`,
+		`{"list_id":"`+listID.String()+`","role":"member","already_member":true,`+
+			`"list_name":"Groceries","member_count":2,`+
+			`"invited_by_name":"Alice","invited_by_picture_url":"https://example.com/alice.png"}`,
 		rec.Body.String(),
 	)
 }
@@ -468,6 +481,132 @@ func TestListSharingController_RedeemInvite_ErrorMapping(t *testing.T) {
 			NewListSharingController(e, testLogger(), service, withUserID("user-1"))
 
 			req := httptest.NewRequest(http.MethodPost, "/api/v1/invites/redeem", strings.NewReader(`{"token":"t"}`))
+			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+			rec := httptest.NewRecorder()
+
+			e.ServeHTTP(rec, req)
+
+			assert.Equal(t, tc.wantStatus, rec.Code)
+		})
+	}
+}
+
+func TestListSharingController_PreviewInvite_ReturnsListInfoWithoutJoining(t *testing.T) {
+	listID := uuid.New()
+	service := &stubListSharingService{
+		previewInvite: func(ctx context.Context, qry *query.PreviewInviteQuery) (*query.PreviewInviteQueryResult, error) {
+			assert.Equal(t, "raw-token", qry.Token)
+			return &query.PreviewInviteQueryResult{
+				ListID: listID, ListName: "Groceries", MemberCount: 1,
+				InvitedByName: "Alice", InvitedByPictureURL: "https://example.com/alice.png",
+			}, nil
+		},
+	}
+	e := echo.New()
+	NewListSharingController(e, testLogger(), service, withUserID("user-2"))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/invites/preview", strings.NewReader(`{"token":"raw-token"}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t,
+		`{"list_id":"`+listID.String()+`","list_name":"Groceries","member_count":1,`+
+			`"invited_by_name":"Alice","invited_by_picture_url":"https://example.com/alice.png"}`,
+		rec.Body.String(),
+	)
+}
+
+func TestListSharingController_PreviewInvite_OmittedInviterProfileSerializesAsNull(t *testing.T) {
+	listID := uuid.New()
+	service := &stubListSharingService{
+		previewInvite: func(ctx context.Context, qry *query.PreviewInviteQuery) (*query.PreviewInviteQueryResult, error) {
+			return &query.PreviewInviteQueryResult{ListID: listID, ListName: "Groceries", MemberCount: 1}, nil
+		},
+	}
+	e := echo.New()
+	NewListSharingController(e, testLogger(), service, withUserID("user-2"))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/invites/preview", strings.NewReader(`{"token":"raw-token"}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	assert.JSONEq(t,
+		`{"list_id":"`+listID.String()+`","list_name":"Groceries","member_count":1,`+
+			`"invited_by_name":null,"invited_by_picture_url":null}`,
+		rec.Body.String(),
+	)
+}
+
+func TestListSharingController_PreviewInvite_MissingUserIDReturns401(t *testing.T) {
+	service := &stubListSharingService{}
+	e := echo.New()
+	NewListSharingController(e, testLogger(), service, middleware.Passthrough)
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/invites/preview", strings.NewReader(`{"token":"raw-token"}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusUnauthorized, rec.Code)
+}
+
+func TestListSharingController_PreviewInvite_EmptyTokenReturns400WithoutCallingService(t *testing.T) {
+	service := &stubListSharingService{}
+	e := echo.New()
+	NewListSharingController(e, testLogger(), service, withUserID("user-1"))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/invites/preview", strings.NewReader(`{"token":""}`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestListSharingController_PreviewInvite_MalformedBodyReturns400(t *testing.T) {
+	service := &stubListSharingService{}
+	e := echo.New()
+	NewListSharingController(e, testLogger(), service, withUserID("user-1"))
+
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/invites/preview", strings.NewReader(`{not valid`))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
+func TestListSharingController_PreviewInvite_ErrorMapping(t *testing.T) {
+	cases := []struct {
+		name       string
+		err        error
+		wantStatus int
+	}{
+		{"invite not found", interfaces.ErrInviteNotFound, http.StatusNotFound},
+		{"expired", interfaces.ErrInviteExpired, http.StatusGone},
+		{"revoked", interfaces.ErrInviteRevoked, http.StatusGone},
+		{"unexpected", errors.New("boom"), http.StatusInternalServerError},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			service := &stubListSharingService{
+				previewInvite: func(ctx context.Context, qry *query.PreviewInviteQuery) (*query.PreviewInviteQueryResult, error) {
+					return nil, tc.err
+				},
+			}
+			e := echo.New()
+			NewListSharingController(e, testLogger(), service, withUserID("user-1"))
+
+			req := httptest.NewRequest(http.MethodPost, "/api/v1/invites/preview", strings.NewReader(`{"token":"t"}`))
 			req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
 			rec := httptest.NewRecorder()
 

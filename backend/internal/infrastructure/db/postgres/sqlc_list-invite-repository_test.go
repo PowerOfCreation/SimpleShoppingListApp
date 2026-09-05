@@ -35,7 +35,9 @@ func TestSqlcListInviteRepository_Create_FindByID_Roundtrips(t *testing.T) {
 	ttl, err := entities.ParseInviteTTL("1h")
 	require.NoError(t, err)
 	now := time.Now().UTC().Truncate(time.Millisecond)
-	invite, token, err := entities.NewListInvite(listID, "alice", ttl, now)
+	invite, token, err := entities.NewListInvite(
+		listID, "alice", ttl, now, "Groceries", "Alice", "https://example.com/alice.png",
+	)
 	require.NoError(t, err)
 	require.NotEmpty(t, token)
 
@@ -50,6 +52,9 @@ func TestSqlcListInviteRepository_Create_FindByID_Roundtrips(t *testing.T) {
 	assert.Equal(t, "alice", found.CreatedBy)
 	assert.True(t, found.CreatedAt.Equal(now))
 	assert.Nil(t, found.RevokedAt)
+	assert.Equal(t, "Groceries", found.ListName)
+	assert.Equal(t, "Alice", found.CreatedByName)
+	assert.Equal(t, "https://example.com/alice.png", found.CreatedByPictureURL)
 }
 
 func TestSqlcListInviteRepository_FindByID_UnknownIdReturnsNilWithoutError(t *testing.T) {
@@ -72,7 +77,7 @@ func TestSqlcListInviteRepository_FindByTokenHash_OnlyMatchesTheExactHash(t *tes
 
 	ttl, err := entities.ParseInviteTTL("1h")
 	require.NoError(t, err)
-	invite, token, err := entities.NewListInvite(listID, "alice", ttl, time.Now().UTC())
+	invite, token, err := entities.NewListInvite(listID, "alice", ttl, time.Now().UTC(), "list", "", "")
 	require.NoError(t, err)
 	require.NoError(t, repo.Create(ctx, invite))
 
@@ -98,20 +103,20 @@ func TestSqlcListInviteRepository_FindActiveByList_FiltersRevokedAndExpiredAndOt
 	require.NoError(t, err)
 	now := time.Now().UTC()
 
-	active, _, err := entities.NewListInvite(listID, "alice", ttl, now)
+	active, _, err := entities.NewListInvite(listID, "alice", ttl, now, "list", "", "")
 	require.NoError(t, err)
 	require.NoError(t, repo.Create(ctx, active))
 
-	toRevoke, _, err := entities.NewListInvite(listID, "alice", ttl, now)
+	toRevoke, _, err := entities.NewListInvite(listID, "alice", ttl, now, "list", "", "")
 	require.NoError(t, err)
 	require.NoError(t, repo.Create(ctx, toRevoke))
 	require.NoError(t, repo.Revoke(ctx, toRevoke.ID, now))
 
-	expired, _, err := entities.NewListInvite(listID, "alice", ttl, now.Add(-2*time.Hour))
+	expired, _, err := entities.NewListInvite(listID, "alice", ttl, now.Add(-2*time.Hour), "list", "", "")
 	require.NoError(t, err)
 	require.NoError(t, repo.Create(ctx, expired))
 
-	forOtherList, _, err := entities.NewListInvite(otherListID, "alice", ttl, now)
+	forOtherList, _, err := entities.NewListInvite(otherListID, "alice", ttl, now, "list", "", "")
 	require.NoError(t, err)
 	require.NoError(t, repo.Create(ctx, forOtherList))
 
@@ -130,7 +135,7 @@ func TestSqlcListInviteRepository_Revoke_SetsRevokedAt(t *testing.T) {
 
 	ttl, err := entities.ParseInviteTTL("1h")
 	require.NoError(t, err)
-	invite, _, err := entities.NewListInvite(listID, "alice", ttl, time.Now().UTC())
+	invite, _, err := entities.NewListInvite(listID, "alice", ttl, time.Now().UTC(), "list", "", "")
 	require.NoError(t, err)
 	require.NoError(t, repo.Create(ctx, invite))
 
@@ -152,7 +157,7 @@ func TestSqlcListInviteRepository_Revoke_TwiceIsANoOpWithoutError(t *testing.T) 
 
 	ttl, err := entities.ParseInviteTTL("1h")
 	require.NoError(t, err)
-	invite, _, err := entities.NewListInvite(listID, "alice", ttl, time.Now().UTC())
+	invite, _, err := entities.NewListInvite(listID, "alice", ttl, time.Now().UTC(), "list", "", "")
 	require.NoError(t, err)
 	require.NoError(t, repo.Create(ctx, invite))
 

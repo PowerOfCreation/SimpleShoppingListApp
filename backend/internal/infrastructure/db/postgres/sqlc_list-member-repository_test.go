@@ -67,7 +67,7 @@ func TestSqlcListMemberRepository_Add_InsertsMemberWithInviteID(t *testing.T) {
 	// referenced here must actually exist.
 	ttl, err := entities.ParseInviteTTL("1h")
 	require.NoError(t, err)
-	invite, _, err := entities.NewListInvite(listID, "alice", ttl, time.Now().UTC())
+	invite, _, err := entities.NewListInvite(listID, "alice", ttl, time.Now().UTC(), "list", "", "")
 	require.NoError(t, err)
 	require.NoError(t, inviteRepo.Create(ctx, invite))
 

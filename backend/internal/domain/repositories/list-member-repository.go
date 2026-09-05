@@ -37,4 +37,7 @@ type ListMemberRepository interface {
 	// §7.1/§8). Self-scoped by userID, unlike FindAccessibleListIDs there is
 	// no candidate list to filter and no enumeration concern.
 	FindListsForUser(ctx context.Context, userID string) ([]*entities.ListMember, error)
+	// CountByList returns how many members (owner included) listID
+	// currently has - used by the invite preview, not an access check.
+	CountByList(ctx context.Context, listID uuid.UUID) (int, error)
 }

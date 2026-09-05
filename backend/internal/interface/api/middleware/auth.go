@@ -16,7 +16,9 @@ const (
 	envKeycloakIssuer   = "KEYCLOAK_ISSUER"
 	envKeycloakClientID = "KEYCLOAK_CLIENT_ID"
 
-	userIDContextKey = "user_id"
+	userIDContextKey      = "user_id"
+	userNameContextKey    = "user_name"
+	userPictureContextKey = "user_picture"
 )
 
 // Passthrough lets every request through unauthenticated. Only for tests
@@ -74,6 +76,12 @@ func NewKeycloakAuth(ctx context.Context, logger *slog.Logger) (echo.MiddlewareF
 
 			var claims struct {
 				AuthorizedParty string `json:"azp"`
+				// Name and Picture are optional OIDC profile claims (the
+				// "profile" scope frontend/api/auth/config.ts requests) -
+				// Keycloak doesn't always populate either, so both are read
+				// best-effort and never gate authentication.
+				Name    string `json:"name"`
+				Picture string `json:"picture"`
 			}
 			if err := idToken.Claims(&claims); err != nil {
 				RequestScopedLogger(logger, c).Warn("rejected request", "reason", "failed to parse claims", "error", err)
@@ -92,6 +100,11 @@ func NewKeycloakAuth(ctx context.Context, logger *slog.Logger) (echo.MiddlewareF
 			// via UserIDFromContext by handlers that need the caller's
 			// identity (e.g. list-sharing-controller.go).
 			c.Set(userIDContextKey, idToken.Subject)
+			// Read via UserProfileFromContext - display enrichment only,
+			// e.g. the invite preview's "who invited you", never a trust
+			// boundary the way userIDContextKey is.
+			c.Set(userNameContextKey, claims.Name)
+			c.Set(userPictureContextKey, claims.Picture)
 
 			return next(c)
 		}
@@ -111,6 +124,16 @@ func UserIDFromContext(c echo.Context) (string, bool) {
 		return "", false
 	}
 	return userID, true
+}
+
+// UserProfileFromContext returns the caller's display name and picture URL,
+// stashed by NewKeycloakAuth from optional JWT claims - both "" when absent
+// (no ok bool: unlike UserIDFromContext, nothing here is ever authorized
+// against, so there's no unset case a handler must reject).
+func UserProfileFromContext(c echo.Context) (name, pictureURL string) {
+	name, _ = c.Get(userNameContextKey).(string)
+	pictureURL, _ = c.Get(userPictureContextKey).(string)
+	return name, pictureURL
 }
 
 func bearerToken(r *http.Request) (string, bool) {

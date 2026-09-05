@@ -119,6 +119,14 @@ func (r *SqlcListMemberRepository) FindClaimedListIDs(
 	return r.queries.GetClaimedListIDs(ctx, listIDs)
 }
 
+func (r *SqlcListMemberRepository) CountByList(ctx context.Context, listID uuid.UUID) (int, error) {
+	count, err := r.queries.CountListMembers(ctx, listID)
+	if err != nil {
+		return 0, err
+	}
+	return int(count), nil
+}
+
 func (r *SqlcListMemberRepository) FindListsForUser(
 	ctx context.Context,
 	userID string,

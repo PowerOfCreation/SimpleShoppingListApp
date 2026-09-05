@@ -38,10 +38,33 @@ func ToListInviteResponseList(invites []*common.ListInviteResult) []response.Lis
 
 func ToRedeemListInviteResponse(result *command.RedeemListInviteCommandResult) response.RedeemListInviteResponse {
 	return response.RedeemListInviteResponse{
-		ListID:        result.ListID,
-		Role:          string(result.Role),
-		AlreadyMember: result.AlreadyMember,
+		ListID:              result.ListID,
+		Role:                string(result.Role),
+		AlreadyMember:       result.AlreadyMember,
+		ListName:            result.ListName,
+		MemberCount:         result.MemberCount,
+		InvitedByName:       stringPtrOrNil(result.InvitedByName),
+		InvitedByPictureURL: stringPtrOrNil(result.InvitedByPictureURL),
 	}
+}
+
+func ToInvitePreviewResponse(result *query.PreviewInviteQueryResult) response.InvitePreviewResponse {
+	return response.InvitePreviewResponse{
+		ListID:              result.ListID,
+		ListName:            result.ListName,
+		MemberCount:         result.MemberCount,
+		InvitedByName:       stringPtrOrNil(result.InvitedByName),
+		InvitedByPictureURL: stringPtrOrNil(result.InvitedByPictureURL),
+	}
+}
+
+// stringPtrOrNil serializes an absent profile claim as JSON null rather
+// than "".
+func stringPtrOrNil(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // ToMyListsResponse always returns a non-nil Lists slice, so no memberships
