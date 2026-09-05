@@ -52,6 +52,21 @@ export type RedeemResult = {
   alreadyMember: boolean
 }
 
+/**
+ * What an invite points at, without joining it - the invitation screen's
+ * data (list name, member count, who invited you) shown before the user
+ * commits to redeemInvite.
+ */
+export type InvitePreview = {
+  listId: string
+  listName: string
+  memberCount: number
+  /** null when the inviter's OIDC profile has no name claim. */
+  invitedByName: string | null
+  /** null when absent, or when the claim wasn't an https URL (see backend sanitizePictureURL). */
+  invitedByPictureURL: string | null
+}
+
 export type FetchLike = typeof fetch
 
 type WireInvite = {
@@ -70,6 +85,14 @@ type WireRedeemResult = {
   list_id?: unknown
   role?: unknown
   already_member?: unknown
+}
+
+type WireInvitePreview = {
+  list_id?: unknown
+  list_name?: unknown
+  member_count?: unknown
+  invited_by_name?: unknown
+  invited_by_picture_url?: unknown
 }
 
 /** One list the caller owns or is a member of - see SharingClient.listMyLists. */
@@ -280,6 +303,11 @@ export class SharingClient {
   /**
    * Creates a multi-use invite link valid for `ttl`.
    *
+   * `listName` is sent because the server holds no list content (it only
+   * relays/stores events, see sync-sharing-target.md R2) and cannot look the
+   * name up itself - it's stored as a snapshot on the invite and echoed back
+   * by preview/redeem, so it can go stale if the list is renamed afterwards.
+   *
    * The token in the response cannot be fetched again later, so a body that
    * doesn't parse is a real (if rare) loss: the invite exists server-side but
    * its link is gone. That surfaces as a "server" error, and the invite shows
@@ -287,12 +315,13 @@ export class SharingClient {
    */
   async createInvite(
     listId: string,
-    ttl: InviteTTL
+    ttl: InviteTTL,
+    listName: string
   ): Promise<Result<CreatedInvite, SharingError>> {
     const responseResult = await this.request({
       url: sharingConfig.listInvitesUrl(listId),
       method: "POST",
-      body: JSON.stringify({ ttl }),
+      body: JSON.stringify({ ttl, list_name: listName }),
       subject: "list",
       networkErrorMessage: "Network error while creating an invite link",
     })
@@ -324,6 +353,61 @@ export class SharingClient {
       token: body.token,
       createdAt: parseTimestamp(body.created_at),
       expiresAt: parseTimestamp(body.expires_at),
+    })
+  }
+
+  /**
+   * Looks up what an invite points at without joining it - safe to call
+   * repeatedly (e.g. to render an invitation screen before the user decides
+   * to accept). Mirrors redeemInvite's request shape (token in the POST
+   * body, not the URL) since it hits a sibling endpoint.
+   */
+  async previewInvite(
+    token: string
+  ): Promise<Result<InvitePreview, SharingError>> {
+    const responseResult = await this.request({
+      url: sharingConfig.previewInviteUrl(),
+      method: "POST",
+      body: JSON.stringify({ token }),
+      subject: "invite",
+      networkErrorMessage: "Network error while loading the invite",
+    })
+    if (!responseResult.success) {
+      return Result.fail(responseResult.getError())
+    }
+
+    const bodyResult = await this.parseJson(
+      responseResult.getValue()!,
+      "invite preview"
+    )
+    if (!bodyResult.success) {
+      return Result.fail(bodyResult.getError())
+    }
+
+    const body = bodyResult.getValue() as WireInvitePreview
+    if (
+      typeof body?.list_id !== "string" ||
+      typeof body.list_name !== "string" ||
+      typeof body.member_count !== "number"
+    ) {
+      return Result.fail(
+        new SharingError(
+          "The server did not return a usable invite preview",
+          "server"
+        )
+      )
+    }
+
+    return Result.ok({
+      listId: body.list_id,
+      listName: body.list_name,
+      memberCount: body.member_count,
+      invitedByName:
+        typeof body.invited_by_name === "string" ? body.invited_by_name : null,
+      invitedByPictureURL:
+        typeof body.invited_by_picture_url === "string"
+          ? body.invited_by_picture_url
+          : null,
     })
   }
 
