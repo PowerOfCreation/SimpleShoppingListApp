@@ -118,7 +118,7 @@ describe("<Invite /> Component Tests", () => {
     })
     await waitFor(() => {
       expect(screen.getByTestId("invite-heading")).toHaveTextContent(
-        'Niklas invited you to join list "Lidl"'
+        "Niklas invited you to join list Lidl"
       )
     })
     expect(screen.getByText("3 members")).toBeTruthy()
@@ -148,7 +148,7 @@ describe("<Invite /> Component Tests", () => {
 
     await waitFor(() => {
       expect(screen.getByTestId("invite-heading")).toHaveTextContent(
-        'Someone invited you to join list "Lidl"'
+        "Someone invited you to join list Lidl"
       )
     })
   })

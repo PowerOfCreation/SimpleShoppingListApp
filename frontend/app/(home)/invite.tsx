@@ -103,7 +103,7 @@ export default function Invite() {
     }
 
     return (
-      <>
+      <View style={styles.joinRow}>
         <PrimaryButton
           testID="invite-join"
           label="Join list"
@@ -119,7 +119,7 @@ export default function Invite() {
             Not now
           </ThemedText>
         </Pressable>
-      </>
+      </View>
     )
   }
 
@@ -138,7 +138,7 @@ export default function Invite() {
         style={styles.heading}
       >
         {(data.invitedByName ?? "Someone") +
-          ` invited you to join list "${data.listName}"`}
+          ` invited you to join list ${data.listName}`}
       </ThemedText>
       <ThemedText style={[styles.hint, { color: textSecondaryColor }]}>
         {data.memberCount} member{data.memberCount === 1 ? "" : "s"}
@@ -276,6 +276,11 @@ const styles = StyleSheet.create({
   footer: {
     marginTop: 12,
     gap: 12,
+    alignItems: "center",
+  },
+  joinRow: {
+    flexDirection: "row",
+    gap: 16,
     alignItems: "center",
   },
   declineText: {
