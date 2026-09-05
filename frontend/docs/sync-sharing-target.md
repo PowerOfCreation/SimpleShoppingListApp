@@ -168,20 +168,29 @@ mit dem Cascade aus 4.4 passiert: `DELETE FROM synced_lists` reißt Mitgliedscha
 mit, und Zugriffsdaten sind das Einzige in diesem System, was sich *nicht* aus dem Log rekonstruieren
 lässt.
 
-**Frontend-Stand:** Gebaut ist genau die **Owner-Seite von 4.3**:
+**Frontend-Stand:** Gebaut sind Owner- und Redeem-Seite von 4.3.
 `app/(home)/share_shopping_list.tsx` — erreichbar über „Invite people" im Kontextmenü einer Liste,
 und zwar nur solange dieses Gerät sie synct und ein Login besteht (beides Vorbedingung dafür, dass
 der Server überhaupt eine Registry-Zeile hat, siehe 4.2) — erzeugt, listet und widerruft
 Einladungen über `api/sharing/sharing-client.ts`. Der Deep-Link wird clientseitig aus dem Token
-gebaut (`api/sharing/invite-link.ts`, `<scheme>://invite?token=…`), passend zu „das Backend kennt
-keine Frontend-Routen".
+gebaut (`api/sharing/invite-link.ts`), als verifizierter Android App Link
+(`https://static.ops.light-dev-solutions.de/invite?token=…`; assetlinks.json unter
+`docs/.well-known/`, `android.intentFilters` in `app.config.js`), passend zu „das Backend kennt
+keine Frontend-Routen". Expo Router matcht den Pfad `/invite` automatisch gegen
+`app/(home)/invite.tsx` — dafür war keine Sonderbehandlung in `+native-intent.ts` nötig.
 
-Weiterhin offen: **kein Redeem-Handler** — der Link wird von nichts entgegengenommen, `+native-intent.ts`
-kennt ihn nicht, ein Eingeladener kann also noch nicht beitreten. Ebenso fehlen eine Mitgliederliste
-(es gibt keinen Endpunkt dafür), die Owner-/Member-Unterscheidung in der Listenansicht, „Verlassen"
-und „Entsyncen". Solange `GET .../membership` offen ist, kann der Client seine eigene Rolle nicht
-erfragen: ein Member erfährt erst aus dem 403 der Einladungsroute, dass die Liste ihm nicht gehört —
-die Einladungs-UI zeigt das als Fehlermeldung, statt den Einstieg zu verstecken.
+`app/(home)/invite.tsx` (`useRedeemInvite`) verlangt zuerst ein Login — die einzige Stelle, die
+das tut, der Rest der App braucht keins —, ruft dann `POST /api/v1/invites/redeem` auf und schaltet
+`list_sync_settings` für die neue Liste ein. Anders als `ShoppingListService.setSyncEnabled` (pusht
+vorhandene lokale Historie nach außen) gibt es hier noch keine lokale Historie; sie kommt per
+Voll-Pull vom Server. Landet der Pull mangels Verbindung nichts, ist das kein Fehler: der Screen
+zeigt „pending", SyncCoordinators eigene Retries holen es nach.
+
+Weiterhin offen: eine Mitgliederliste (es gibt keinen Endpunkt dafür), die Owner-/Member-
+Unterscheidung in der Listenansicht, „Verlassen" und „Entsyncen". Solange `GET .../membership`
+offen ist, kann der Client seine eigene Rolle nicht erfragen: ein Member erfährt erst aus dem 403
+der Einladungsroute, dass die Liste ihm nicht gehört — die Einladungs-UI zeigt das als
+Fehlermeldung, statt den Einstieg zu verstecken.
 
 ## 6. Invarianten
 

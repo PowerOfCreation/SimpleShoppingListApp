@@ -24,4 +24,8 @@ export const sharingConfig = {
     const base = syncConfig.apiBaseUrl
     return `${base}/api/v1/invites/${encodeURIComponent(inviteId)}`
   },
+  redeemInviteUrl(): string {
+    const base = syncConfig.apiBaseUrl
+    return `${base}/api/v1/invites/redeem`
+  },
 }
