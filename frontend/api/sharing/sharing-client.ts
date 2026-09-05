@@ -54,6 +54,19 @@ type WireCreatedInvite = WireInvite & {
   token?: unknown
 }
 
+/** The redeem response - what joining an invite gets the caller. */
+export type RedeemedInvite = {
+  listId: string
+  role: string
+  alreadyMember: boolean
+}
+
+type WireRedeemedInvite = {
+  list_id?: unknown
+  role?: unknown
+  already_member?: unknown
+}
+
 /**
  * The sharing DTOs carry Go `time.Time` values, i.e. RFC 3339 strings -
  * unlike the sync wire shapes, where occurred_at is epoch ms.
@@ -296,6 +309,46 @@ export class SharingClient {
       token: body.token,
       createdAt: parseTimestamp(body.created_at),
       expiresAt: parseTimestamp(body.expires_at),
+    })
+  }
+
+  /**
+   * Redeems an invite token, joining the caller to its list. `alreadyMember`
+   * distinguishes a fresh join from a safe no-op retry - both are success.
+   */
+  async redeemInvite(
+    token: string
+  ): Promise<Result<RedeemedInvite, SharingError>> {
+    const responseResult = await this.request({
+      url: sharingConfig.redeemInviteUrl(),
+      method: "POST",
+      body: JSON.stringify({ token }),
+      subject: "invite",
+      networkErrorMessage: "Network error while redeeming the invite link",
+    })
+    if (!responseResult.success) {
+      return Result.fail(responseResult.getError())
+    }
+
+    const bodyResult = await this.parseJson(
+      responseResult.getValue()!,
+      "redeemed invite"
+    )
+    if (!bodyResult.success) {
+      return Result.fail(bodyResult.getError())
+    }
+
+    const body = bodyResult.getValue() as WireRedeemedInvite
+    if (typeof body?.list_id !== "string") {
+      return Result.fail(
+        new SharingError("The server did not return a usable list", "server")
+      )
+    }
+
+    return Result.ok({
+      listId: body.list_id,
+      role: typeof body.role === "string" ? body.role : "",
+      alreadyMember: body.already_member === true,
     })
   }
 

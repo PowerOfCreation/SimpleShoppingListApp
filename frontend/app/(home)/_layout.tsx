@@ -55,6 +55,12 @@ export default function HomeLayout() {
           headerTitle: "Invite people",
         }}
       />
+      <Stack.Screen
+        name="invite"
+        options={{
+          headerTitle: "Join list",
+        }}
+      />
     </Stack>
   )
 }
