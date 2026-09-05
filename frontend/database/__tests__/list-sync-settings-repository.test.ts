@@ -66,6 +66,23 @@ describe("ListSyncSettingsRepository", () => {
     })
   })
 
+  describe("getKnownIds", () => {
+    it("returns ids regardless of enabled state, unlike getEnabledIds", async () => {
+      await repository.setEnabled("list-1", true)
+      await repository.setEnabled("list-2", false)
+
+      const result = await repository.getKnownIds()
+
+      expect(result.success).toBe(true)
+      expect(result.getValue()!.sort()).toEqual(["list-1", "list-2"])
+    })
+
+    it("returns an empty array when no list has ever had a row written", async () => {
+      const result = await repository.getKnownIds()
+      expect(result.getValue()).toEqual([])
+    })
+  })
+
   describe("setEnabledWithin", () => {
     it("writes within a caller-supplied transaction without opening its own", async () => {
       await db.withTransactionAsync(async () => {

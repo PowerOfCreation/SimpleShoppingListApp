@@ -130,6 +130,13 @@ export class SyncCoordinator {
    * (setEnabled + notifySyncListsChanged, which the onSyncListsChanged
    * handler wired in start() turns into a re-subscribe + re-pull) - just
    * discovering many list ids from the account instead of one from a token.
+   *
+   * Diffs against getKnownIds(), not getEnabledIds(): a list the user
+   * explicitly turned sync off for still has a (disabled) row and must stay
+   * off - only a list with no local row at all is "new" here. Diffing
+   * against getEnabledIds() would silently flip that user choice back on
+   * every time this runs, since the server still lists the account as a
+   * member regardless of this device's local setting.
    */
   private async discoverLists(): Promise<void> {
     const myListsResult = await this.sharingClient.listMyLists()
@@ -141,20 +148,19 @@ export class SyncCoordinator {
       return
     }
 
-    const enabledIdsResult =
-      await this.listSyncSettingsRepository.getEnabledIds()
-    if (!enabledIdsResult.success) {
+    const knownIdsResult = await this.listSyncSettingsRepository.getKnownIds()
+    if (!knownIdsResult.success) {
       logger.error(
-        "Discover: failed to load sync-enabled list ids",
-        enabledIdsResult.getError()
+        "Discover: failed to load known list ids",
+        knownIdsResult.getError()
       )
       return
     }
-    const enabledIds = new Set(enabledIdsResult.getValue()!)
+    const knownIds = new Set(knownIdsResult.getValue()!)
 
     let discoveredNew = false
     for (const { listId } of myListsResult.getValue()!) {
-      if (enabledIds.has(listId)) {
+      if (knownIds.has(listId)) {
         continue
       }
       const enableResult = await this.listSyncSettingsRepository.setEnabled(
