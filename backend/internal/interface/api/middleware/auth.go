@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"net/url"
 	"os"
 	"strings"
 
@@ -104,7 +105,7 @@ func NewKeycloakAuth(ctx context.Context, logger *slog.Logger) (echo.MiddlewareF
 			// e.g. the invite preview's "who invited you", never a trust
 			// boundary the way userIDContextKey is.
 			c.Set(userNameContextKey, claims.Name)
-			c.Set(userPictureContextKey, claims.Picture)
+			c.Set(userPictureContextKey, sanitizePictureURL(claims.Picture))
 
 			return next(c)
 		}
@@ -134,6 +135,24 @@ func UserProfileFromContext(c echo.Context) (name, pictureURL string) {
 	name, _ = c.Get(userNameContextKey).(string)
 	pictureURL, _ = c.Get(userPictureContextKey).(string)
 	return name, pictureURL
+}
+
+// sanitizePictureURL drops anything that isn't an https URL - Keycloak's
+// picture claim is normally self-editable by the account owner, and this
+// value later gets handed to every other user who previews/redeems that
+// owner's invites. https-only rules out javascript:/data:/file: schemes and
+// plain-http links; it does not, and cannot, rule out an https URL that's
+// itself a tracking pixel - that risk is inherent to rendering any
+// user-supplied avatar URL and would need image proxying to close fully.
+func sanitizePictureURL(raw string) string {
+	if raw == "" {
+		return ""
+	}
+	parsed, err := url.Parse(raw)
+	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
+		return ""
+	}
+	return raw
 }
 
 func bearerToken(r *http.Request) (string, bool) {

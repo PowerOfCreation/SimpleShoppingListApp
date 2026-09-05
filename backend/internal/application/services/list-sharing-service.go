@@ -159,11 +159,6 @@ func (s *ListSharingService) RedeemInvite(ctx context.Context, cmd *command.Rede
 		return nil, err
 	}
 
-	memberCount, err := s.members.CountByList(ctx, invite.ListID)
-	if err != nil {
-		return nil, err
-	}
-
 	// Idempotency check comes before the revoked/expired check: a caller
 	// who already joined must be able to safely retry redeem (e.g. after a
 	// lost response) even if the token has since been revoked or expired -
@@ -172,6 +167,10 @@ func (s *ListSharingService) RedeemInvite(ctx context.Context, cmd *command.Rede
 	if existing, err := s.members.FindByListAndUser(ctx, invite.ListID, cmd.UserID); err != nil {
 		return nil, err
 	} else if existing != nil {
+		memberCount, err := s.members.CountByList(ctx, invite.ListID)
+		if err != nil {
+			return nil, err
+		}
 		return &command.RedeemListInviteCommandResult{
 			ListID:              invite.ListID,
 			Role:                existing.Role,
@@ -200,12 +199,21 @@ func (s *ListSharingService) RedeemInvite(ctx context.Context, cmd *command.Rede
 		return nil, err
 	}
 
+	// Counted after Add, not derived as "count before + 1": ListInvite is
+	// multi-use, so two callers can redeem the same token concurrently -
+	// counting post-write reflects whatever actually landed instead of an
+	// assumption that only this call changed membership.
+	memberCount, err := s.members.CountByList(ctx, invite.ListID)
+	if err != nil {
+		return nil, err
+	}
+
 	return &command.RedeemListInviteCommandResult{
 		ListID:              invite.ListID,
 		Role:                entities.RoleMember,
 		AlreadyMember:       false,
 		ListName:            invite.ListName,
-		MemberCount:         memberCount + 1,
+		MemberCount:         memberCount,
 		InvitedByName:       invite.CreatedByName,
 		InvitedByPictureURL: invite.CreatedByPictureURL,
 	}, nil

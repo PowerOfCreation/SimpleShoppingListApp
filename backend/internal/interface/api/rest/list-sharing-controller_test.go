@@ -168,6 +168,21 @@ func TestListSharingController_CreateInvite_MalformedBodyReturns400(t *testing.T
 	assert.Equal(t, http.StatusBadRequest, rec.Code)
 }
 
+func TestListSharingController_CreateInvite_OverlongListNameReturns400WithoutCallingService(t *testing.T) {
+	service := &stubListSharingService{}
+	e := echo.New()
+	NewListSharingController(e, testLogger(), service, withUserID("user-1"))
+
+	body := fmt.Sprintf(`{"ttl":"7d","list_name":"%s"}`, strings.Repeat("a", maxInviteListNameBytes+1))
+	req := httptest.NewRequest(http.MethodPost, "/api/v1/todo-lists/"+uuid.New().String()+"/invites", strings.NewReader(body))
+	req.Header.Set(echo.HeaderContentType, echo.MIMEApplicationJSON)
+	rec := httptest.NewRecorder()
+
+	e.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusBadRequest, rec.Code)
+}
+
 func TestListSharingController_CreateInvite_ErrorMapping(t *testing.T) {
 	cases := []struct {
 		name       string
