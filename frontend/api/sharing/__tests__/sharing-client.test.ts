@@ -288,4 +288,80 @@ describe("SharingClient", () => {
       expect(result.getError().kind).toBe("inviteGone")
     })
   })
+
+  describe("previewInvite", () => {
+    it("posts the token and returns the invite's preview data", async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        jsonResponse(200, {
+          list_id: "list-1",
+          list_name: "Lidl",
+          member_count: 3,
+          invited_by_name: "Niklas",
+          invited_by_picture_url: "https://example.com/niklas.png",
+        })
+      )
+      const client = new SharingClient(fetchMock)
+
+      const result = await client.previewInvite("plaintext-token")
+
+      expect(result.success).toBe(true)
+      expect(result.getValue()).toEqual({
+        listId: "list-1",
+        listName: "Lidl",
+        memberCount: 3,
+        invitedByName: "Niklas",
+        invitedByPictureURL: "https://example.com/niklas.png",
+      })
+
+      const [url, options] = fetchMock.mock.calls[0]
+      expect(url).toContain("/api/v1/invites/preview")
+      expect(options.method).toBe("POST")
+      expect(options.headers["Content-Type"]).toBe("application/json")
+      expect(JSON.parse(options.body)).toEqual({ token: "plaintext-token" })
+    })
+
+    it("maps absent inviter fields to null rather than dropping them", async () => {
+      const fetchMock = jest.fn().mockResolvedValue(
+        jsonResponse(200, {
+          list_id: "list-1",
+          list_name: "Lidl",
+          member_count: 1,
+          invited_by_name: null,
+          invited_by_picture_url: null,
+        })
+      )
+      const client = new SharingClient(fetchMock)
+
+      const result = await client.previewInvite("plaintext-token")
+
+      expect(result.getValue()).toEqual({
+        listId: "list-1",
+        listName: "Lidl",
+        memberCount: 1,
+        invitedByName: null,
+        invitedByPictureURL: null,
+      })
+    })
+
+    it("fails when the response carries no usable list_id/list_name/member_count", async () => {
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue(jsonResponse(200, { list_id: "list-1" }))
+      const client = new SharingClient(fetchMock)
+
+      const result = await client.previewInvite("plaintext-token")
+
+      expect(result.success).toBe(false)
+      expect(result.getError().kind).toBe("server")
+    })
+
+    it("maps a 404/410 on the invite to inviteGone", async () => {
+      const fetchMock = jest.fn().mockResolvedValue(jsonResponse(410, {}))
+      const client = new SharingClient(fetchMock)
+
+      const result = await client.previewInvite("plaintext-token")
+
+      expect(result.getError().kind).toBe("inviteGone")
+    })
+  })
 })
