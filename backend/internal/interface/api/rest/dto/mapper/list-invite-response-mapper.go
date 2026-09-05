@@ -3,6 +3,7 @@ package mapper
 import (
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/command"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/common"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/query"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/rest/dto/response"
 )
 
@@ -41,4 +42,17 @@ func ToRedeemListInviteResponse(result *command.RedeemListInviteCommandResult) r
 		Role:          string(result.Role),
 		AlreadyMember: result.AlreadyMember,
 	}
+}
+
+// ToMyListsResponse always returns a non-nil Lists slice, so no memberships
+// serializes as [] rather than null.
+func ToMyListsResponse(result *query.GetMyListsQueryResult) response.MyListsResponse {
+	lists := make([]response.ListMembershipResponse, len(result.Result))
+	for i, membership := range result.Result {
+		lists[i] = response.ListMembershipResponse{
+			ListID: membership.ListID,
+			Role:   membership.Role,
+		}
+	}
+	return response.MyListsResponse{Lists: lists}
 }

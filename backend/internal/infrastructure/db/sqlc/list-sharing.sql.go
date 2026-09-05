@@ -255,6 +255,44 @@ func (q *Queries) GetListMember(ctx context.Context, arg GetListMemberParams) (L
 	return i, err
 }
 
+const getListsForUser = `-- name: GetListsForUser :many
+SELECT list_id, user_id, role, joined_at, invite_id
+FROM list_members
+WHERE user_id = $1
+ORDER BY joined_at
+`
+
+// Every list the caller owns or is a member of - the discovery endpoint
+// behind "restore my lists after reinstall" (sync-sharing-target.md §7.1/§8).
+// Self-scoped by the caller's own verified user_id, so unlike
+// GetAccessibleListIDs this needs no candidate list_ids and raises no
+// enumeration concern.
+func (q *Queries) GetListsForUser(ctx context.Context, userID string) ([]ListMember, error) {
+	rows, err := q.db.Query(ctx, getListsForUser, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMember{}
+	for rows.Next() {
+		var i ListMember
+		if err := rows.Scan(
+			&i.ListID,
+			&i.UserID,
+			&i.Role,
+			&i.JoinedAt,
+			&i.InviteID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const insertListInvite = `-- name: InsertListInvite :exec
 INSERT INTO list_invites (id, list_id, token_hash, created_by, created_at, expires_at)
 VALUES ($1, $2, $3, $4, $5, $6)

@@ -28,4 +28,5 @@ type ListSharingService interface {
 	FindActiveInvites(ctx context.Context, qry *query.GetListInvitesQuery) (*query.GetListInvitesQueryResult, error)
 	RevokeInvite(ctx context.Context, cmd *command.RevokeListInviteCommand) (*command.RevokeListInviteCommandResult, error)
 	RedeemInvite(ctx context.Context, cmd *command.RedeemListInviteCommand) (*command.RedeemListInviteCommandResult, error)
+	FindMyLists(ctx context.Context, qry *query.GetMyListsQuery) (*query.GetMyListsQueryResult, error)
 }

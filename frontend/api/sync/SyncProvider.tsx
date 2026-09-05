@@ -13,6 +13,7 @@ import { SyncEngine } from "@/api/sync/sync-engine"
 import { SyncCoordinator } from "@/api/sync/sync-coordinator"
 import { EventApplier } from "@/api/sync/event-applier"
 import { isSyncConfigured } from "@/api/sync/config"
+import { sharingClient } from "@/api/sharing/sharing-client"
 
 type SyncContextValue = {
   engine: SyncEngine
@@ -63,7 +64,8 @@ export function SyncProvider({ children }: { children: React.ReactNode }) {
     () =>
       new SyncCoordinator(
         engine,
-        new ListSyncSettingsRepository(getDatabase())
+        new ListSyncSettingsRepository(getDatabase()),
+        sharingClient
       ),
     [engine]
   )

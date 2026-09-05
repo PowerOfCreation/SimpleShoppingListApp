@@ -118,3 +118,29 @@ func (r *SqlcListMemberRepository) FindClaimedListIDs(
 	}
 	return r.queries.GetClaimedListIDs(ctx, listIDs)
 }
+
+func (r *SqlcListMemberRepository) FindListsForUser(
+	ctx context.Context,
+	userID string,
+) ([]*entities.ListMember, error) {
+	rows, err := r.queries.GetListsForUser(ctx, userID)
+	if err != nil {
+		return nil, err
+	}
+
+	members := make([]*entities.ListMember, 0, len(rows))
+	for _, row := range rows {
+		member, err := entities.NewListMember(
+			row.ListID,
+			row.UserID,
+			entities.ListMemberRole(row.Role),
+			timeFromTimestamptz(row.JoinedAt),
+			uuidPtrFromPgtype(row.InviteID),
+		)
+		if err != nil {
+			return nil, fmt.Errorf("corrupt list_members row (list_id=%s, user_id=%s): %w", row.ListID, row.UserID, err)
+		}
+		members = append(members, member)
+	}
+	return members, nil
+}

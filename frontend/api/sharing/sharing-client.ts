@@ -72,6 +72,16 @@ type WireRedeemResult = {
   already_member?: unknown
 }
 
+/** One list the caller owns or is a member of - see SharingClient.listMyLists. */
+export type MyListMembership = {
+  listId: string
+  role: string
+}
+
+type WireMyListsResponse = {
+  lists?: { list_id?: unknown; role?: unknown }[]
+}
+
 /**
  * The sharing DTOs carry Go `time.Time` values, i.e. RFC 3339 strings -
  * unlike the sync wire shapes, where occurred_at is epoch ms.
@@ -361,6 +371,42 @@ export class SharingClient {
       role: body.role,
       alreadyMember: body.already_member === true,
     })
+  }
+
+  /**
+   * Every list the caller owns or is a member of - the "restore my lists"
+   * discovery call (sync-sharing-target.md §7.1/§8). No list names: the
+   * server holds no content, callers get names by pulling each list's log
+   * from seq 0, same as a fresh redeemInvite.
+   */
+  async listMyLists(): Promise<Result<MyListMembership[], SharingError>> {
+    const responseResult = await this.request({
+      url: sharingConfig.myListsUrl(),
+      method: "GET",
+      subject: "list",
+      networkErrorMessage: "Network error while loading your lists",
+    })
+    if (!responseResult.success) {
+      return Result.fail(responseResult.getError())
+    }
+
+    const bodyResult = await this.parseJson(
+      responseResult.getValue()!,
+      "my lists"
+    )
+    if (!bodyResult.success) {
+      return Result.fail(bodyResult.getError())
+    }
+
+    const body = bodyResult.getValue() as WireMyListsResponse
+    const lists = Array.isArray(body?.lists) ? body.lists : []
+    return Result.ok(
+      lists.flatMap((entry) =>
+        typeof entry?.list_id === "string" && typeof entry?.role === "string"
+          ? [{ listId: entry.list_id, role: entry.role }]
+          : []
+      )
+    )
   }
 
   /**

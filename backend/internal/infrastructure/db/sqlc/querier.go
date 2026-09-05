@@ -73,6 +73,12 @@ type Querier interface {
 	GetListInviteById(ctx context.Context, id uuid.UUID) (ListInvite, error)
 	GetListInviteByTokenHash(ctx context.Context, tokenHash string) (ListInvite, error)
 	GetListMember(ctx context.Context, arg GetListMemberParams) (ListMember, error)
+	// Every list the caller owns or is a member of - the discovery endpoint
+	// behind "restore my lists after reinstall" (sync-sharing-target.md §7.1/§8).
+	// Self-scoped by the caller's own verified user_id, so unlike
+	// GetAccessibleListIDs this needs no candidate list_ids and raises no
+	// enumeration concern.
+	GetListsForUser(ctx context.Context, userID string) ([]ListMember, error)
 	// Assigns the caller-supplied seq directly rather than pulling from a
 	// global sequence - seq is now a per-list, gap-free counter derived from
 	// synced_lists.head_seq under that row's lock (see AppendToList), not a

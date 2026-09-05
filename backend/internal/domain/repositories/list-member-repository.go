@@ -32,4 +32,9 @@ type ListMemberRepository interface {
 	// claiming anything, so a batch that's ultimately rejected can't leave
 	// a still-unowned list claimed as a side effect.
 	FindClaimedListIDs(ctx context.Context, listIDs []uuid.UUID) ([]uuid.UUID, error)
+	// FindListsForUser returns every list userID owns or is a member of -
+	// the "restore my lists" discovery read path (sync-sharing-target.md
+	// §7.1/§8). Self-scoped by userID, unlike FindAccessibleListIDs there is
+	// no candidate list to filter and no enumeration concern.
+	FindListsForUser(ctx context.Context, userID string) ([]*entities.ListMember, error)
 }

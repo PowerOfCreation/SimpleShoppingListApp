@@ -28,4 +28,8 @@ export const sharingConfig = {
     const base = syncConfig.apiBaseUrl
     return `${base}/api/v1/invites/redeem`
   },
+  myListsUrl(): string {
+    const base = syncConfig.apiBaseUrl
+    return `${base}/api/v1/todo-lists`
+  },
 }

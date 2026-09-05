@@ -141,6 +141,7 @@ Alle Routen mit authMW. Es gibt **keine** CRUD-Endpunkte für Listen; Listeninha
 | GET | /api/v1/todo-lists/:id/invites | Aktive Einladungen (owner) | ✅ |
 | DELETE | /api/v1/invites/:inviteId | Widerrufen (owner) | ✅ |
 | POST | /api/v1/invites/redeem | Beitreten | ✅ |
+| GET | /api/v1/todo-lists | Meine Listen (Discovery, alle Rollen) | ✅ |
 | GET | /api/v1/todo-lists/:id/membership | Eigene Rolle + Mitgliederzahl | ⬜ offen |
 | DELETE | /api/v1/todo-lists/:id/members/me | Verlassen (member) | ⬜ offen |
 | DELETE | /api/v1/todo-lists/:id/sync | Entsyncen (owner, nur allein) | ⬜ offen |
@@ -191,6 +192,14 @@ Unterscheidung in der Listenansicht, „Verlassen" und „Entsyncen". Solange `G
 offen ist, kann der Client seine eigene Rolle nicht erfragen: ein Member erfährt erst aus dem 403
 der Einladungsroute, dass die Liste ihm nicht gehört — die Einladungs-UI zeigt das als
 Fehlermeldung, statt den Einstieg zu verstecken.
+
+**„Meine Listen nach Neuinstallation wiederherstellen" ist seitdem gebaut** (`GET
+/api/v1/todo-lists`, siehe Abschnitt 5; frontend `SharingClient.listMyLists`). `SyncCoordinator`
+ruft es einmal pro `start()` (also einmal pro angemeldeter Session) auf, schaltet
+`list_sync_settings` für jede vom Server gemeldete, dem Gerät noch unbekannte Liste ein und stößt
+über `notifySyncListsChanged()` genau denselben Re-Subscribe/Re-Pull-Pfad an, den `useRedeemInvite`
+schon für eine einzelne eingelöste Einladung nutzt — Namen/Inhalt kommen wie dort per Voll-Pull ab
+seq 0, der Server liefert nur `{list_id, role}` je Mitgliedschaft.
 
 ## 6. Invarianten
 
@@ -250,7 +259,7 @@ Warum keine semantische Payload-Validierung am Push, obwohl sie naheläge: ein V
 
 Das ursprüngliche Problem war, dass Ownership beim asynchronen Ingest entstehen sollte, wo es keinen Request-Context und damit keine verifizierte Identität gibt. Gelöst wurde es, indem der Zeitpunkt verschoben wurde statt der Mechanismus: `EventController.SyncEvents` liest den verifizierten JWT-sub via `middleware.UserIDFromContext`, sammelt die distinkten `list_id`s des Batches und ruft `ListAccessService.AuthorizeWrite` auf, bevor irgendetwas geschrieben wird. Inzwischen ist die Frage doppelt erledigt: es gibt keinen asynchronen Pfad mehr, der eine Identität bräuchte (R1).
 
-`events.user_id` (Migration `00007`, vom Push-Handler gesetzt, nie vom Client) hängt die verifizierte Identität zusätzlich an die Zeile — als forensisches Feld („wer hat dieses Event geschrieben") und als Grundlage für einen künftigen Discovery-Endpunkt („meine Listen"), der eine verifizierte Identität pro Zeile braucht.
+`events.user_id` (Migration `00007`, vom Push-Handler gesetzt, nie vom Client) hängt die verifizierte Identität zusätzlich an die Zeile — als forensisches Feld („wer hat dieses Event geschrieben") und war die Grundlage für den Discovery-Endpunkt „meine Listen" (`GET /api/v1/todo-lists`, seitdem gebaut — siehe Abschnitt 5 und 8.1).
 
 Der Bestandslisten-Backfill entfällt: es gab keine echten Nutzerdaten zu migrieren, Enforcement wurde deshalb ohne Backfill hart scharfgeschaltet. Events, die vor `00007` eingegangen sind, haben `user_id = NULL`, gehören also keiner Mitgliedschaft und sind seither für niemanden mehr über `/sync/*` erreichbar — bewusste Konsequenz, nicht übersehen.
 
@@ -270,7 +279,6 @@ Der Bestandslisten-Backfill entfällt: es gab keine echten Nutzerdaten zu migrie
 
 ## 8. Bewusst nicht gebaut
 
-- **„Meine Listen nach Neuinstallation wiederherstellen."** Pull läuft nur für Listen, die lokal bereits bekannt und sync-aktiv sind. Nach einer Neuinstallation ist die lokale DB leer, es gibt also nichts zu pullen. Ein Discovery-Endpunkt („gib mir alle Listen dieses Accounts") ist ein eigenes, größeres Feature — 7.1 (jetzt erledigt) war nur seine Voraussetzung, nicht seine Umsetzung.
 - **Direkteinladung an eine Person / Freundesliste.** Nur mehrfach nutzbare Links.
 - **Mitglieder entfernen (Kick).** Nur Selbst-Verlassen.
 - **Ownership übertragen.**

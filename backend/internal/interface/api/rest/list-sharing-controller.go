@@ -33,6 +33,7 @@ func NewListSharingController(
 	e.GET("/api/v1/todo-lists/:listId/invites", controller.GetInvites, authMW)
 	e.DELETE("/api/v1/invites/:inviteId", controller.RevokeInvite, authMW)
 	e.POST("/api/v1/invites/redeem", controller.RedeemInvite, authMW)
+	e.GET("/api/v1/todo-lists", controller.GetMyLists, authMW)
 	return controller
 }
 
@@ -144,6 +145,22 @@ func (lsc *ListSharingController) RedeemInvite(c echo.Context) error {
 	}
 
 	return c.JSON(http.StatusOK, mapper.ToRedeemListInviteResponse(result))
+}
+
+func (lsc *ListSharingController) GetMyLists(c echo.Context) error {
+	userID, ok := middleware.UserIDFromContext(c)
+	if !ok {
+		return unauthorized(c)
+	}
+
+	result, err := lsc.service.FindMyLists(c.Request().Context(), &query.GetMyListsQuery{
+		UserID: userID,
+	})
+	if err != nil {
+		return lsc.errorResponse(c, err, "failed to list my lists")
+	}
+
+	return c.JSON(http.StatusOK, mapper.ToMyListsResponse(result))
 }
 
 func unauthorized(c echo.Context) error {
