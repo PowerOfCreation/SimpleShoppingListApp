@@ -53,15 +53,7 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
       >
         <View style={styles.listContent}>
           <View style={styles.listInfo}>
-            <View style={styles.titleRow}>
-              <ThemedText type="defaultSemiBold">{props.listName}</ThemedText>
-              <MaterialIcons
-                testID={`shopping-list-sync-icon-${props.id}`}
-                name={props.syncEnabled ? "cloud" : "cloud-off"}
-                size={14}
-                color={props.syncEnabled ? accentColor : textSecondaryColor}
-              />
-            </View>
+            <ThemedText type="defaultSemiBold">{props.listName}</ThemedText>
             <ThemedText
               style={[styles.listDate, { color: textSecondaryColor }]}
               type="default"
@@ -69,15 +61,23 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
               {new Date(props.createdAt).toLocaleDateString()}
             </ThemedText>
           </View>
-          {props.totalCount !== undefined &&
-            props.completedCount !== undefined && (
-              <ThemedText
-                style={[styles.listCount, { color: textSecondaryColor }]}
-                type="default"
-              >
-                {props.completedCount}/{props.totalCount}
-              </ThemedText>
-            )}
+          <View style={styles.trailing}>
+            <MaterialIcons
+              testID={`shopping-list-sync-icon-${props.id}`}
+              name={props.syncEnabled ? "cloud" : "cloud-off"}
+              size={14}
+              color={props.syncEnabled ? accentColor : textSecondaryColor}
+            />
+            {props.totalCount !== undefined &&
+              props.completedCount !== undefined && (
+                <ThemedText
+                  style={[styles.listCount, { color: textSecondaryColor }]}
+                  type="default"
+                >
+                  {props.completedCount}/{props.totalCount}
+                </ThemedText>
+              )}
+          </View>
         </View>
         {props.totalCount !== undefined &&
           props.completedCount !== undefined &&
@@ -183,18 +183,16 @@ const styles = StyleSheet.create({
   listInfo: {
     flex: 1,
   },
-  titleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
   listDate: {
     fontSize: 12,
     marginTop: 2,
   },
+  trailing: {
+    alignItems: "flex-end",
+    gap: 4,
+  },
   listCount: {
     fontSize: 13,
-    marginLeft: 12,
   },
   progressBar: {
     flexDirection: "row",

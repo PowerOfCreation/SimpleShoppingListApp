@@ -56,38 +56,23 @@ exports[`ShoppingListEntry renders correctly 1`] = `
         }
       }
     >
-      <View
+      <Text
         style={
-          {
-            "alignItems": "center",
-            "flexDirection": "row",
-            "gap": 4,
-          }
+          [
+            {
+              "color": "#0e171e",
+            },
+            {
+              "fontSize": 16,
+              "fontWeight": "600",
+              "lineHeight": 24,
+            },
+            undefined,
+          ]
         }
       >
-        <Text
-          style={
-            [
-              {
-                "color": "#0e171e",
-              },
-              {
-                "fontSize": 16,
-                "fontWeight": "600",
-                "lineHeight": 24,
-              },
-              undefined,
-            ]
-          }
-        >
-          Default Shopping List
-        </Text>
-        <Text
-          testID="shopping-list-sync-icon-1"
-        >
-          cloud-off
-        </Text>
-      </View>
+        Default Shopping List
+      </Text>
       <Text
         style={
           [
@@ -113,32 +98,45 @@ exports[`ShoppingListEntry renders correctly 1`] = `
         3/15/2023
       </Text>
     </View>
-    <Text
+    <View
       style={
-        [
-          {
-            "color": "#0e171e",
-          },
-          {
-            "fontSize": 16,
-            "lineHeight": 24,
-          },
-          [
-            {
-              "fontSize": 13,
-              "marginLeft": 12,
-            },
-            {
-              "color": "#515960",
-            },
-          ],
-        ]
+        {
+          "alignItems": "flex-end",
+          "gap": 4,
+        }
       }
     >
-      2
-      /
-      5
-    </Text>
+      <Text
+        testID="shopping-list-sync-icon-1"
+      >
+        cloud-off
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "color": "#0e171e",
+            },
+            {
+              "fontSize": 16,
+              "lineHeight": 24,
+            },
+            [
+              {
+                "fontSize": 13,
+              },
+              {
+                "color": "#515960",
+              },
+            ],
+          ]
+        }
+      >
+        2
+        /
+        5
+      </Text>
+    </View>
   </View>
   <View
     style={
@@ -232,38 +230,23 @@ exports[`ShoppingListEntry renders correctly without counts 1`] = `
         }
       }
     >
-      <View
+      <Text
         style={
-          {
-            "alignItems": "center",
-            "flexDirection": "row",
-            "gap": 4,
-          }
+          [
+            {
+              "color": "#0e171e",
+            },
+            {
+              "fontSize": 16,
+              "fontWeight": "600",
+              "lineHeight": 24,
+            },
+            undefined,
+          ]
         }
       >
-        <Text
-          style={
-            [
-              {
-                "color": "#0e171e",
-              },
-              {
-                "fontSize": 16,
-                "fontWeight": "600",
-                "lineHeight": 24,
-              },
-              undefined,
-            ]
-          }
-        >
-          Default Shopping List
-        </Text>
-        <Text
-          testID="shopping-list-sync-icon-1"
-        >
-          cloud-off
-        </Text>
-      </View>
+        Default Shopping List
+      </Text>
       <Text
         style={
           [
@@ -287,6 +270,20 @@ exports[`ShoppingListEntry renders correctly without counts 1`] = `
         }
       >
         3/15/2023
+      </Text>
+    </View>
+    <View
+      style={
+        {
+          "alignItems": "flex-end",
+          "gap": 4,
+        }
+      }
+    >
+      <Text
+        testID="shopping-list-sync-icon-1"
+      >
+        cloud-off
       </Text>
     </View>
   </View>
