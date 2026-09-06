@@ -63,10 +63,10 @@ export function Entry(props: EntryProps) {
       >
         {props.isCompleted ? (
           <View style={[styles.checkbox, { backgroundColor: accentColor }]}>
-            <MaterialIcons name="check" size={14} color={onAccentColor} />
+            <MaterialIcons name="check" size={19} color={onAccentColor} />
           </View>
         ) : (
-          <View style={[styles.checkbox, { borderColor: accentColor }]} />
+          <View style={[styles.checkbox, { borderColor: textColor }]} />
         )}
 
         <ThemedText style={[styles.baseText, getTextStyles()]} type="default">
@@ -145,20 +145,20 @@ export function Entry(props: EntryProps) {
 
 const styles = StyleSheet.create({
   buttonStyle: {
-    paddingHorizontal: 18,
+    paddingHorizontal: 2,
     width: "100%",
-    minHeight: 57,
+    minHeight: 54,
     paddingVertical: 13,
     borderBottomWidth: 1,
     display: "flex",
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 24,
   },
   checkbox: {
-    width: 25,
-    height: 25,
-    borderRadius: 13,
+    width: 22,
+    height: 22,
+    borderRadius: 4,
     borderWidth: 2,
     flexShrink: 0,
     alignItems: "center",
@@ -166,7 +166,7 @@ const styles = StyleSheet.create({
   },
   baseText: {
     flex: 1,
-    fontSize: 18,
+    fontSize: 17,
   },
   completedText: {
     textDecorationLine: "line-through",

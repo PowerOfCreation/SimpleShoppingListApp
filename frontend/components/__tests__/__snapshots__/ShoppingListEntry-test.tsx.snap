@@ -1,5 +1,319 @@
 // Jest Snapshot v1, https://goo.gl/fbAQLP
 
+exports[`ShoppingListEntry renders consistent dark list rows 1`] = `
+<View
+  accessibilityState={
+    {
+      "busy": undefined,
+      "checked": undefined,
+      "disabled": undefined,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  onClick={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    {
+      "alignItems": "center",
+      "borderBottomColor": "#34434c",
+      "borderBottomWidth": 1,
+      "flexDirection": "row",
+      "opacity": 1,
+      "paddingHorizontal": 0,
+      "paddingVertical": 18,
+    }
+  }
+  testID="shopping-list-entry-1"
+>
+  <Text
+    testID="shopping-list-icon-1"
+  >
+    shopping-bag
+  </Text>
+  <View
+    style={
+      {
+        "flex": 1,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
+        }
+      }
+    >
+      <Text
+        numberOfLines={1}
+        style={
+          [
+            {
+              "color": "#f1f2f8",
+            },
+            {
+              "fontSize": 16,
+              "fontWeight": "600",
+              "lineHeight": 24,
+            },
+            {
+              "flex": 1,
+              "fontSize": 19,
+              "marginRight": 8,
+            },
+          ]
+        }
+      >
+        Weekly groceries
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "color": "#f1f2f8",
+            },
+            {
+              "fontSize": 16,
+              "lineHeight": 24,
+            },
+            {
+              "fontSize": 16,
+              "marginRight": 10,
+            },
+          ]
+        }
+      >
+        8
+         open
+      </Text>
+      <Text>
+        chevron-right
+      </Text>
+    </View>
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
+          "marginTop": 2,
+        }
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "color": "#f1f2f8",
+            },
+            {
+              "fontSize": 16,
+              "lineHeight": 24,
+            },
+            [
+              {
+                "fontSize": 15,
+              },
+              {
+                "color": "#b8c8d5",
+              },
+            ],
+          ]
+        }
+      >
+        Private
+         ·
+         
+        12
+         
+        items
+      </Text>
+      <Text
+        testID="shopping-list-sync-icon-1"
+      >
+        cloud-off
+      </Text>
+    </View>
+  </View>
+</View>
+`;
+
+exports[`ShoppingListEntry renders consistent dark list rows 2`] = `
+<View
+  accessibilityState={
+    {
+      "busy": undefined,
+      "checked": undefined,
+      "disabled": undefined,
+      "expanded": undefined,
+      "selected": undefined,
+    }
+  }
+  accessibilityValue={
+    {
+      "max": undefined,
+      "min": undefined,
+      "now": undefined,
+      "text": undefined,
+    }
+  }
+  accessible={true}
+  collapsable={false}
+  focusable={true}
+  onClick={[Function]}
+  onResponderGrant={[Function]}
+  onResponderMove={[Function]}
+  onResponderRelease={[Function]}
+  onResponderTerminate={[Function]}
+  onResponderTerminationRequest={[Function]}
+  onStartShouldSetResponder={[Function]}
+  style={
+    {
+      "alignItems": "center",
+      "borderBottomColor": "#34434c",
+      "borderBottomWidth": 1,
+      "flexDirection": "row",
+      "opacity": 1,
+      "paddingHorizontal": 0,
+      "paddingVertical": 18,
+    }
+  }
+  testID="shopping-list-entry-1"
+>
+  <Text
+    testID="shopping-list-icon-1"
+  >
+    shopping-bag
+  </Text>
+  <View
+    style={
+      {
+        "flex": 1,
+      }
+    }
+  >
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
+        }
+      }
+    >
+      <Text
+        numberOfLines={1}
+        style={
+          [
+            {
+              "color": "#f1f2f8",
+            },
+            {
+              "fontSize": 16,
+              "fontWeight": "600",
+              "lineHeight": 24,
+            },
+            {
+              "flex": 1,
+              "fontSize": 19,
+              "marginRight": 8,
+            },
+          ]
+        }
+      >
+        Drugstore
+      </Text>
+      <Text
+        style={
+          [
+            {
+              "color": "#f1f2f8",
+            },
+            {
+              "fontSize": 16,
+              "lineHeight": 24,
+            },
+            {
+              "fontSize": 16,
+              "marginRight": 10,
+            },
+          ]
+        }
+      >
+        3
+         open
+      </Text>
+      <Text>
+        chevron-right
+      </Text>
+    </View>
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
+          "marginTop": 2,
+        }
+      }
+    >
+      <Text
+        style={
+          [
+            {
+              "color": "#f1f2f8",
+            },
+            {
+              "fontSize": 16,
+              "lineHeight": 24,
+            },
+            [
+              {
+                "fontSize": 15,
+              },
+              {
+                "color": "#b8c8d5",
+              },
+            ],
+          ]
+        }
+      >
+        Private
+         ·
+         
+        5
+         
+        items
+      </Text>
+      <Text
+        testID="shopping-list-sync-icon-1"
+      >
+        cloud-off
+      </Text>
+    </View>
+  </View>
+</View>
+`;
+
 exports[`ShoppingListEntry renders correctly 1`] = `
 <View
   accessibilityState={
@@ -31,32 +345,40 @@ exports[`ShoppingListEntry renders correctly 1`] = `
   onStartShouldSetResponder={[Function]}
   style={
     {
+      "alignItems": "center",
       "borderBottomColor": "#d9dfe3",
       "borderBottomWidth": 1,
+      "flexDirection": "row",
       "opacity": 1,
-      "paddingHorizontal": 18,
-      "paddingVertical": 14,
+      "paddingHorizontal": 0,
+      "paddingVertical": 18,
     }
   }
   testID="shopping-list-entry-1"
 >
+  <Text
+    testID="shopping-list-icon-1"
+  >
+    shopping-bag
+  </Text>
   <View
     style={
       {
-        "alignItems": "baseline",
-        "flexDirection": "row",
-        "justifyContent": "space-between",
+        "flex": 1,
       }
     }
   >
     <View
       style={
         {
-          "flex": 1,
+          "alignItems": "center",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
         }
       }
     >
       <Text
+        numberOfLines={1}
         style={
           [
             {
@@ -67,7 +389,11 @@ exports[`ShoppingListEntry renders correctly 1`] = `
               "fontWeight": "600",
               "lineHeight": 24,
             },
-            undefined,
+            {
+              "flex": 1,
+              "fontSize": 19,
+              "marginRight": 8,
+            },
           ]
         }
       >
@@ -83,34 +409,30 @@ exports[`ShoppingListEntry renders correctly 1`] = `
               "fontSize": 16,
               "lineHeight": 24,
             },
-            [
-              {
-                "fontSize": 12,
-                "marginTop": 2,
-              },
-              {
-                "color": "#515960",
-              },
-            ],
+            {
+              "fontSize": 16,
+              "marginRight": 10,
+            },
           ]
         }
       >
-        3/15/2023
+        3
+         open
+      </Text>
+      <Text>
+        chevron-right
       </Text>
     </View>
     <View
       style={
         {
-          "alignItems": "flex-end",
-          "gap": 4,
+          "alignItems": "center",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
+          "marginTop": 2,
         }
       }
     >
-      <Text
-        testID="shopping-list-sync-icon-1"
-      >
-        cloud-off
-      </Text>
       <Text
         style={
           [
@@ -123,7 +445,7 @@ exports[`ShoppingListEntry renders correctly 1`] = `
             },
             [
               {
-                "fontSize": 13,
+                "fontSize": 15,
               },
               {
                 "color": "#515960",
@@ -132,44 +454,19 @@ exports[`ShoppingListEntry renders correctly 1`] = `
           ]
         }
       >
-        2
-        /
+        Private
+         ·
+         
         5
+         
+        items
+      </Text>
+      <Text
+        testID="shopping-list-sync-icon-1"
+      >
+        cloud-off
       </Text>
     </View>
-  </View>
-  <View
-    style={
-      [
-        {
-          "borderRadius": 4,
-          "flexDirection": "row",
-          "height": 8,
-          "marginTop": 8,
-          "overflow": "hidden",
-        },
-        {
-          "backgroundColor": "#d9dfe3",
-        },
-      ]
-    }
-  >
-    <View
-      style={
-        {
-          "backgroundColor": "#026fd7",
-          "flex": 2,
-        }
-      }
-    />
-    <View
-      style={
-        {
-          "backgroundColor": "#bc5e00",
-          "flex": 3,
-        }
-      }
-    />
   </View>
 </View>
 `;
@@ -205,32 +502,40 @@ exports[`ShoppingListEntry renders correctly without counts 1`] = `
   onStartShouldSetResponder={[Function]}
   style={
     {
+      "alignItems": "center",
       "borderBottomColor": "#d9dfe3",
       "borderBottomWidth": 1,
+      "flexDirection": "row",
       "opacity": 1,
-      "paddingHorizontal": 18,
-      "paddingVertical": 14,
+      "paddingHorizontal": 0,
+      "paddingVertical": 18,
     }
   }
   testID="shopping-list-entry-1"
 >
+  <Text
+    testID="shopping-list-icon-1"
+  >
+    shopping-bag
+  </Text>
   <View
     style={
       {
-        "alignItems": "baseline",
-        "flexDirection": "row",
-        "justifyContent": "space-between",
+        "flex": 1,
       }
     }
   >
     <View
       style={
         {
-          "flex": 1,
+          "alignItems": "center",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
         }
       }
     >
       <Text
+        numberOfLines={1}
         style={
           [
             {
@@ -241,12 +546,30 @@ exports[`ShoppingListEntry renders correctly without counts 1`] = `
               "fontWeight": "600",
               "lineHeight": 24,
             },
-            undefined,
+            {
+              "flex": 1,
+              "fontSize": 19,
+              "marginRight": 8,
+            },
           ]
         }
       >
         Default Shopping List
       </Text>
+      <Text>
+        chevron-right
+      </Text>
+    </View>
+    <View
+      style={
+        {
+          "alignItems": "center",
+          "flexDirection": "row",
+          "justifyContent": "space-between",
+          "marginTop": 2,
+        }
+      }
+    >
       <Text
         style={
           [
@@ -259,8 +582,7 @@ exports[`ShoppingListEntry renders correctly without counts 1`] = `
             },
             [
               {
-                "fontSize": 12,
-                "marginTop": 2,
+                "fontSize": 15,
               },
               {
                 "color": "#515960",
@@ -269,17 +591,13 @@ exports[`ShoppingListEntry renders correctly without counts 1`] = `
           ]
         }
       >
-        3/15/2023
+        Private
+         ·
+         
+        0
+         
+        items
       </Text>
-    </View>
-    <View
-      style={
-        {
-          "alignItems": "flex-end",
-          "gap": 4,
-        }
-      }
-    >
       <Text
         testID="shopping-list-sync-icon-1"
       >

@@ -36,10 +36,10 @@ exports[`Entry renders correctly 1`] = `
       "borderBottomWidth": 1,
       "display": "flex",
       "flexDirection": "row",
-      "gap": 12,
-      "minHeight": 57,
+      "gap": 24,
+      "minHeight": 54,
       "opacity": 1,
-      "paddingHorizontal": 18,
+      "paddingHorizontal": 2,
       "paddingVertical": 13,
       "width": "100%",
     }
@@ -51,15 +51,15 @@ exports[`Entry renders correctly 1`] = `
       [
         {
           "alignItems": "center",
-          "borderRadius": 13,
+          "borderRadius": 4,
           "borderWidth": 2,
           "flexShrink": 0,
-          "height": 25,
+          "height": 22,
           "justifyContent": "center",
-          "width": 25,
+          "width": 22,
         },
         {
-          "borderColor": "#026fd7",
+          "borderColor": "#0e171e",
         },
       ]
     }
@@ -77,7 +77,7 @@ exports[`Entry renders correctly 1`] = `
         [
           {
             "flex": 1,
-            "fontSize": 18,
+            "fontSize": 17,
           },
           [
             {

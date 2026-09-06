@@ -8,6 +8,7 @@ import { getPreference } from "@/database/preferences-repository"
 
 import { ShoppingListOverview } from "@/types/ShoppingListOverview"
 import { ThemedText } from "@/components/ThemedText"
+import { DrawerToggleButton } from "@/components/DrawerToggleButton"
 import { useShoppingLists } from "@/hooks/useShoppingLists"
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { ShoppingListEntry } from "@/components/ShoppingListEntry"
@@ -21,7 +22,8 @@ const logger = createLogger("Index")
 export default function Index() {
   const { lists, isLoading, error, refetch, updateList } = useShoppingLists()
   const syncEngine = useSyncEngine()
-  const dividerColor = useThemeColor({}, "divider")
+  const backgroundColor = useThemeColor({}, "background")
+  const textColor = useThemeColor({}, "text")
   const [isCheckingPreference, setIsCheckingPreference] = React.useState(true)
   const hasNavigatedRef = React.useRef(false)
   const { status } = useAuth()
@@ -173,14 +175,14 @@ export default function Index() {
     if (lists.length === 0) {
       return (
         <ThemedText style={styles.emptyListInfoTextStyle} type="default">
-          Press the &apos;+&apos; button at the bottom right to create your
-          first shopping list.
+          Create your first shopping list with “New list”.
         </ThemedText>
       )
     }
 
     return (
       <FlatList
+        contentContainerStyle={styles.listContent}
         data={lists}
         renderItem={renderListItem}
         keyExtractor={(item) => item.id}
@@ -192,10 +194,23 @@ export default function Index() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["bottom"]}>
-      <View style={[styles.headerDivider, { backgroundColor: dividerColor }]} />
+    <SafeAreaView
+      style={[styles.container, { backgroundColor }]}
+      edges={["top", "bottom"]}
+    >
+      <View style={styles.header}>
+        <DrawerToggleButton tintColor={textColor} style={styles.menuButton} />
+        <ThemedText type="title" style={styles.headerTitle}>
+          My lists
+        </ThemedText>
+      </View>
       {renderContent()}
-      <ActionButton testID="add-button" symbol="+" onPress={handleAddList} />
+      <ActionButton
+        testID="add-button"
+        symbol="+"
+        label="New list"
+        onPress={handleAddList}
+      />
     </SafeAreaView>
   )
 }
@@ -204,10 +219,23 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  headerDivider: {
-    height: 1,
-    width: "100%",
+  header: {
+    paddingHorizontal: 20,
+    paddingBottom: 6,
   },
+  menuButton: {
+    marginLeft: -4,
+    alignSelf: "flex-start",
+    minWidth: 44,
+    minHeight: 44,
+    justifyContent: "center",
+  },
+  headerTitle: {
+    marginTop: 12,
+    fontSize: 34,
+    lineHeight: 42,
+  },
+  listContent: { paddingHorizontal: 22, paddingBottom: 110 },
   centered: {
     flex: 1,
     justifyContent: "center",
