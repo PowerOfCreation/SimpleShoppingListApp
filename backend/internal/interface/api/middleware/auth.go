@@ -137,13 +137,17 @@ func UserProfileFromContext(c echo.Context) (name, pictureURL string) {
 	return name, pictureURL
 }
 
-// sanitizePictureURL drops anything that isn't an https URL - Keycloak's
-// picture claim is normally self-editable by the account owner, and this
-// value later gets handed to every other user who previews/redeems that
-// owner's invites. https-only rules out javascript:/data:/file: schemes and
-// plain-http links; it does not, and cannot, rule out an https URL that's
-// itself a tracking pixel - that risk is inherent to rendering any
-// user-supplied avatar URL and would need image proxying to close fully.
+// allowedPictureHosts restricts the picture claim to hosts where the URL
+// itself is provider-issued and never attacker-choosable (Google's avatar
+// CDN). Widen this - or replace it with a per-provider proxy - only when
+// adding an identity provider that doesn't host avatars itself.
+var allowedPictureHosts = []string{"googleusercontent.com"}
+
+// sanitizePictureURL drops anything that isn't an https URL on an allowed
+// host. This value gets handed to every other user who previews/redeems the
+// claim owner's invites, so an arbitrary host would let any account holder
+// point it at a tracking pixel; restricting to Google's own CDN closes that
+// off as long as Google is the only identity provider in use.
 func sanitizePictureURL(raw string) string {
 	if raw == "" {
 		return ""
@@ -152,7 +156,20 @@ func sanitizePictureURL(raw string) string {
 	if err != nil || parsed.Scheme != "https" || parsed.Host == "" {
 		return ""
 	}
+	if !isAllowedPictureHost(parsed.Hostname()) {
+		return ""
+	}
 	return raw
+}
+
+func isAllowedPictureHost(host string) bool {
+	host = strings.ToLower(host)
+	for _, allowed := range allowedPictureHosts {
+		if host == allowed || strings.HasSuffix(host, "."+allowed) {
+			return true
+		}
+	}
+	return false
 }
 
 func bearerToken(r *http.Request) (string, bool) {

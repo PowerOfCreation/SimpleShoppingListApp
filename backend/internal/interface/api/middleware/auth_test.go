@@ -284,11 +284,16 @@ func TestSanitizePictureURL(t *testing.T) {
 		want string
 	}{
 		{"empty", "", ""},
-		{"valid https", "https://example.com/alice.png", "https://example.com/alice.png"},
-		{"plain http is dropped", "http://example.com/alice.png", ""},
+		{"google avatar host", "https://lh3.googleusercontent.com/alice.png", "https://lh3.googleusercontent.com/alice.png"},
+		{"bare allowed host", "https://googleusercontent.com/alice.png", "https://googleusercontent.com/alice.png"},
+		{"host is case-insensitive", "https://LH3.GOOGLEUSERCONTENT.COM/alice.png", "https://LH3.GOOGLEUSERCONTENT.COM/alice.png"},
+		{"non-allowlisted host is dropped", "https://example.com/alice.png", ""},
+		{"suffix-only lookalike is dropped", "https://evilgoogleusercontent.com/alice.png", ""},
+		{"trailing lookalike is dropped", "https://googleusercontent.com.evil.com/alice.png", ""},
+		{"plain http is dropped", "http://lh3.googleusercontent.com/alice.png", ""},
 		{"javascript scheme is dropped", "javascript:alert(1)", ""},
 		{"data scheme is dropped", "data:image/png;base64,AAAA", ""},
-		{"schemeless is dropped", "example.com/alice.png", ""},
+		{"schemeless is dropped", "googleusercontent.com/alice.png", ""},
 		{"unparseable is dropped", "https://[::1", ""},
 	}
 	for _, tc := range cases {
