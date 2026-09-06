@@ -1,6 +1,6 @@
 import { useState, useCallback, useEffect } from "react"
 import { ShoppingListOverview } from "@/types/ShoppingListOverview"
-import { shoppingListService } from "@/api/shopping-list-service"
+import { getShoppingListService } from "@/api/shopping-list-service"
 import { createLogger } from "@/api/common/logger"
 import { onListDataChanged } from "@/api/sync/sync-events"
 
@@ -15,7 +15,7 @@ export function useShoppingLists() {
     setIsLoading(true)
     setError(null)
     try {
-      const result = await shoppingListService.getAllWithCounts()
+      const result = await getShoppingListService().getAllWithCounts()
       if (result.success) {
         setLists(result.getValue()!)
       } else {

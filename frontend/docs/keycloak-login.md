@@ -106,6 +106,20 @@ de.lightdevsolutions.sholist.dev://oauth2redirect   (dev)
 de.lightdevsolutions.sholist://oauth2redirect       (production)
 ```
 
+### Web
+
+There is no installed app on web for a custom scheme to reopen, so
+`getRedirectUri()` branches on `Platform.OS === "web"` and uses
+`expo-auth-session`'s `makeRedirectUri({ path: REDIRECT_PATH })` instead,
+which resolves to `window.location.origin + "/oauth2redirect"` (e.g.
+`http://localhost:8081/oauth2redirect` in dev). `WebBrowser.maybeCompleteAuthSession()`
+(`AuthProvider.tsx`) picks that page load back up and closes the login popup.
+
+That origin must also be added to Keycloak's **Valid redirect URIs** for the
+`shopping-list` client, the same way the native scheme is — not done yet, so
+login on web currently fails at Keycloak with "Invalid parameter:
+redirect_uri" even though the app sends the right value.
+
 ### Why it is read from `Application.applicationId`
 
 `redirect-uri.ts` deliberately does **not** read `Constants.expoConfig.scheme`.

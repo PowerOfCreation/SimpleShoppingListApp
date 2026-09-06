@@ -467,4 +467,15 @@ export class IngredientService {
   }
 }
 
-export const ingredientService = new IngredientService()
+let instance: IngredientService | null = null
+
+// Lazy, not `export const ... = new IngredientService()`: that would call
+// getDatabase() at module-evaluation time, before app/_layout.tsx has had a
+// chance to run ensureDatabaseInitialized() - fatal on web, where the DB
+// can only be opened asynchronously.
+export function getIngredientService(): IngredientService {
+  if (!instance) {
+    instance = new IngredientService()
+  }
+  return instance
+}

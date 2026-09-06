@@ -3,7 +3,7 @@ import { useLocalSearchParams } from "expo-router"
 import { Ingredient } from "@/types/Ingredient"
 import { Priority } from "@/types/Priority"
 import { SortMode } from "@/types/SortMode"
-import { ingredientService } from "@/api/ingredient-service"
+import { getIngredientService } from "@/api/ingredient-service"
 import { createLogger } from "@/api/common/logger"
 import { IngredientListRepository } from "@/database/ingredient-list-repository"
 import { getDatabase } from "@/database/database"
@@ -33,7 +33,7 @@ export function useIngredients() {
     setIsLoading(true)
     setError(null)
     try {
-      const result = await ingredientService.GetIngredients(listId)
+      const result = await getIngredientService().GetIngredients(listId)
 
       if (!result.success) {
         const err = result.getError()
@@ -107,7 +107,11 @@ export function useIngredients() {
       )
 
       try {
-        await ingredientService.updateCompletion(id, listId, newCompletedState)
+        await getIngredientService().updateCompletion(
+          id,
+          listId,
+          newCompletedState
+        )
       } catch (err) {
         logger.error("Error toggling completion", err)
         // Revert on error
@@ -136,7 +140,11 @@ export function useIngredients() {
       )
 
       try {
-        const result = await ingredientService.updateName(id, listId, newName)
+        const result = await getIngredientService().updateName(
+          id,
+          listId,
+          newName
+        )
         if (!result.success) {
           // Revert on error
           setIngredients((prev) =>
@@ -175,7 +183,11 @@ export function useIngredients() {
       )
 
       try {
-        const result = await ingredientService.setPriority(id, listId, priority)
+        const result = await getIngredientService().setPriority(
+          id,
+          listId,
+          priority
+        )
         if (!result.success) {
           // Revert on error
           setIngredients((prev) =>
@@ -216,7 +228,7 @@ export function useIngredients() {
       )
 
       try {
-        const result = await ingredientService.clearPriority(id, listId)
+        const result = await getIngredientService().clearPriority(id, listId)
         if (!result.success) {
           // Revert on error
           setIngredients((prev) =>
@@ -244,7 +256,7 @@ export function useIngredients() {
   const deleteIngredient = React.useCallback(
     async (id: string) => {
       try {
-        const result = await ingredientService.deleteIngredient(id, listId)
+        const result = await getIngredientService().deleteIngredient(id, listId)
         if (result.success) {
           // Refetch to update the list
           await loadIngredients()

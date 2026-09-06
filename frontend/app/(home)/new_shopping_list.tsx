@@ -8,7 +8,7 @@ import { Palette } from "@/constants/Colors"
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { ThemedTextInput } from "@/components/ThemedTextInput"
 import { ToggleRow } from "@/components/ToggleRow"
-import { shoppingListService } from "@/api/shopping-list-service"
+import { getShoppingListService } from "@/api/shopping-list-service"
 import { useAuth } from "@/api/auth/AuthProvider"
 
 export default function NewShoppingList() {
@@ -52,7 +52,7 @@ export default function NewShoppingList() {
     }
     setCreating(true)
     try {
-      const result = await shoppingListService.createList(
+      const result = await getShoppingListService().createList(
         listName,
         effectiveSyncEnabled
       )

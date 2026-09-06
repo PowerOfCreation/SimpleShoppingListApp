@@ -33,6 +33,19 @@ export function getDatabase(): SQLite.SQLiteDatabase {
 }
 
 /**
+ * Async equivalent of getDatabase(), required on web: openDatabaseSync's
+ * SharedArrayBuffer/Atomics bridge isn't reliably supported there and times
+ * out. Call once, before any getDatabase() call, so the singleton it caches
+ * is already resolved for every later synchronous getDatabase() call.
+ */
+export async function ensureDatabaseInitialized(): Promise<SQLite.SQLiteDatabase> {
+  if (!dbInstance) {
+    dbInstance = await SQLite.openDatabaseAsync(DB_NAME)
+  }
+  return dbInstance
+}
+
+/**
  * Reset the database singleton instance.
  * Used for testing and lifecycle management (e.g., app going to background).
  */

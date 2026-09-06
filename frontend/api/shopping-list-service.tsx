@@ -335,4 +335,15 @@ export class ShoppingListService {
   }
 }
 
-export const shoppingListService = new ShoppingListService()
+let instance: ShoppingListService | null = null
+
+// Lazy, not `export const ... = new ShoppingListService()`: that would call
+// getDatabase() at module-evaluation time, before app/_layout.tsx has had a
+// chance to run ensureDatabaseInitialized() - fatal on web, where the DB
+// can only be opened asynchronously.
+export function getShoppingListService(): ShoppingListService {
+  if (!instance) {
+    instance = new ShoppingListService()
+  }
+  return instance
+}
