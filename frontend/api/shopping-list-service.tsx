@@ -196,6 +196,53 @@ export class ShoppingListService {
     }
   }
 
+  /**
+   * Turns sync off for every list this device currently syncs - logout's
+   * "stop sharing my further changes" step. Same per-list effect as
+   * setSyncEnabled(id, false) (setting row + cancelling pending outbox rows),
+   * batched into one outbox/list-change notification instead of one per list.
+   */
+  async disableAllSync(): Promise<Result<void, DbQueryError>> {
+    try {
+      const idsResult = await this.listSyncSettingsRepository.getEnabledIds()
+      if (!idsResult.success) {
+        return Result.fail(idsResult.getError())
+      }
+      const listIds = idsResult.getValue()!
+
+      for (const listId of listIds) {
+        const settingResult = await this.listSyncSettingsRepository.setEnabled(
+          listId,
+          false
+        )
+        if (!settingResult.success) {
+          return settingResult
+        }
+        const cancelResult = await this.outboxRepository.cancelForList(listId)
+        if (!cancelResult.success) {
+          return Result.fail(cancelResult.getError())
+        }
+      }
+
+      if (listIds.length > 0) {
+        notifyOutboxChanged()
+        notifySyncListsChanged()
+      }
+
+      return Result.ok(undefined)
+    } catch (error) {
+      logger.error("Error disabling sync for all lists", error)
+      return Result.fail(
+        new DbQueryError(
+          "Failed to disable sync for all lists",
+          "disableAllSync",
+          "IngredientList",
+          error
+        )
+      )
+    }
+  }
+
   async updateName(
     listId: string,
     newName: string

@@ -9,6 +9,7 @@ import React, {
 import * as WebBrowser from "expo-web-browser"
 
 import { createLogger } from "@/api/common/logger"
+import { getShoppingListService } from "@/api/shopping-list-service"
 import {
   AuthCancelledError,
   AuthUser,
@@ -92,6 +93,18 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const logout = useCallback(async () => {
     setBusy(true)
     setError(null)
+
+    // Best-effort and before the session tokens go: a device-local setting,
+    // so a failure here must not block sign-out, but it should run while the
+    // sync engine is still connected, so the server sees an explicit
+    // unsubscribe instead of the connection just dropping.
+    const disableSyncResult = await getShoppingListService().disableAllSync()
+    if (!disableSyncResult.success) {
+      logger.warn(
+        "Could not disable sync for all lists",
+        disableSyncResult.getError()
+      )
+    }
 
     const result = await logoutService()
 

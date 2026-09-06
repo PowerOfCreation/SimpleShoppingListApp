@@ -277,6 +277,56 @@ describe("ShoppingListService", () => {
     })
   })
 
+  describe("disableAllSync", () => {
+    it("disables every currently-synced list and cancels its pending outbox rows", async () => {
+      mockListSyncSettingsRepository.getEnabledIds.mockResolvedValue(
+        Result.ok(["list-1", "list-2"])
+      )
+
+      const result = await service.disableAllSync()
+
+      expect(result.success).toBe(true)
+      expect(mockListSyncSettingsRepository.setEnabled).toHaveBeenNthCalledWith(
+        1,
+        "list-1",
+        false
+      )
+      expect(mockListSyncSettingsRepository.setEnabled).toHaveBeenNthCalledWith(
+        2,
+        "list-2",
+        false
+      )
+      expect(mockOutboxRepository.cancelForList).toHaveBeenCalledWith("list-1")
+      expect(mockOutboxRepository.cancelForList).toHaveBeenCalledWith("list-2")
+    })
+
+    it("does nothing when no list is currently synced", async () => {
+      mockListSyncSettingsRepository.getEnabledIds.mockResolvedValue(
+        Result.ok([])
+      )
+
+      const result = await service.disableAllSync()
+
+      expect(result.success).toBe(true)
+      expect(mockListSyncSettingsRepository.setEnabled).not.toHaveBeenCalled()
+      expect(mockOutboxRepository.cancelForList).not.toHaveBeenCalled()
+    })
+
+    it("stops and reports the failure without touching later lists", async () => {
+      mockListSyncSettingsRepository.getEnabledIds.mockResolvedValue(
+        Result.ok(["list-1", "list-2"])
+      )
+      mockOutboxRepository.cancelForList.mockResolvedValueOnce(
+        Result.fail(new Error("db locked") as never)
+      )
+
+      const result = await service.disableAllSync()
+
+      expect(result.success).toBe(false)
+      expect(mockListSyncSettingsRepository.setEnabled).toHaveBeenCalledTimes(1)
+    })
+  })
+
   describe("deleteList", () => {
     it("removes the list projection and sync-setting row in appendWithProjection callback", async () => {
       mockEventRepository.appendWithProjection.mockImplementation(
