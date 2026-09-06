@@ -147,18 +147,22 @@ describe("<Invite /> Component Tests", () => {
 
     const { unmount } = renderInviteScreen()
     await waitFor(() => screen.getByTestId("invite-avatar-fallback"))
-    const firstColor = screen.getByTestId("invite-avatar-fallback").props.style
-      .flat()
-      .find((s: { backgroundColor?: string }) => s?.backgroundColor)
-      ?.backgroundColor
+    const firstColor = screen
+      .getByTestId("invite-avatar-fallback")
+      .props.style.flat()
+      .find(
+        (s: { backgroundColor?: string }) => s?.backgroundColor
+      )?.backgroundColor
     unmount()
 
     renderInviteScreen()
     await waitFor(() => screen.getByTestId("invite-avatar-fallback"))
-    const secondColor = screen.getByTestId("invite-avatar-fallback").props.style
-      .flat()
-      .find((s: { backgroundColor?: string }) => s?.backgroundColor)
-      ?.backgroundColor
+    const secondColor = screen
+      .getByTestId("invite-avatar-fallback")
+      .props.style.flat()
+      .find(
+        (s: { backgroundColor?: string }) => s?.backgroundColor
+      )?.backgroundColor
 
     expect(firstColor).toBeTruthy()
     expect(firstColor).toEqual(secondColor)
