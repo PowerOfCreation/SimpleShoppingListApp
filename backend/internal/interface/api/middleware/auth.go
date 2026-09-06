@@ -11,6 +11,8 @@ import (
 
 	"github.com/coreos/go-oidc/v3/oidc"
 	"github.com/labstack/echo/v4"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/entities"
+	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
 )
 
 const (
@@ -42,6 +44,15 @@ func Passthrough(next echo.HandlerFunc) echo.HandlerFunc {
 // *what* they may touch. List-level access (list_members) is enforced
 // separately, by ListAccessService - see sync-sharing-target.md §2.
 func NewKeycloakAuth(ctx context.Context, logger *slog.Logger) (echo.MiddlewareFunc, error) {
+	return newKeycloakAuth(ctx, logger, nil)
+}
+
+// NewKeycloakAuthWithProfiles refreshes given_name from verified tokens before
+// handling requests, including the first push and invite redemption.
+func NewKeycloakAuthWithProfiles(ctx context.Context, logger *slog.Logger, profiles repositories.UserProfileRepository) (echo.MiddlewareFunc, error) {
+	return newKeycloakAuth(ctx, logger, profiles)
+}
+func newKeycloakAuth(ctx context.Context, logger *slog.Logger, profiles repositories.UserProfileRepository) (echo.MiddlewareFunc, error) {
 	issuer := os.Getenv(envKeycloakIssuer)
 	clientID := os.Getenv(envKeycloakClientID)
 
@@ -81,8 +92,9 @@ func NewKeycloakAuth(ctx context.Context, logger *slog.Logger) (echo.MiddlewareF
 				// "profile" scope frontend/api/auth/config.ts requests) -
 				// Keycloak doesn't always populate either, so both are read
 				// best-effort and never gate authentication.
-				Name    string `json:"name"`
-				Picture string `json:"picture"`
+				GivenName string `json:"given_name"`
+				Name      string `json:"name"`
+				Picture   string `json:"picture"`
 			}
 			if err := idToken.Claims(&claims); err != nil {
 				RequestScopedLogger(logger, c).Warn("rejected request", "reason", "failed to parse claims", "error", err)
@@ -95,6 +107,17 @@ func NewKeycloakAuth(ctx context.Context, logger *slog.Logger) (echo.MiddlewareF
 				return c.JSON(http.StatusUnauthorized, map[string]string{
 					"error": "invalid token",
 				})
+			}
+
+			profile, err := entities.NewUserProfile(idToken.Subject, claims.GivenName)
+			if err != nil {
+				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
+			}
+			if profiles != nil {
+				if err := profiles.Upsert(c.Request().Context(), profile); err != nil {
+					RequestScopedLogger(logger, c).Error("failed to update user profile", "error", err)
+					return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
+				}
 			}
 
 			// Stashed for user-scoping (see sync-design-decisions.md); read

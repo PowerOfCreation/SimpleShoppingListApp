@@ -49,3 +49,8 @@ type SyncedList struct {
 	CreatedAt pgtype.Timestamptz `db:"created_at" json:"created_at"`
 	HeadSeq   int64              `db:"head_seq" json:"head_seq"`
 }
+
+type UserProfile struct {
+	UserID    string `db:"user_id" json:"user_id"`
+	FirstName string `db:"first_name" json:"first_name"`
+}
