@@ -2,6 +2,18 @@ import * as React from "react"
 import { render, fireEvent } from "@testing-library/react-native"
 import { ShoppingListEntry, ShoppingListEntryProps } from "../ShoppingListEntry"
 
+// The real @expo/vector-icons component loads its font asynchronously, which
+// makes its rendered output non-deterministic in tests. Stub it with a plain
+// Text so the icon name can be asserted on synchronously.
+jest.mock("@expo/vector-icons", () => {
+  const { Text } = jest.requireActual("react-native")
+  return {
+    MaterialIcons: ({ name, testID }: { name: string; testID?: string }) => (
+      <Text testID={testID}>{name}</Text>
+    ),
+  }
+})
+
 // Define default props
 const defaultProps: ShoppingListEntryProps = {
   id: "1",
@@ -163,6 +175,22 @@ describe("ShoppingListEntry", () => {
     fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
 
     expect(queryByTestId("shopping-list-context-resync-1")).toBeFalsy()
+  })
+
+  it("shows a cloud icon when synced and cloud-off when local-only", () => {
+    const { getByTestId, rerender } = render(
+      <ShoppingListEntry {...defaultProps} syncEnabled />
+    )
+
+    expect(getByTestId("shopping-list-sync-icon-1").props.children).toBe(
+      "cloud"
+    )
+
+    rerender(<ShoppingListEntry {...defaultProps} syncEnabled={false} />)
+
+    expect(getByTestId("shopping-list-sync-icon-1").props.children).toBe(
+      "cloud-off"
+    )
   })
 
   it("calls onResync when Re-sync from server is pressed", () => {

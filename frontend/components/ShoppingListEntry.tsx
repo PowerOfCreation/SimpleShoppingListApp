@@ -10,6 +10,7 @@ import { ContextMenu } from "./ContextMenu"
 import { RenameSheet } from "./RenameSheet"
 import { ConfirmDialog } from "./ConfirmDialog"
 import { useThemeColor } from "@/hooks/useThemeColor"
+import { MaterialIcons } from "@expo/vector-icons"
 
 export type ShoppingListEntryProps = {
   id: string
@@ -60,15 +61,23 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
               {new Date(props.createdAt).toLocaleDateString()}
             </ThemedText>
           </View>
-          {props.totalCount !== undefined &&
-            props.completedCount !== undefined && (
-              <ThemedText
-                style={[styles.listCount, { color: textSecondaryColor }]}
-                type="default"
-              >
-                {props.completedCount}/{props.totalCount}
-              </ThemedText>
-            )}
+          <View style={styles.trailing}>
+            <MaterialIcons
+              testID={`shopping-list-sync-icon-${props.id}`}
+              name={props.syncEnabled ? "cloud" : "cloud-off"}
+              size={14}
+              color={props.syncEnabled ? accentColor : textSecondaryColor}
+            />
+            {props.totalCount !== undefined &&
+              props.completedCount !== undefined && (
+                <ThemedText
+                  style={[styles.listCount, { color: textSecondaryColor }]}
+                  type="default"
+                >
+                  {props.completedCount}/{props.totalCount}
+                </ThemedText>
+              )}
+          </View>
         </View>
         {props.totalCount !== undefined &&
           props.completedCount !== undefined &&
@@ -178,9 +187,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     marginTop: 2,
   },
+  trailing: {
+    alignItems: "flex-end",
+    gap: 4,
+  },
   listCount: {
     fontSize: 13,
-    marginLeft: 12,
   },
   progressBar: {
     flexDirection: "row",
