@@ -11,7 +11,10 @@ import { useAuth } from "@/api/auth/AuthProvider"
 import { useSharedSyncedLists } from "@/hooks/useSharedSyncedLists"
 
 jest.mock("@/api/auth/AuthProvider")
-jest.mock("@/hooks/useSharedSyncedLists")
+jest.mock("@/hooks/useSharedSyncedLists", () => ({
+  ...jest.requireActual("@/hooks/useSharedSyncedLists"),
+  useSharedSyncedLists: jest.fn(),
+}))
 
 const mockedUseAuth = useAuth as jest.Mock
 const mockedUseSharedSyncedLists = useSharedSyncedLists as jest.Mock

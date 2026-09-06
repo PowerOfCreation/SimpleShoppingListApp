@@ -7,20 +7,16 @@ import { useAuth } from "@/api/auth/AuthProvider"
 import { ConfirmDialog } from "@/components/ConfirmDialog"
 import { PrimaryButton } from "@/components/PrimaryButton"
 import { ThemedText } from "@/components/ThemedText"
-import { useSharedSyncedLists } from "@/hooks/useSharedSyncedLists"
+import {
+  sharedSyncWarning,
+  useSharedSyncedLists,
+} from "@/hooks/useSharedSyncedLists"
 import { useThemeColor } from "@/hooks/useThemeColor"
 
 function logoutWarning(sharedListNames: string[]): string {
-  const base = "Signing out stops sync for all your lists on this device."
-  if (sharedListNames.length === 0) {
-    return base
-  }
-  const names = sharedListNames.map((name) => `"${name}"`).join(", ")
-  const pronoun = sharedListNames.length === 1 ? "it" : "them"
-  return (
-    `${base}\n\nYou're currently sharing ${names}. People who already have ` +
-    `access can keep using ${pronoun} as before - you just won't see ` +
-    `further changes on this device anymore.`
+  return sharedSyncWarning(
+    "Signing out stops sync for all your lists on this device.",
+    sharedListNames
   )
 }
 
