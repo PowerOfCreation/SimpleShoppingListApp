@@ -10,6 +10,7 @@ import { ContextMenu } from "./ContextMenu"
 import { RenameSheet } from "./RenameSheet"
 import { ConfirmDialog } from "./ConfirmDialog"
 import { useThemeColor } from "@/hooks/useThemeColor"
+import { MaterialIcons } from "@expo/vector-icons"
 
 export type ShoppingListEntryProps = {
   id: string
@@ -52,7 +53,15 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
       >
         <View style={styles.listContent}>
           <View style={styles.listInfo}>
-            <ThemedText type="defaultSemiBold">{props.listName}</ThemedText>
+            <View style={styles.titleRow}>
+              <ThemedText type="defaultSemiBold">{props.listName}</ThemedText>
+              <MaterialIcons
+                testID={`shopping-list-sync-icon-${props.id}`}
+                name={props.syncEnabled ? "cloud" : "cloud-off"}
+                size={14}
+                color={props.syncEnabled ? accentColor : textSecondaryColor}
+              />
+            </View>
             <ThemedText
               style={[styles.listDate, { color: textSecondaryColor }]}
               type="default"
@@ -173,6 +182,11 @@ const styles = StyleSheet.create({
   },
   listInfo: {
     flex: 1,
+  },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
   },
   listDate: {
     fontSize: 12,

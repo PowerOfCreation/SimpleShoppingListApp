@@ -56,23 +56,38 @@ exports[`ShoppingListEntry renders correctly 1`] = `
         }
       }
     >
-      <Text
+      <View
         style={
-          [
-            {
-              "color": "#0e171e",
-            },
-            {
-              "fontSize": 16,
-              "fontWeight": "600",
-              "lineHeight": 24,
-            },
-            undefined,
-          ]
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "gap": 4,
+          }
         }
       >
-        Default Shopping List
-      </Text>
+        <Text
+          style={
+            [
+              {
+                "color": "#0e171e",
+              },
+              {
+                "fontSize": 16,
+                "fontWeight": "600",
+                "lineHeight": 24,
+              },
+              undefined,
+            ]
+          }
+        >
+          Default Shopping List
+        </Text>
+        <Text
+          testID="shopping-list-sync-icon-1"
+        >
+          cloud-off
+        </Text>
+      </View>
       <Text
         style={
           [
@@ -217,23 +232,38 @@ exports[`ShoppingListEntry renders correctly without counts 1`] = `
         }
       }
     >
-      <Text
+      <View
         style={
-          [
-            {
-              "color": "#0e171e",
-            },
-            {
-              "fontSize": 16,
-              "fontWeight": "600",
-              "lineHeight": 24,
-            },
-            undefined,
-          ]
+          {
+            "alignItems": "center",
+            "flexDirection": "row",
+            "gap": 4,
+          }
         }
       >
-        Default Shopping List
-      </Text>
+        <Text
+          style={
+            [
+              {
+                "color": "#0e171e",
+              },
+              {
+                "fontSize": 16,
+                "fontWeight": "600",
+                "lineHeight": 24,
+              },
+              undefined,
+            ]
+          }
+        >
+          Default Shopping List
+        </Text>
+        <Text
+          testID="shopping-list-sync-icon-1"
+        >
+          cloud-off
+        </Text>
+      </View>
       <Text
         style={
           [
