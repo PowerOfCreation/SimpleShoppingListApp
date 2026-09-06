@@ -6,6 +6,7 @@ import {
   StyleSheet,
   View,
 } from "react-native"
+import { Ionicons } from "@expo/vector-icons"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { router, useLocalSearchParams } from "expo-router"
 
@@ -17,6 +18,32 @@ import { useInvitePreview } from "@/hooks/useInvitePreview"
 import { useRedeemInvite } from "@/hooks/useRedeemInvite"
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { InvitePreview } from "@/api/sharing/sharing-client"
+
+/**
+ * Backdrop colors for the fallback avatar, picked by hashing the inviter's
+ * name - purely for visual variety (so different inviters look different at
+ * a glance), never a security or identity signal. No server state needed:
+ * the same name always hashes to the same color on every device.
+ */
+const AVATAR_FALLBACK_COLORS = [
+  "#F87171",
+  "#FB923C",
+  "#FBBF24",
+  "#4ADE80",
+  "#22D3EE",
+  "#818CF8",
+  "#C084FC",
+  "#F472B6",
+]
+
+function avatarFallbackColor(name: string | null): string {
+  if (!name) return AVATAR_FALLBACK_COLORS[0]
+  let hash = 0
+  for (let i = 0; i < name.length; i++) {
+    hash = (hash * 31 + name.charCodeAt(i)) | 0
+  }
+  return AVATAR_FALLBACK_COLORS[Math.abs(hash) % AVATAR_FALLBACK_COLORS.length]
+}
 
 /**
  * Landing screen for a tapped invite link
@@ -125,12 +152,23 @@ export default function Invite() {
 
   const renderInvitationCard = (data: InvitePreview) => (
     <View style={[styles.card, { backgroundColor: surfaceColor }]}>
-      {data.invitedByPictureURL && (
+      {data.invitedByPictureURL ? (
         <Image
           testID="invite-avatar"
           source={{ uri: data.invitedByPictureURL }}
           style={styles.avatar}
         />
+      ) : (
+        <View
+          testID="invite-avatar-fallback"
+          style={[
+            styles.avatar,
+            styles.avatarFallback,
+            { backgroundColor: avatarFallbackColor(data.invitedByName) },
+          ]}
+        >
+          <Ionicons name="person" size={40} color="#fff" />
+        </View>
       )}
       <ThemedText
         testID="invite-heading"
@@ -264,6 +302,10 @@ const styles = StyleSheet.create({
     height: 72,
     borderRadius: 36,
     marginBottom: 4,
+  },
+  avatarFallback: {
+    justifyContent: "center",
+    alignItems: "center",
   },
   heading: {
     textAlign: "center",
