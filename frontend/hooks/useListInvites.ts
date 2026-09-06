@@ -46,8 +46,15 @@ export function describeSharingError(error: SharingError): string {
  * unconditionally (rules of hooks), but there is no point asking the backend
  * about invites while signed out or without a backend URL - the answer would
  * be a 401 dressed up as an error message.
+ *
+ * `listName` is only used for createInvite - see SharingClient.createInvite
+ * for why the client, not the server, supplies it.
  */
-export function useListInvites(listId: string, enabled: boolean) {
+export function useListInvites(
+  listId: string,
+  listName: string,
+  enabled: boolean
+) {
   const [invites, setInvites] = React.useState<ListInvite[]>([])
   const [isLoading, setIsLoading] = React.useState(enabled)
   const [error, setError] = React.useState<SharingError | null>(null)
@@ -104,7 +111,7 @@ export function useListInvites(listId: string, enabled: boolean) {
     async (ttl: InviteTTL) => {
       if (!enabled || !listId) return
       setIsCreating(true)
-      const result = await sharingClient.createInvite(listId, ttl)
+      const result = await sharingClient.createInvite(listId, ttl, listName)
       if (result.success) {
         setNewInvite(result.getValue())
         setError(null)
@@ -119,7 +126,7 @@ export function useListInvites(listId: string, enabled: boolean) {
       }
       setIsCreating(false)
     },
-    [enabled, listId, refresh]
+    [enabled, listId, listName, refresh]
   )
 
   const revokeInvite = React.useCallback(

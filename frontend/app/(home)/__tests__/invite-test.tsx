@@ -28,9 +28,11 @@ const mockedUseAuth = useAuth as jest.Mock
 jest.mock("@/api/sharing/sharing-client", () => ({
   ...jest.requireActual("@/api/sharing/sharing-client"),
   sharingClient: {
+    previewInvite: jest.fn(),
     redeemInvite: jest.fn(),
   },
 }))
+const mockPreviewInvite = sharingClient.previewInvite as jest.Mock
 const mockRedeemInvite = sharingClient.redeemInvite as jest.Mock
 
 // pullList is a real SyncEngine method that talks to a real backend - out of
@@ -41,6 +43,14 @@ jest.mock("@/api/sync/SyncProvider", () => ({
   useSyncEngine: jest.fn(),
 }))
 const mockUseSyncEngine = useSyncEngine as jest.Mock
+
+const defaultPreview = {
+  listId: "list-1",
+  listName: "Lidl",
+  memberCount: 3,
+  invitedByName: "Niklas",
+  invitedByPictureURL: "https://example.com/niklas.png",
+}
 
 function mockAuth(status: "loading" | "signedOut" | "signedIn") {
   mockedUseAuth.mockReturnValue({
@@ -74,11 +84,12 @@ describe("<Invite /> Component Tests", () => {
     await db.execAsync(`DELETE FROM ingredient_lists;`)
     await db.execAsync(`DELETE FROM list_sync_settings;`)
     mockAuth("signedIn")
+    mockPreviewInvite.mockResolvedValue(Result.ok(defaultPreview))
     mockPullList = jest.fn().mockResolvedValue(undefined)
     mockUseSyncEngine.mockReturnValue({ pullList: mockPullList })
   })
 
-  it("asks the user to sign in and never calls the backend when signed out", async () => {
+  it("asks the user to sign in and never previews or redeems when signed out", async () => {
     mockAuth("signedOut")
 
     renderInviteScreen()
@@ -86,15 +97,86 @@ describe("<Invite /> Component Tests", () => {
     await waitFor(() => {
       expect(screen.getByTestId("invite-login")).toBeTruthy()
     })
+    expect(mockPreviewInvite).not.toHaveBeenCalled()
     expect(mockRedeemInvite).not.toHaveBeenCalled()
   })
 
-  it("explains a link with no token instead of trying to redeem it", async () => {
+  it("explains a link with no token instead of trying to preview it", async () => {
     renderInviteScreen("/invite")
 
     await waitFor(() => {
       expect(screen.getByTestId("invite-unavailable")).toBeTruthy()
     })
+    expect(mockPreviewInvite).not.toHaveBeenCalled()
+  })
+
+  it("shows the invitation card with the inviter, list name, member count and avatar", async () => {
+    renderInviteScreen()
+
+    await waitFor(() => {
+      expect(mockPreviewInvite).toHaveBeenCalledWith("plaintext-token")
+    })
+    await waitFor(() => {
+      expect(screen.getByTestId("invite-heading")).toHaveTextContent(
+        "Niklas invited you to join list Lidl"
+      )
+    })
+    expect(screen.getByText("3 members")).toBeTruthy()
+    expect(screen.getByTestId("invite-avatar")).toBeTruthy()
+    expect(mockRedeemInvite).not.toHaveBeenCalled()
+  })
+
+  it("omits the avatar when the inviter has no picture", async () => {
+    mockPreviewInvite.mockResolvedValue(
+      Result.ok({ ...defaultPreview, invitedByPictureURL: null })
+    )
+
+    renderInviteScreen()
+
+    await waitFor(() => {
+      expect(screen.getByTestId("invite-heading")).toBeTruthy()
+    })
+    expect(screen.queryByTestId("invite-avatar")).toBeNull()
+  })
+
+  it("falls back to 'Someone' when the inviter has no name", async () => {
+    mockPreviewInvite.mockResolvedValue(
+      Result.ok({ ...defaultPreview, invitedByName: null })
+    )
+
+    renderInviteScreen()
+
+    await waitFor(() => {
+      expect(screen.getByTestId("invite-heading")).toHaveTextContent(
+        "Someone invited you to join list Lidl"
+      )
+    })
+  })
+
+  it("shows a dead-invite message instead of a card when the preview fails", async () => {
+    mockPreviewInvite.mockResolvedValue(
+      Result.fail(new SharingError("nope", "inviteGone"))
+    )
+
+    renderInviteScreen()
+
+    await waitFor(() => {
+      expect(screen.getByTestId("invite-unavailable")).toHaveTextContent(
+        /revoked or has expired/i
+      )
+    })
+    expect(mockRedeemInvite).not.toHaveBeenCalled()
+  })
+
+  it("navigates home instead of joining when the user declines", async () => {
+    renderInviteScreen()
+
+    await waitFor(() => {
+      expect(screen.getByTestId("invite-join")).toBeTruthy()
+    })
+    fireEvent.press(screen.getByTestId("invite-decline"))
+
+    expect(router.replace).toHaveBeenCalledWith("/(home)")
     expect(mockRedeemInvite).not.toHaveBeenCalled()
   })
 
@@ -115,6 +197,11 @@ describe("<Invite /> Component Tests", () => {
     })
 
     renderInviteScreen()
+
+    await waitFor(() => {
+      expect(screen.getByTestId("invite-join")).toBeTruthy()
+    })
+    fireEvent.press(screen.getByTestId("invite-join"))
 
     await waitFor(() => {
       expect(mockRedeemInvite).toHaveBeenCalledWith("plaintext-token")
@@ -154,6 +241,11 @@ describe("<Invite /> Component Tests", () => {
     renderInviteScreen()
 
     await waitFor(() => {
+      expect(screen.getByTestId("invite-join")).toBeTruthy()
+    })
+    fireEvent.press(screen.getByTestId("invite-join"))
+
+    await waitFor(() => {
       expect(screen.getByTestId("invite-joined")).toHaveTextContent(
         "You're already a member of this list."
       )
@@ -172,6 +264,11 @@ describe("<Invite /> Component Tests", () => {
     renderInviteScreen()
 
     await waitFor(() => {
+      expect(screen.getByTestId("invite-join")).toBeTruthy()
+    })
+    fireEvent.press(screen.getByTestId("invite-join"))
+
+    await waitFor(() => {
       expect(screen.getByTestId("invite-pending")).toBeTruthy()
     })
 
@@ -185,12 +282,17 @@ describe("<Invite /> Component Tests", () => {
     expect(router.replace).toHaveBeenCalledWith("/(home)")
   })
 
-  it("shows a retryable error when the invite is gone", async () => {
+  it("shows a retryable error and keeps the card when redeeming fails", async () => {
     mockRedeemInvite.mockResolvedValue(
       Result.fail(new SharingError("nope", "inviteGone"))
     )
 
     renderInviteScreen()
+
+    await waitFor(() => {
+      expect(screen.getByTestId("invite-join")).toBeTruthy()
+    })
+    fireEvent.press(screen.getByTestId("invite-join"))
 
     await waitFor(() => {
       expect(screen.getByTestId("invite-error")).toHaveTextContent(

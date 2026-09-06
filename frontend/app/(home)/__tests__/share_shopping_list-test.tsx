@@ -123,7 +123,7 @@ describe("ShareShoppingList", () => {
     fireEvent.press(screen.getByTestId("create-invite"))
 
     await waitFor(() => {
-      expect(mockCreateInvite).toHaveBeenCalledWith("list-1", "1h")
+      expect(mockCreateInvite).toHaveBeenCalledWith("list-1", "1h", "Rewe")
     })
   })
 
@@ -137,7 +137,7 @@ describe("ShareShoppingList", () => {
     fireEvent.press(screen.getByTestId("create-invite"))
 
     await waitFor(() => {
-      expect(mockCreateInvite).toHaveBeenCalledWith("list-1", "7d")
+      expect(mockCreateInvite).toHaveBeenCalledWith("list-1", "7d", "Rewe")
     })
   })
 

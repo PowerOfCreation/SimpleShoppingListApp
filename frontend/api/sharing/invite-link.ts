@@ -1,11 +1,8 @@
 import { getRedirectScheme } from "@/api/auth/redirect-uri"
 
 /**
- * The deep-link path an invite points at. Redeeming is not implemented yet -
- * nothing in the app navigates here (see the note in
- * frontend/docs/sync-sharing-target.md §5) - but the link the owner shares
- * has to be built now, and its shape is what a future redeem handler will
- * have to match.
+ * The deep-link path an invite points at - handled by app/(home)/invite.tsx,
+ * which previews and redeems the token carried in INVITE_TOKEN_PARAM.
  */
 export const INVITE_PATH = "invite"
 

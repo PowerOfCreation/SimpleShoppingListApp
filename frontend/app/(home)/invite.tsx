@@ -1,5 +1,11 @@
 import React from "react"
-import { ActivityIndicator, StyleSheet, View } from "react-native"
+import {
+  ActivityIndicator,
+  Image,
+  Pressable,
+  StyleSheet,
+  View,
+} from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { router, useLocalSearchParams } from "expo-router"
 
@@ -7,8 +13,10 @@ import { useAuth } from "@/api/auth/AuthProvider"
 import { isSharingConfigured } from "@/api/sharing/config"
 import { PrimaryButton } from "@/components/PrimaryButton"
 import { ThemedText } from "@/components/ThemedText"
+import { useInvitePreview } from "@/hooks/useInvitePreview"
 import { useRedeemInvite } from "@/hooks/useRedeemInvite"
 import { useThemeColor } from "@/hooks/useThemeColor"
+import { InvitePreview } from "@/api/sharing/sharing-client"
 
 /**
  * Landing screen for a tapped invite link
@@ -17,6 +25,10 @@ import { useThemeColor } from "@/hooks/useThemeColor"
  * itself needs no login - so this is the one place that has to ask for one
  * before it can do anything, rather than hiding the entry point like
  * share_shopping_list does.
+ *
+ * Shows an invitation card (list name, member count, inviter + avatar) from
+ * POST /invites/preview before joining, then only calls POST /invites/redeem
+ * once the user taps "Join list" - unlike the old auto-join behavior.
  */
 export default function Invite() {
   const { token } = useLocalSearchParams<{ token: string }>()
@@ -25,8 +37,15 @@ export default function Invite() {
   const configured = isSharingConfigured()
 
   const {
+    status: previewStatus,
+    data: preview,
+    errorMessage: previewErrorMessage,
+    preview: loadPreview,
+  } = useInvitePreview()
+
+  const {
     status: redeemStatus,
-    errorMessage,
+    errorMessage: redeemErrorMessage,
     listId,
     alreadyMember,
     redeem,
@@ -36,10 +55,11 @@ export default function Invite() {
   React.useEffect(() => {
     if (hasStartedRef.current || !token || !isSignedIn || !configured) return
     hasStartedRef.current = true
-    redeem(token)
-  }, [token, isSignedIn, configured, redeem])
+    loadPreview(token)
+  }, [token, isSignedIn, configured, loadPreview])
 
   const backgroundColor = useThemeColor({}, "background")
+  const surfaceColor = useThemeColor({}, "surface")
   const textSecondaryColor = useThemeColor({}, "textSecondary")
   const dangerColor = useThemeColor({}, "danger")
 
@@ -50,6 +70,81 @@ export default function Invite() {
     >
       {message}
     </ThemedText>
+  )
+
+  const renderJoinFooter = () => {
+    if (redeemStatus === "error") {
+      return (
+        <>
+          <ThemedText
+            testID="invite-error"
+            style={[styles.hint, { color: dangerColor }]}
+          >
+            {redeemErrorMessage}
+          </ThemedText>
+          <PrimaryButton
+            testID="invite-retry"
+            label="Try again"
+            onPress={() => redeem(token)}
+          />
+        </>
+      )
+    }
+
+    if (redeemStatus === "working") {
+      return (
+        <>
+          <ActivityIndicator testID="invite-working" size="large" />
+          <ThemedText style={[styles.hint, { color: textSecondaryColor }]}>
+            Joining list...
+          </ThemedText>
+        </>
+      )
+    }
+
+    return (
+      <View style={styles.joinRow}>
+        <Pressable
+          testID="invite-decline"
+          onPress={() => router.replace("/(home)")}
+        >
+          <ThemedText
+            style={[styles.declineText, { color: textSecondaryColor }]}
+          >
+            Not now
+          </ThemedText>
+        </Pressable>
+        <PrimaryButton
+          testID="invite-join"
+          label="Join list"
+          onPress={() => redeem(token)}
+        />
+      </View>
+    )
+  }
+
+  const renderInvitationCard = (data: InvitePreview) => (
+    <View style={[styles.card, { backgroundColor: surfaceColor }]}>
+      {data.invitedByPictureURL && (
+        <Image
+          testID="invite-avatar"
+          source={{ uri: data.invitedByPictureURL }}
+          style={styles.avatar}
+        />
+      )}
+      <ThemedText
+        testID="invite-heading"
+        type="subtitle"
+        style={styles.heading}
+      >
+        {(data.invitedByName ?? "Someone") +
+          ` invited you to join list ${data.listName}`}
+      </ThemedText>
+      <ThemedText style={[styles.hint, { color: textSecondaryColor }]}>
+        {data.memberCount} member{data.memberCount === 1 ? "" : "s"}
+      </ThemedText>
+      <View style={styles.footer}>{renderJoinFooter()}</View>
+    </View>
   )
 
   const renderContent = () => {
@@ -79,35 +174,6 @@ export default function Invite() {
       )
     }
 
-    if (redeemStatus === "idle" || redeemStatus === "working") {
-      return (
-        <>
-          <ActivityIndicator testID="invite-working" size="large" />
-          <ThemedText style={[styles.hint, { color: textSecondaryColor }]}>
-            Joining list...
-          </ThemedText>
-        </>
-      )
-    }
-
-    if (redeemStatus === "error") {
-      return (
-        <>
-          <ThemedText
-            testID="invite-error"
-            style={[styles.hint, { color: dangerColor }]}
-          >
-            {errorMessage}
-          </ThemedText>
-          <PrimaryButton
-            testID="invite-retry"
-            label="Try again"
-            onPress={() => redeem(token)}
-          />
-        </>
-      )
-    }
-
     if (redeemStatus === "pending") {
       return (
         <>
@@ -124,20 +190,43 @@ export default function Invite() {
       )
     }
 
-    return (
-      <>
-        <ThemedText testID="invite-joined" type="subtitle">
-          {alreadyMember
-            ? "You're already a member of this list."
-            : "You've joined the list."}
-        </ThemedText>
-        <PrimaryButton
-          testID="invite-open-list"
-          label="Open list"
-          onPress={() => router.replace(`/view_shopping_list?listId=${listId}`)}
-        />
-      </>
-    )
+    if (redeemStatus === "joined") {
+      return (
+        <>
+          <ThemedText testID="invite-joined" type="subtitle">
+            {alreadyMember
+              ? "You're already a member of this list."
+              : "You've joined the list."}
+          </ThemedText>
+          <PrimaryButton
+            testID="invite-open-list"
+            label="Open list"
+            onPress={() =>
+              router.replace(`/view_shopping_list?listId=${listId}`)
+            }
+          />
+        </>
+      )
+    }
+
+    if (previewStatus === "idle" || previewStatus === "loading") {
+      return (
+        <>
+          <ActivityIndicator testID="invite-preview-loading" size="large" />
+          <ThemedText style={[styles.hint, { color: textSecondaryColor }]}>
+            Loading invite...
+          </ThemedText>
+        </>
+      )
+    }
+
+    if (previewStatus === "error") {
+      return renderUnavailable(
+        previewErrorMessage ?? "This invite is unavailable."
+      )
+    }
+
+    return renderInvitationCard(preview!)
   }
 
   return (
@@ -162,9 +251,40 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
   },
+  card: {
+    width: "100%",
+    maxWidth: 340,
+    borderRadius: 20,
+    padding: 24,
+    gap: 8,
+    alignItems: "center",
+  },
+  avatar: {
+    width: 72,
+    height: 72,
+    borderRadius: 36,
+    marginBottom: 4,
+  },
+  heading: {
+    textAlign: "center",
+  },
   hint: {
     fontSize: 14,
     lineHeight: 20,
     textAlign: "center",
+  },
+  footer: {
+    marginTop: 12,
+    gap: 12,
+    alignItems: "center",
+  },
+  joinRow: {
+    flexDirection: "row",
+    gap: 16,
+    alignItems: "center",
+  },
+  declineText: {
+    fontSize: 14,
+    fontWeight: "700",
   },
 })
