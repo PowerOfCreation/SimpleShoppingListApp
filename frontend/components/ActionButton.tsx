@@ -11,6 +11,7 @@ import { Palette } from "@/constants/Colors"
 
 type ActionProps = {
   testID?: string
+  label?: string
   symbol: string
   onPress: (event: GestureResponderEvent) => void
 }
@@ -23,8 +24,11 @@ export function ActionButton(props: ActionProps) {
   return (
     <TouchableOpacity
       testID={props.testID}
+      accessibilityRole="button"
+      accessibilityLabel={props.label}
       style={[
         styles.button,
+        props.label ? styles.labeledButton : undefined,
         { bottom: 24 + insets.bottom, backgroundColor: accentColor },
       ]}
       onPress={props.onPress}
@@ -32,6 +36,11 @@ export function ActionButton(props: ActionProps) {
       <Text style={[styles.symbol, { color: onAccentColor }]}>
         {props.symbol}
       </Text>
+      {props.label && (
+        <Text style={[styles.label, { color: onAccentColor }]}>
+          {props.label}
+        </Text>
+      )}
     </TouchableOpacity>
   )
 }
@@ -51,6 +60,15 @@ const styles = StyleSheet.create({
     shadowRadius: 16,
     elevation: 6,
   },
+  labeledButton: {
+    width: "auto",
+    paddingHorizontal: 20,
+    height: 56,
+    borderRadius: 20,
+    flexDirection: "row",
+    gap: 12,
+  },
+  label: { fontSize: 18, fontWeight: "600" },
   symbol: {
     fontSize: 24,
     lineHeight: 26,

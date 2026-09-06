@@ -37,10 +37,12 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
   const dividerColor = useThemeColor({}, "divider")
   const textSecondaryColor = useThemeColor({}, "textSecondary")
   const accentColor = useThemeColor({}, "accent")
-  const amberColor = useThemeColor({}, "amber")
 
   const ingredientCount = props.totalCount ?? 0
   const ingredientText = ingredientCount === 1 ? "ingredient" : "ingredients"
+  const hasCounts =
+    props.totalCount !== undefined && props.completedCount !== undefined
+  const openCount = hasCounts ? props.totalCount! - props.completedCount! : 0
 
   return (
     <>
@@ -51,54 +53,47 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
         onLongPress={() => setShowContextMenu(true)}
         onPressOut={props.onPressOut}
       >
-        <View style={styles.listContent}>
-          <View style={styles.listInfo}>
-            <ThemedText type="defaultSemiBold">{props.listName}</ThemedText>
+        <MaterialIcons
+          testID={`shopping-list-icon-${props.id}`}
+          name="shopping-bag"
+          size={44}
+          color={textSecondaryColor}
+          style={styles.listIcon}
+        />
+        <View style={styles.details}>
+          <View style={styles.listContent}>
+            <ThemedText
+              type="defaultSemiBold"
+              style={styles.listName}
+              numberOfLines={1}
+            >
+              {props.listName}
+            </ThemedText>
+            {hasCounts && (
+              <ThemedText style={styles.openCount}>{openCount} open</ThemedText>
+            )}
+            <MaterialIcons
+              name="chevron-right"
+              size={22}
+              color={textSecondaryColor}
+            />
+          </View>
+          <View style={styles.metaRow}>
             <ThemedText
               style={[styles.listDate, { color: textSecondaryColor }]}
               type="default"
             >
-              {new Date(props.createdAt).toLocaleDateString()}
+              {props.syncEnabled ? "Sync enabled" : "Private"} ·{" "}
+              {ingredientCount} {ingredientCount === 1 ? "item" : "items"}
             </ThemedText>
-          </View>
-          <View style={styles.trailing}>
             <MaterialIcons
               testID={`shopping-list-sync-icon-${props.id}`}
               name={props.syncEnabled ? "cloud" : "cloud-off"}
               size={14}
               color={props.syncEnabled ? accentColor : textSecondaryColor}
             />
-            {props.totalCount !== undefined &&
-              props.completedCount !== undefined && (
-                <ThemedText
-                  style={[styles.listCount, { color: textSecondaryColor }]}
-                  type="default"
-                >
-                  {props.completedCount}/{props.totalCount}
-                </ThemedText>
-              )}
           </View>
         </View>
-        {props.totalCount !== undefined &&
-          props.completedCount !== undefined &&
-          props.totalCount > 0 && (
-            <View
-              style={[styles.progressBar, { backgroundColor: dividerColor }]}
-            >
-              <View
-                style={{
-                  flex: props.completedCount,
-                  backgroundColor: accentColor,
-                }}
-              />
-              <View
-                style={{
-                  flex: props.totalCount - props.completedCount,
-                  backgroundColor: amberColor,
-                }}
-              />
-            </View>
-          )}
       </TouchableOpacity>
       <ContextMenu
         testID={`shopping-list-context-menu-${props.id}`}
@@ -171,34 +166,32 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
 
 const styles = StyleSheet.create({
   listItem: {
-    paddingHorizontal: 18,
-    paddingVertical: 14,
+    paddingHorizontal: 0,
+    paddingVertical: 18,
+    flexDirection: "row",
+    alignItems: "center",
     borderBottomWidth: 1,
   },
   listContent: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "baseline",
+    alignItems: "center",
   },
-  listInfo: {
+  listName: {
     flex: 1,
+    fontSize: 19,
+    marginRight: 8,
   },
-  listDate: {
-    fontSize: 12,
+  details: { flex: 1 },
+  listIcon: { marginRight: 14 },
+  openCount: { fontSize: 16, marginRight: 10 },
+  metaRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
     marginTop: 2,
   },
-  trailing: {
-    alignItems: "flex-end",
-    gap: 4,
-  },
-  listCount: {
-    fontSize: 13,
-  },
-  progressBar: {
-    flexDirection: "row",
-    height: 8,
-    marginTop: 8,
-    borderRadius: 4,
-    overflow: "hidden",
+  listDate: {
+    fontSize: 15,
   },
 })

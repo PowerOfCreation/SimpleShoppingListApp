@@ -1,20 +1,10 @@
 import React from "react"
 import { Stack } from "expo-router"
 import { useThemeColor } from "@/hooks/useThemeColor"
-import { DrawerToggleButton } from "@/components/DrawerToggleButton"
-
-function HeaderLeft({ color }: { color: string }) {
-  return <DrawerToggleButton tintColor={color} />
-}
 
 export default function HomeLayout() {
   const backgroundColor = useThemeColor({}, "background")
   const color = useThemeColor({}, "text")
-
-  const headerLeft = React.useCallback(
-    () => <HeaderLeft color={color} />,
-    [color]
-  )
 
   return (
     <Stack
@@ -24,13 +14,7 @@ export default function HomeLayout() {
         contentStyle: { backgroundColor },
       }}
     >
-      <Stack.Screen
-        name="index"
-        options={{
-          headerTitle: "Shopping Lists",
-          headerLeft,
-        }}
-      />
+      <Stack.Screen name="index" options={{ headerShown: false }} />
       <Stack.Screen
         name="view_shopping_list"
         options={{

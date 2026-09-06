@@ -1,4 +1,3 @@
-import { ActionButton } from "@/components/ActionButton"
 import { Palette } from "@/constants/Colors"
 import { Entry } from "@/components/Entry"
 import React from "react"
@@ -45,6 +44,10 @@ export default function ViewShoppingList() {
   const isFirstSortSignalRender = React.useRef(true)
   const navigation = useNavigation()
   const dividerColor = useThemeColor({}, "divider")
+  const backgroundColor = useThemeColor({}, "background")
+  const accentColor = useThemeColor({}, "accent")
+  const textColor = useThemeColor({}, "text")
+  const completedCount = ingredients.filter((item) => item.completed).length
 
   React.useEffect(() => {
     if (listId) {
@@ -83,18 +86,21 @@ export default function ViewShoppingList() {
         <MaterialIcons
           name="sort"
           size={24}
-          color="#007AFF"
+          color={textColor}
           style={styles.sortIcon}
         />
       </TouchableOpacity>
     ),
-    [sortIngredients]
+    [sortIngredients, textColor]
   )
 
   // Update header with title and sort button
   React.useEffect(() => {
     navigation.setOptions({
-      headerTitle: listName || "",
+      headerTitle: "Lists",
+      headerTitleStyle: { fontSize: 17, fontWeight: "400" },
+      headerBackTitle: "Lists",
+      headerShadowVisible: false,
       headerRight: headerRightComponent,
     })
   }, [listName, navigation, headerRightComponent])
@@ -142,14 +148,14 @@ export default function ViewShoppingList() {
     if (ingredients.length === 0) {
       return (
         <ThemedText style={styles.emptyListInfoTextStyle} type="default">
-          Press the &apos;+&apos; button at the bottom right to add your first
-          product.
+          Add your first item with “Add item”.
         </ThemedText>
       )
     }
 
     return (
       <FlatList
+        contentContainerStyle={styles.listContent}
         data={ingredients}
         renderItem={renderEntry}
         keyExtractor={(item) => item.id}
@@ -161,20 +167,52 @@ export default function ViewShoppingList() {
   }
 
   return (
-    <SafeAreaView style={styles.container} edges={["bottom"]}>
-      <View style={[styles.headerDivider, { backgroundColor: dividerColor }]} />
+    <SafeAreaView
+      style={[styles.container, { backgroundColor }]}
+      edges={["bottom"]}
+    >
+      <View style={styles.summary}>
+        <ThemedText type="title" style={styles.title}>
+          {listName}
+        </ThemedText>
+        <View style={styles.progressRow}>
+          <ThemedText>
+            <ThemedText type="defaultSemiBold">
+              {ingredients.length - completedCount} open
+            </ThemedText>{" "}
+            / {ingredients.length} items
+          </ThemedText>
+          <View
+            style={[styles.progressTrack, { backgroundColor: dividerColor }]}
+          >
+            <View
+              style={[
+                styles.progressFill,
+                {
+                  backgroundColor: accentColor,
+                  width: `${ingredients.length ? (completedCount / ingredients.length) * 100 : 0}%`,
+                },
+              ]}
+            />
+          </View>
+        </View>
+        <TouchableOpacity
+          testID="add-button"
+          accessibilityRole="button"
+          style={[styles.addButton, { borderColor: dividerColor }]}
+          onPress={() =>
+            router.push({ pathname: "/new_ingredient", params: { listId } })
+          }
+        >
+          <MaterialIcons name="add" size={28} color={textColor} />
+          <ThemedText style={styles.addLabel}>Add item</ThemedText>
+        </TouchableOpacity>
+      </View>
       <SystemMessage
         message={sortModeMessage}
         onHide={() => setSortModeMessage(null)}
       />
       {renderContent()}
-      <ActionButton
-        testID="add-button"
-        symbol="+"
-        onPress={() =>
-          router.push({ pathname: "/new_ingredient", params: { listId } })
-        }
-      />
     </SafeAreaView>
   )
 }
@@ -183,10 +221,27 @@ const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
-  headerDivider: {
-    height: 1,
-    width: "100%",
+  summary: { paddingHorizontal: 22, paddingTop: 12, paddingBottom: 20 },
+  title: { fontSize: 32, lineHeight: 40, marginBottom: 26 },
+  progressRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 20,
+    marginBottom: 32,
   },
+  progressTrack: { flex: 1, height: 7, borderRadius: 4, overflow: "hidden" },
+  progressFill: { height: "100%" },
+  addButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 14,
+    borderWidth: 1,
+    borderRadius: 7,
+    minHeight: 46,
+    paddingHorizontal: 12,
+  },
+  addLabel: { fontSize: 17 },
+  listContent: { paddingHorizontal: 22, paddingBottom: 24 },
   centered: {
     flex: 1,
     justifyContent: "center",

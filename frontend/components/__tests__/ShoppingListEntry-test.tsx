@@ -1,4 +1,5 @@
 import * as React from "react"
+import * as ReactNative from "react-native"
 import { render, fireEvent } from "@testing-library/react-native"
 import { ShoppingListEntry, ShoppingListEntryProps } from "../ShoppingListEntry"
 
@@ -37,6 +38,27 @@ describe("ShoppingListEntry", () => {
     expect(toJSON()).toMatchSnapshot()
   })
 
+  it("renders consistent dark list rows", () => {
+    const theme = jest
+      .spyOn(ReactNative, "useColorScheme")
+      .mockReturnValue("dark")
+    try {
+      const { toJSON, rerender } = render(
+        <ShoppingListEntry
+          {...defaultProps}
+          listName="Weekly groceries"
+          totalCount={12}
+          completedCount={4}
+        />
+      )
+      expect(toJSON()).toMatchSnapshot()
+      rerender(<ShoppingListEntry {...defaultProps} listName="Drugstore" />)
+      expect(toJSON()).toMatchSnapshot()
+    } finally {
+      theme.mockRestore()
+    }
+  })
+
   it("renders correctly without counts", () => {
     const { toJSON } = render(
       <ShoppingListEntry
@@ -57,17 +79,16 @@ describe("ShoppingListEntry", () => {
     expect(getByText("Groceries")).toBeTruthy()
   })
 
-  it("displays formatted date", () => {
+  it("displays privacy and article count", () => {
     const { getByText } = render(<ShoppingListEntry {...defaultProps} />)
 
-    const expectedDate = new Date(1678886400000).toLocaleDateString()
-    expect(getByText(expectedDate)).toBeTruthy()
+    expect(getByText("Private · 5 items")).toBeTruthy()
   })
 
-  it("displays completed count and total count", () => {
+  it("displays open count", () => {
     const { getByText } = render(<ShoppingListEntry {...defaultProps} />)
 
-    expect(getByText("2/5")).toBeTruthy()
+    expect(getByText("3 open")).toBeTruthy()
   })
 
   it("does not display counts when totalCount is undefined", () => {
@@ -79,7 +100,7 @@ describe("ShoppingListEntry", () => {
       />
     )
 
-    expect(queryByText("2/")).toBeFalsy()
+    expect(queryByText(/open/)).toBeFalsy()
   })
 
   it("does not display progress bar when totalCount is 0", () => {

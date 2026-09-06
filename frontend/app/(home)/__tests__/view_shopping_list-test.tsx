@@ -111,9 +111,7 @@ describe("<ViewShoppingList /> Component Tests", () => {
     await waitForAppReady()
 
     expect(
-      await screen.findByText(
-        "Press the '+' button at the bottom right to add your first product."
-      )
+      await screen.findByText("Add your first item with “Add item”.")
     ).toBeTruthy()
   })
 
