@@ -1,6 +1,6 @@
 import React from "react"
 import { Ingredient } from "@/types/Ingredient"
-import { ingredientService } from "@/api/ingredient-service"
+import { getIngredientService } from "@/api/ingredient-service"
 import { createLogger } from "@/api/common/logger"
 import { onListDataChanged } from "@/api/sync/sync-events"
 
@@ -26,7 +26,8 @@ export function useCompletedIngredients(listId: string | undefined) {
     setIsLoading(true)
     setError(null)
     try {
-      const result = await ingredientService.getCompletedIngredients(listId)
+      const result =
+        await getIngredientService().getCompletedIngredients(listId)
 
       if (!result.success) {
         const err = result.getError()

@@ -6,7 +6,7 @@ import { ThemedText } from "@/components/ThemedText"
 import { ThemedTextInput } from "@/components/ThemedTextInput"
 import { Palette } from "@/constants/Colors"
 import { useThemeColor } from "@/hooks/useThemeColor"
-import { ingredientService } from "@/api/ingredient-service"
+import { getIngredientService } from "@/api/ingredient-service"
 import { useCompletedIngredients } from "@/hooks/useCompletedIngredients"
 import { Ingredient } from "@/types/Ingredient"
 import { Priority } from "@/types/Priority"
@@ -60,7 +60,7 @@ export default function NewIngredient() {
       setInvalidInputExplanation("No list selected")
       return
     }
-    const result = await ingredientService.AddIngredients(
+    const result = await getIngredientService().AddIngredients(
       ingredientName,
       listId
     )
@@ -72,7 +72,7 @@ export default function NewIngredient() {
     }
 
     if (priority !== undefined) {
-      await ingredientService.setPriority(
+      await getIngredientService().setPriority(
         result.getValue()!.id,
         listId,
         priority

@@ -11,7 +11,7 @@ import { ThemedText } from "@/components/ThemedText"
 import { useShoppingLists } from "@/hooks/useShoppingLists"
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { ShoppingListEntry } from "@/components/ShoppingListEntry"
-import { shoppingListService } from "@/api/shopping-list-service"
+import { getShoppingListService } from "@/api/shopping-list-service"
 import { createLogger } from "@/api/common/logger"
 import { useAuth } from "@/api/auth/AuthProvider"
 import { useSyncEngine } from "@/api/sync/SyncProvider"
@@ -56,7 +56,7 @@ export default function Index() {
     updateList(id, { name: newName })
 
     try {
-      const result = await shoppingListService.updateName(id, newName)
+      const result = await getShoppingListService().updateName(id, newName)
       if (!result.success) {
         // Revert optimistic update on error
         updateList(id, { name: list.name })
@@ -73,7 +73,7 @@ export default function Index() {
     if (!list) return
 
     try {
-      const result = await shoppingListService.deleteList(id)
+      const result = await getShoppingListService().deleteList(id)
       if (result.success) {
         // Refetch to update the UI
         await refetch()
@@ -94,7 +94,7 @@ export default function Index() {
     updateList(id, { syncEnabled: enabled })
 
     try {
-      const result = await shoppingListService.setSyncEnabled(id, enabled)
+      const result = await getShoppingListService().setSyncEnabled(id, enabled)
       if (!result.success) {
         // Revert optimistic update on error
         updateList(id, { syncEnabled: previous })

@@ -10,7 +10,7 @@ import {
 import React, { useEffect, useState } from "react"
 import { initializeAndMigrateDatabase } from "@/database/data-migration"
 import { createLogger } from "@/api/common/logger"
-import { getDatabase } from "@/database/database"
+import { ensureDatabaseInitialized } from "@/database/database"
 import { SafeAreaProvider } from "react-native-safe-area-context"
 import { AuthProvider } from "@/api/auth/AuthProvider"
 import { SyncProvider } from "@/api/sync/SyncProvider"
@@ -27,7 +27,7 @@ export default function RootLayout() {
   useEffect(() => {
     async function initializeDatabase() {
       try {
-        const db = getDatabase()
+        const db = await ensureDatabaseInitialized()
         const result = await initializeAndMigrateDatabase(db)
 
         if (result.success) {
