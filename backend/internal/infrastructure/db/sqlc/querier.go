@@ -74,6 +74,7 @@ type Querier interface {
 	GetListInviteById(ctx context.Context, id uuid.UUID) (ListInvite, error)
 	GetListInviteByTokenHash(ctx context.Context, tokenHash string) (ListInvite, error)
 	GetListMember(ctx context.Context, arg GetListMemberParams) (ListMember, error)
+	GetListMemberProfiles(ctx context.Context, listID uuid.UUID) ([]GetListMemberProfilesRow, error)
 	// Every list the caller owns or is a member of - the discovery endpoint
 	// behind "restore my lists after reinstall" (sync-sharing-target.md §7.1/§8).
 	// Self-scoped by the caller's own verified user_id, so unlike
@@ -110,6 +111,7 @@ type Querier interface {
 	// server has none to return.
 	SyncedListExists(ctx context.Context, id uuid.UUID) (bool, error)
 	UpdateSyncedListHeadSeq(ctx context.Context, arg UpdateSyncedListHeadSeqParams) error
+	UpsertUserProfile(ctx context.Context, arg UpsertUserProfileParams) error
 }
 
 var _ Querier = (*Queries)(nil)

@@ -159,3 +159,34 @@ air
 
 Postgres keeps its data in the named `postgres_data` volume; `-v` deletes it
 so the next start starts empty and the runner applies the full schema.
+
+### List members
+
+`GET /api/v1/todo-lists/:listId/members` requires a bearer token and current
+membership of the requested list. Both owner and member can read all members,
+including the owner. The response is ordered by `user_id`:
+
+```json
+{"members":[{"user_id":"keycloak-subject","first_name":"Anna"}]}
+```
+
+Only the verified Keycloak subject and OIDC `given_name` are returned. No surname,
+full name, email, picture, role or invite metadata is included. `user_id` is an
+opaque string, not necessarily a UUID. Multiple given names are preserved.
+
+Migration `00013` adds `user_profiles`. Authenticated API requests refresh the
+caller's first name before the handler runs (including first push and joining).
+Unchanged profiles cause no row update. No Keycloak Admin API access is needed.
+Existing members have `first_name: ""` until their next authenticated request;
+a missing `given_name` also produces an empty string, with no fallback to `name`.
+The name reflects the most recently received verified token, so older tokens can
+retain an earlier name until token refresh. A profile persistence failure returns
+500 before the request handler runs.
+
+Missing/invalid authentication returns 401, malformed list UUIDs return 400, and
+non-members receive 403 for both existing and unknown lists. Reads never claim
+ownership. Responses use `Cache-Control: no-store`.
+
+This is relational access/profile metadata (§2 of `frontend/docs/sync-sharing-target.md`),
+not shopping-list content: events, payload interpretation, registry positions and
+sync settings remain unaffected (§6, R1–R4).

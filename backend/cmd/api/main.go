@@ -65,12 +65,14 @@ func run(logger *slog.Logger) error {
 	listMemberRepo := postgres2.NewSqlcListMemberRepository(queries)
 	syncedListRepo := postgres2.NewSqlcSyncedListRepository(queries)
 
+	userProfileRepo := postgres2.NewSqlcUserProfileRepository(queries)
+
 	listAccessService := services.NewListAccessService(listMemberRepo)
 	listSharingService := services.NewListSharingService(logger, listInviteRepo, listMemberRepo, syncedListRepo, listAccessService)
 
 	hub := realtime.NewHub(logger, listAccessService)
 
-	authMW, err := middleware.NewKeycloakAuth(ctx, logger)
+	authMW, err := middleware.NewKeycloakAuthWithProfiles(ctx, logger, userProfileRepo)
 	if err != nil {
 		return fmt.Errorf("auth: %w", err)
 	}
@@ -105,6 +107,7 @@ func run(logger *slog.Logger) error {
 	rest.NewSyncStateController(e, logger, eventRepo, listAccessService, authMW)
 	rest.NewSyncPullController(e, logger, eventRepo, listAccessService, authMW)
 	rest.NewListSharingController(e, logger, listSharingService, authMW)
+	rest.NewListMembersController(e, logger, services.NewListMembersService(userProfileRepo, listAccessService), authMW)
 
 	errCh := make(chan error, 1)
 	go func() {
