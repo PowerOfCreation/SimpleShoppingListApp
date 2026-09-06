@@ -34,10 +34,9 @@ export default function Index() {
   const { status } = useAuth()
   const isSignedIn = status === "signedIn"
   const { load: loadSharedSyncedLists } = useSharedSyncedLists()
-  const [syncOffConfirm, setSyncOffConfirm] = React.useState<{
-    id: string
-    name: string
-  } | null>(null)
+  const [syncOffConfirmId, setSyncOffConfirmId] = React.useState<string | null>(
+    null
+  )
 
   React.useEffect(() => {
     if (hasNavigatedRef.current || isLoading) return
@@ -130,10 +129,11 @@ export default function Index() {
     // Turning sync off is purely local - the server copy and any members
     // keep working. Warn first, same as sign-out's warning, since the owner
     // otherwise has no way to notice they'd stop seeing a shared list's
-    // updates.
+    // updates. A failed check (shared === null) can't rule out sharing, so
+    // it's treated the same as "shared" rather than skipping the warning.
     const shared = await loadSharedSyncedLists(id)
-    if (shared.length > 0) {
-      setSyncOffConfirm({ id, name: list.name })
+    if (shared === null || shared.length > 0) {
+      setSyncOffConfirmId(id)
       return
     }
 
@@ -141,8 +141,8 @@ export default function Index() {
   }
 
   const handleConfirmSyncOff = () => {
-    if (!syncOffConfirm) return
-    applyToggleSync(syncOffConfirm.id, false)
+    if (!syncOffConfirmId) return
+    applyToggleSync(syncOffConfirmId, false)
   }
 
   const handleShareList = (id: string) => {
@@ -230,6 +230,12 @@ export default function Index() {
     )
   }
 
+  // Re-derived from `lists` on every render instead of snapshotted at
+  // click-time, so a rename that lands while the dialog is open is reflected.
+  const syncOffConfirmName = syncOffConfirmId
+    ? lists.find((l) => l.id === syncOffConfirmId)?.name
+    : undefined
+
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor }]}
@@ -250,19 +256,19 @@ export default function Index() {
       />
       <ConfirmDialog
         testID="sync-off-confirm"
-        visible={syncOffConfirm !== null}
+        visible={syncOffConfirmId !== null}
         title="Turn off sync?"
         message={
-          syncOffConfirm
+          syncOffConfirmName
             ? sharedSyncWarning(
                 "Turning off sync stops further updates on this device.",
-                [syncOffConfirm.name]
+                [syncOffConfirmName]
               )
             : ""
         }
         confirmLabel="Turn off sync"
         destructive
-        onClose={() => setSyncOffConfirm(null)}
+        onClose={() => setSyncOffConfirmId(null)}
         onConfirm={handleConfirmSyncOff}
       />
     </SafeAreaView>

@@ -310,7 +310,7 @@ describe("ShoppingListService", () => {
       expect(mockOutboxRepository.cancelForList).not.toHaveBeenCalled()
     })
 
-    it("stops and reports the failure without touching later lists", async () => {
+    it("reports a failure on one list but still disables sync for the rest", async () => {
       mockListSyncSettingsRepository.getEnabledIds.mockResolvedValue(
         Result.ok(["list-1", "list-2"])
       )
@@ -321,7 +321,12 @@ describe("ShoppingListService", () => {
       const result = await service.disableAllSync()
 
       expect(result.success).toBe(false)
-      expect(mockListSyncSettingsRepository.remove).toHaveBeenCalledTimes(1)
+      expect(mockListSyncSettingsRepository.remove).toHaveBeenCalledTimes(2)
+      expect(mockListSyncSettingsRepository.remove).toHaveBeenNthCalledWith(
+        2,
+        "list-2"
+      )
+      expect(mockOutboxRepository.cancelForList).toHaveBeenCalledWith("list-2")
     })
   })
 

@@ -35,7 +35,7 @@ export default function AccountScreen() {
 
   const handleSignOutPress = async () => {
     const shared = await loadSharedSyncedLists()
-    setSharedListNames(shared.map((list) => list.name))
+    setSharedListNames(shared ? shared.map((list) => list.name) : [])
     setConfirmVisible(true)
   }
 

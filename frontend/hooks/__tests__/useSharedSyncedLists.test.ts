@@ -90,7 +90,7 @@ describe("useSharedSyncedLists", () => {
     expect(mockedListMyLists).not.toHaveBeenCalled()
   })
 
-  it("fails open (no warning) when the sharing API call fails", async () => {
+  it("fails closed (null) when the sharing API call fails, since sharing can't be ruled out", async () => {
     mockLists([{ id: "a", name: "Groceries", syncEnabled: true }])
     mockedListMyLists.mockResolvedValue(
       Result.fail(new Error("network") as never)
@@ -102,7 +102,7 @@ describe("useSharedSyncedLists", () => {
       shared = await result.current.load()
     })
 
-    expect(shared).toEqual([])
+    expect(shared).toBeNull()
   })
 
   it("restricts the check to a single list when listId is given", async () => {

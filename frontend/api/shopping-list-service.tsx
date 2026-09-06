@@ -214,15 +214,19 @@ export class ShoppingListService {
       }
       const listIds = idsResult.getValue()!
 
+      // Best-effort per list: a failure on one list must not leave the
+      // remaining ones still fully sync-enabled after logout completes.
+      let firstError: DbQueryError | undefined
       for (const listId of listIds) {
         const settingResult =
           await this.listSyncSettingsRepository.remove(listId)
         if (!settingResult.success) {
-          return settingResult
+          firstError ??= settingResult.getError()
+          continue
         }
         const cancelResult = await this.outboxRepository.cancelForList(listId)
         if (!cancelResult.success) {
-          return Result.fail(cancelResult.getError())
+          firstError ??= cancelResult.getError()
         }
       }
 
@@ -231,7 +235,7 @@ export class ShoppingListService {
         notifySyncListsChanged()
       }
 
-      return Result.ok(undefined)
+      return firstError ? Result.fail(firstError) : Result.ok(undefined)
     } catch (error) {
       logger.error("Error disabling sync for all lists", error)
       return Result.fail(

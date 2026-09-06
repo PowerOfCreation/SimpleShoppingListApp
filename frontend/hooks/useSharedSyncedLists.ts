@@ -41,18 +41,23 @@ export function sharedSyncWarning(
  *
  * Pass `listId` to check a single list (e.g. before turning its sync off)
  * instead of every synced list (e.g. before sign-out).
+ *
+ * Returns `null` when the check itself couldn't complete (DB or network
+ * failure) - callers must treat that the same as "sharing can't be ruled
+ * out", not as "nothing is shared", since this result gates whether a
+ * confirmation is shown at all before stopping sync.
  */
 export function useSharedSyncedLists() {
   const [isLoading, setIsLoading] = React.useState(false)
 
   const load = React.useCallback(
-    async (listId?: string): Promise<SharedSyncedList[]> => {
+    async (listId?: string): Promise<SharedSyncedList[] | null> => {
       setIsLoading(true)
       try {
         const listRepository = new IngredientListRepository(getDatabase())
         const listsResult = await listRepository.getAll()
         if (!listsResult.success) {
-          return []
+          return null
         }
         const allSyncedLists = listsResult
           .getValue()!
@@ -66,28 +71,34 @@ export function useSharedSyncedLists() {
 
         const myListsResult = await sharingClient.listMyLists()
         if (!myListsResult.success) {
-          return []
+          return null
         }
         const roleById = new Map(
           myListsResult.getValue()!.map((m) => [m.listId, m.role])
         )
 
-        const shared: SharedSyncedList[] = []
-        for (const list of syncedLists) {
-          const role = roleById.get(list.id)
-          if (role === "member") {
-            shared.push({ id: list.id, name: list.name })
-          } else if (role === "owner") {
-            const invitesResult = await sharingClient.getInvites(list.id)
-            if (invitesResult.success && invitesResult.getValue()!.length > 0) {
-              shared.push({ id: list.id, name: list.name })
+        const checked = await Promise.all(
+          syncedLists.map(async (list) => {
+            const role = roleById.get(list.id)
+            if (role === "member") {
+              return { id: list.id, name: list.name }
             }
-          }
-        }
-        return shared
+            if (role === "owner") {
+              const invitesResult = await sharingClient.getInvites(list.id)
+              if (
+                invitesResult.success &&
+                invitesResult.getValue()!.length > 0
+              ) {
+                return { id: list.id, name: list.name }
+              }
+            }
+            return null
+          })
+        )
+        return checked.filter((list): list is SharedSyncedList => list !== null)
       } catch (err) {
         logger.warn("Could not determine currently shared lists", err)
-        return []
+        return null
       } finally {
         setIsLoading(false)
       }

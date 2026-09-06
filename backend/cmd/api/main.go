@@ -72,7 +72,7 @@ func run(logger *slog.Logger) error {
 
 	hub := realtime.NewHub(logger, listAccessService)
 
-	authMW, err := middleware.NewKeycloakAuthWithProfiles(ctx, logger, userProfileRepo)
+	authMW, err := middleware.NewKeycloakAuth(ctx, logger, userProfileRepo)
 	if err != nil {
 		return fmt.Errorf("auth: %w", err)
 	}
