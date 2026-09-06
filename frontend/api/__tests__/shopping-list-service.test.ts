@@ -85,7 +85,7 @@ describe("ShoppingListService", () => {
       removeWithin: jest.fn().mockResolvedValue(undefined),
       isEnabled: jest.fn(),
       getEnabledIds: jest.fn(),
-      remove: jest.fn(),
+      remove: jest.fn().mockResolvedValue(Result.ok(undefined)),
     } as unknown as jest.Mocked<ListSyncSettingsRepository>
 
     MockIngredientListRepository.mockImplementation(() => mockRepository)
@@ -278,7 +278,7 @@ describe("ShoppingListService", () => {
   })
 
   describe("disableAllSync", () => {
-    it("disables every currently-synced list and cancels its pending outbox rows", async () => {
+    it("removes the sync setting for every currently-synced list and cancels its pending outbox rows", async () => {
       mockListSyncSettingsRepository.getEnabledIds.mockResolvedValue(
         Result.ok(["list-1", "list-2"])
       )
@@ -286,15 +286,13 @@ describe("ShoppingListService", () => {
       const result = await service.disableAllSync()
 
       expect(result.success).toBe(true)
-      expect(mockListSyncSettingsRepository.setEnabled).toHaveBeenNthCalledWith(
+      expect(mockListSyncSettingsRepository.remove).toHaveBeenNthCalledWith(
         1,
-        "list-1",
-        false
+        "list-1"
       )
-      expect(mockListSyncSettingsRepository.setEnabled).toHaveBeenNthCalledWith(
+      expect(mockListSyncSettingsRepository.remove).toHaveBeenNthCalledWith(
         2,
-        "list-2",
-        false
+        "list-2"
       )
       expect(mockOutboxRepository.cancelForList).toHaveBeenCalledWith("list-1")
       expect(mockOutboxRepository.cancelForList).toHaveBeenCalledWith("list-2")
@@ -308,7 +306,7 @@ describe("ShoppingListService", () => {
       const result = await service.disableAllSync()
 
       expect(result.success).toBe(true)
-      expect(mockListSyncSettingsRepository.setEnabled).not.toHaveBeenCalled()
+      expect(mockListSyncSettingsRepository.remove).not.toHaveBeenCalled()
       expect(mockOutboxRepository.cancelForList).not.toHaveBeenCalled()
     })
 
@@ -323,7 +321,7 @@ describe("ShoppingListService", () => {
       const result = await service.disableAllSync()
 
       expect(result.success).toBe(false)
-      expect(mockListSyncSettingsRepository.setEnabled).toHaveBeenCalledTimes(1)
+      expect(mockListSyncSettingsRepository.remove).toHaveBeenCalledTimes(1)
     })
   })
 

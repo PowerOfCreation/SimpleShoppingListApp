@@ -198,9 +198,13 @@ export class ShoppingListService {
 
   /**
    * Turns sync off for every list this device currently syncs - logout's
-   * "stop sharing my further changes" step. Same per-list effect as
-   * setSyncEnabled(id, false) (setting row + cancelling pending outbox rows),
-   * batched into one outbox/list-change notification instead of one per list.
+   * "stop sharing my further changes" step. Unlike setSyncEnabled(id, false)
+   * (a deliberate per-list "leave it off"), this removes the
+   * list_sync_settings row entirely: logging out isn't a decision to stop
+   * syncing these lists forever, so the next login's discovery pass
+   * (SyncCoordinator.discoverLists, keyed off getKnownIds()) should treat
+   * them as unseen again and re-enable whichever ones the server still
+   * reports for this account.
    */
   async disableAllSync(): Promise<Result<void, DbQueryError>> {
     try {
@@ -211,9 +215,8 @@ export class ShoppingListService {
       const listIds = idsResult.getValue()!
 
       for (const listId of listIds) {
-        const settingResult = await this.listSyncSettingsRepository.setEnabled(
-          listId,
-          false
+        const settingResult = await this.listSyncSettingsRepository.remove(
+          listId
         )
         if (!settingResult.success) {
           return settingResult

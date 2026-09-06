@@ -106,4 +106,16 @@ describe("ListSyncSettingsRepository", () => {
       expect(enabledResult.getValue()).toBe(false)
     })
   })
+
+  describe("remove", () => {
+    it("deletes the row so the list no longer shows up as known", async () => {
+      await repository.setEnabled("list-1", false)
+
+      const result = await repository.remove("list-1")
+
+      expect(result.success).toBe(true)
+      const knownResult = await repository.getKnownIds()
+      expect(knownResult.getValue()).toEqual([])
+    })
+  })
 })

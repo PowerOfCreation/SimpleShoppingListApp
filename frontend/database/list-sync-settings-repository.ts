@@ -94,4 +94,16 @@ export class ListSyncSettingsRepository extends BaseRepository {
       listId
     )
   }
+
+  /**
+   * Same delete as removeWithin(), opening its own transaction - for callers
+   * outside an existing one (e.g. logout, which wants "forget this device
+   * ever made a sync decision" rather than "record a decision to turn it
+   * off", so a later discoverLists() treats the list as unseen again).
+   */
+  async remove(listId: string): Promise<Result<void, DbQueryError>> {
+    return this._executeTransaction(async () => {
+      await this.removeWithin(this.db, listId)
+    }, "remove")
+  }
 }
