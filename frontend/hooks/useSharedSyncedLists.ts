@@ -79,10 +79,7 @@ export function useSharedSyncedLists() {
             shared.push({ id: list.id, name: list.name })
           } else if (role === "owner") {
             const invitesResult = await sharingClient.getInvites(list.id)
-            if (
-              invitesResult.success &&
-              invitesResult.getValue()!.length > 0
-            ) {
+            if (invitesResult.success && invitesResult.getValue()!.length > 0) {
               shared.push({ id: list.id, name: list.name })
             }
           }

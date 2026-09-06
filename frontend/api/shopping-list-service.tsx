@@ -215,9 +215,8 @@ export class ShoppingListService {
       const listIds = idsResult.getValue()!
 
       for (const listId of listIds) {
-        const settingResult = await this.listSyncSettingsRepository.remove(
-          listId
-        )
+        const settingResult =
+          await this.listSyncSettingsRepository.remove(listId)
         if (!settingResult.success) {
           return settingResult
         }

@@ -1,6 +1,9 @@
 import { act, renderHook } from "@testing-library/react-native"
 
-import { sharedSyncWarning, useSharedSyncedLists } from "../useSharedSyncedLists"
+import {
+  sharedSyncWarning,
+  useSharedSyncedLists,
+} from "../useSharedSyncedLists"
 import { sharingClient } from "@/api/sharing/sharing-client"
 import { IngredientListRepository } from "@/database/ingredient-list-repository"
 import { Result } from "@/api/common/result"
