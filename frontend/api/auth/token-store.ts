@@ -18,6 +18,13 @@ const KEYS = {
   meta: "sholist.auth.meta",
 } as const
 
+/**
+ * Survives the invite screen across the sign-in browser round-trip: if the OS
+ * kills the app while Keycloak's login page is open, a cold start can still
+ * find its way back to the invite instead of silently dropping it.
+ */
+const PENDING_INVITE_KEY = "sholist.invite.pendingToken"
+
 type StoredMeta = {
   tokenType?: string
   expiresIn?: number
@@ -87,4 +94,16 @@ export async function clearTokens(): Promise<void> {
   await Promise.all(
     Object.values(KEYS).map((key) => SecureStore.deleteItemAsync(key))
   )
+}
+
+export async function savePendingInvite(token: string): Promise<void> {
+  await SecureStore.setItemAsync(PENDING_INVITE_KEY, token)
+}
+
+export async function loadPendingInvite(): Promise<string | null> {
+  return SecureStore.getItemAsync(PENDING_INVITE_KEY)
+}
+
+export async function clearPendingInvite(): Promise<void> {
+  await SecureStore.deleteItemAsync(PENDING_INVITE_KEY)
 }

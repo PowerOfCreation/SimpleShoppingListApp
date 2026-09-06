@@ -4,6 +4,7 @@ import { SafeAreaView } from "react-native-safe-area-context"
 import { router, useLocalSearchParams } from "expo-router"
 
 import { useAuth } from "@/api/auth/AuthProvider"
+import { clearPendingInvite, savePendingInvite } from "@/api/auth/token-store"
 import { isSharingConfigured } from "@/api/sharing/config"
 import { Avatar } from "@/components/Avatar"
 import { PrimaryButton } from "@/components/PrimaryButton"
@@ -46,10 +47,20 @@ export default function Invite() {
     redeem,
   } = useRedeemInvite()
 
+  // Persists the token for the duration of the sign-in step so a cold start
+  // (the app process getting killed while the browser is open) can still
+  // find its way back here via app/index.tsx instead of losing the invite.
+  React.useEffect(() => {
+    if (token && status === "signedOut") {
+      savePendingInvite(token)
+    }
+  }, [token, status])
+
   const hasStartedRef = React.useRef(false)
   React.useEffect(() => {
     if (hasStartedRef.current || !token || !isSignedIn || !configured) return
     hasStartedRef.current = true
+    clearPendingInvite()
     loadPreview(token)
   }, [token, isSignedIn, configured, loadPreview])
 
@@ -101,7 +112,10 @@ export default function Invite() {
       <View style={styles.joinRow}>
         <Pressable
           testID="invite-decline"
-          onPress={() => router.replace("/(home)")}
+          onPress={() => {
+            clearPendingInvite()
+            router.replace("/(home)")
+          }}
         >
           <ThemedText
             style={[styles.declineText, { color: textSecondaryColor }]}

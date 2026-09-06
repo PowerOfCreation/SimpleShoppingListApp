@@ -1,7 +1,14 @@
 import * as SecureStore from "expo-secure-store"
 import { TokenResponse } from "expo-auth-session"
 
-import { clearTokens, loadTokens, saveTokens } from "../token-store"
+import {
+  clearPendingInvite,
+  clearTokens,
+  loadPendingInvite,
+  loadTokens,
+  savePendingInvite,
+  saveTokens,
+} from "../token-store"
 
 function makeTokens(overrides: Partial<TokenResponse> = {}) {
   return new TokenResponse({
@@ -18,6 +25,7 @@ function makeTokens(overrides: Partial<TokenResponse> = {}) {
 describe("token-store", () => {
   beforeEach(async () => {
     await clearTokens()
+    await clearPendingInvite()
     jest.clearAllMocks()
   })
 
@@ -82,5 +90,23 @@ describe("token-store", () => {
     await clearTokens()
 
     await expect(loadTokens()).resolves.toBeNull()
+  })
+
+  it("round-trips a pending invite token", async () => {
+    await savePendingInvite("invite-token-123")
+
+    await expect(loadPendingInvite()).resolves.toBe("invite-token-123")
+  })
+
+  it("returns null when no invite is pending", async () => {
+    await expect(loadPendingInvite()).resolves.toBeNull()
+  })
+
+  it("clears the pending invite", async () => {
+    await savePendingInvite("invite-token-123")
+
+    await clearPendingInvite()
+
+    await expect(loadPendingInvite()).resolves.toBeNull()
   })
 })

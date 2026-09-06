@@ -8,6 +8,7 @@ import { initializeAndMigrateDatabase } from "@/database/data-migration"
 import { Result } from "@/api/common/result"
 import { SharingError } from "@/api/common/error-types"
 import { useAuth } from "@/api/auth/AuthProvider"
+import { clearPendingInvite, savePendingInvite } from "@/api/auth/token-store"
 import { sharingClient } from "@/api/sharing/sharing-client"
 import { useSyncEngine } from "@/api/sync/SyncProvider"
 
@@ -22,6 +23,13 @@ jest.mock("expo-router", () => ({
 
 jest.mock("@/api/auth/AuthProvider")
 const mockedUseAuth = useAuth as jest.Mock
+
+jest.mock("@/api/auth/token-store", () => ({
+  savePendingInvite: jest.fn(),
+  clearPendingInvite: jest.fn(),
+}))
+const mockSavePendingInvite = savePendingInvite as jest.Mock
+const mockClearPendingInvite = clearPendingInvite as jest.Mock
 
 // The client itself is covered by sharing-client.test.ts; here it stands in
 // for the backend so the screen's own behaviour is what's under test.
@@ -99,6 +107,25 @@ describe("<Invite /> Component Tests", () => {
     })
     expect(mockPreviewInvite).not.toHaveBeenCalled()
     expect(mockRedeemInvite).not.toHaveBeenCalled()
+  })
+
+  it("persists the invite token while signed out, so a killed app can resume it", async () => {
+    mockAuth("signedOut")
+
+    renderInviteScreen()
+
+    await waitFor(() => {
+      expect(mockSavePendingInvite).toHaveBeenCalledWith("plaintext-token")
+    })
+  })
+
+  it("clears the persisted invite once signed in and the preview resumes", async () => {
+    renderInviteScreen()
+
+    await waitFor(() => {
+      expect(mockPreviewInvite).toHaveBeenCalledWith("plaintext-token")
+    })
+    expect(mockClearPendingInvite).toHaveBeenCalled()
   })
 
   it("explains a link with no token instead of trying to preview it", async () => {
@@ -207,6 +234,7 @@ describe("<Invite /> Component Tests", () => {
 
     expect(router.replace).toHaveBeenCalledWith("/(home)")
     expect(mockRedeemInvite).not.toHaveBeenCalled()
+    expect(mockClearPendingInvite).toHaveBeenCalled()
   })
 
   it("enables sync and opens the list once a pull lands its content locally", async () => {
