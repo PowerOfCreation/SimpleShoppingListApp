@@ -1,16 +1,11 @@
 import React from "react"
-import {
-  ActivityIndicator,
-  Image,
-  Pressable,
-  StyleSheet,
-  View,
-} from "react-native"
+import { ActivityIndicator, Pressable, StyleSheet, View } from "react-native"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { router, useLocalSearchParams } from "expo-router"
 
 import { useAuth } from "@/api/auth/AuthProvider"
 import { isSharingConfigured } from "@/api/sharing/config"
+import { Avatar } from "@/components/Avatar"
 import { PrimaryButton } from "@/components/PrimaryButton"
 import { ThemedText } from "@/components/ThemedText"
 import { useInvitePreview } from "@/hooks/useInvitePreview"
@@ -125,13 +120,12 @@ export default function Invite() {
 
   const renderInvitationCard = (data: InvitePreview) => (
     <View style={[styles.card, { backgroundColor: surfaceColor }]}>
-      {data.invitedByPictureURL && (
-        <Image
-          testID="invite-avatar"
-          source={{ uri: data.invitedByPictureURL }}
-          style={styles.avatar}
-        />
-      )}
+      <Avatar
+        testID="invite-avatar"
+        uri={data.invitedByPictureURL}
+        name={data.invitedByName}
+        style={styles.avatar}
+      />
       <ThemedText
         testID="invite-heading"
         type="subtitle"
@@ -260,9 +254,6 @@ const styles = StyleSheet.create({
     alignItems: "center",
   },
   avatar: {
-    width: 72,
-    height: 72,
-    borderRadius: 36,
     marginBottom: 4,
   },
   heading: {

@@ -126,7 +126,7 @@ describe("<Invite /> Component Tests", () => {
     expect(mockRedeemInvite).not.toHaveBeenCalled()
   })
 
-  it("omits the avatar when the inviter has no picture", async () => {
+  it("shows a fallback avatar when the inviter has no picture", async () => {
     mockPreviewInvite.mockResolvedValue(
       Result.ok({ ...defaultPreview, invitedByPictureURL: null })
     )
@@ -137,6 +137,35 @@ describe("<Invite /> Component Tests", () => {
       expect(screen.getByTestId("invite-heading")).toBeTruthy()
     })
     expect(screen.queryByTestId("invite-avatar")).toBeNull()
+    expect(screen.getByTestId("invite-avatar-fallback")).toBeTruthy()
+  })
+
+  it("picks the same fallback avatar color for the same inviter name every time", async () => {
+    mockPreviewInvite.mockResolvedValue(
+      Result.ok({ ...defaultPreview, invitedByPictureURL: null })
+    )
+
+    const { unmount } = renderInviteScreen()
+    await waitFor(() => screen.getByTestId("invite-avatar-fallback"))
+    const firstColor = screen
+      .getByTestId("invite-avatar-fallback")
+      .props.style.flat()
+      .find(
+        (s: { backgroundColor?: string }) => s?.backgroundColor
+      )?.backgroundColor
+    unmount()
+
+    renderInviteScreen()
+    await waitFor(() => screen.getByTestId("invite-avatar-fallback"))
+    const secondColor = screen
+      .getByTestId("invite-avatar-fallback")
+      .props.style.flat()
+      .find(
+        (s: { backgroundColor?: string }) => s?.backgroundColor
+      )?.backgroundColor
+
+    expect(firstColor).toBeTruthy()
+    expect(firstColor).toEqual(secondColor)
   })
 
   it("falls back to 'Someone' when the inviter has no name", async () => {
