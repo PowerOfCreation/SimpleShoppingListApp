@@ -1,5 +1,12 @@
 import React from "react"
-import { Image, StyleProp, StyleSheet, View, ViewStyle } from "react-native"
+import {
+  Image,
+  ImageStyle,
+  StyleProp,
+  StyleSheet,
+  View,
+  ViewStyle,
+} from "react-native"
 import { Ionicons } from "@expo/vector-icons"
 
 // Fallback backdrop colors, picked by hashing `name` - purely for visual
@@ -30,7 +37,7 @@ export type AvatarProps = {
   uri?: string | null
   name?: string | null
   size?: number
-  style?: StyleProp<ViewStyle>
+  style?: StyleProp<ViewStyle & ImageStyle>
 }
 
 /**
