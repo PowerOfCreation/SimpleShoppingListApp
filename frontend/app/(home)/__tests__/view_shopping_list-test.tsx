@@ -1,9 +1,10 @@
-import { screen, waitFor } from "@testing-library/react-native"
+import { act, fireEvent, screen, waitFor } from "@testing-library/react-native"
 import { renderRouter } from "expo-router/testing-library"
 import ViewShoppingList from "../view_shopping_list"
 import { IngredientRepository } from "@/database/ingredient-repository"
 import { getDatabase } from "@/database/database"
 import { initializeAndMigrateDatabase } from "@/database/data-migration"
+import { notifyListDataChanged } from "@/api/sync/sync-events"
 import type { Ingredient } from "@/types/Ingredient"
 import type { IngredientList } from "@/types/IngredientList"
 
@@ -151,5 +152,66 @@ describe("<ViewShoppingList /> Component Tests", () => {
     expect(await screen.findByText("Milk")).toBeTruthy()
     expect(await screen.findByText("Bread")).toBeTruthy()
     expect(screen.queryByText("Eggs")).toBeNull()
+  })
+
+  it("does not reorder or flash a loading spinner when a sync pull confirms a just-toggled item", async () => {
+    // Reproduces the reported bug: on a synced list, the device's own push
+    // echoes back via a pull shortly after, which used to trigger a full
+    // reload-and-resort (see event-applier.ts's notifyListDataChanged).
+    // notifyListDataChanged is called directly here to simulate exactly
+    // that signal, without needing real sync infrastructure.
+    await createTestList(db, {
+      id: "sync-list",
+      name: "Synced List",
+    })
+    const now = Date.now()
+    await createTestIngredient(db, {
+      id: "a",
+      name: "Apple",
+      completed: false,
+      list_id: "sync-list",
+      created_at: now,
+    })
+    await createTestIngredient(db, {
+      id: "b",
+      name: "Banana",
+      completed: false,
+      list_id: "sync-list",
+      created_at: now + 1000,
+    })
+    await createTestIngredient(db, {
+      id: "c",
+      name: "Carrot",
+      completed: false,
+      list_id: "sync-list",
+      created_at: now + 2000,
+    })
+
+    renderShoppingListView("sync-list")
+    await waitForAppReady()
+
+    const before = screen
+      .getAllByTestId(/^entry-component-/)
+      .map((e) => e.props.testID)
+
+    // Toggle "a" - real optimistic-update path (item stays in place).
+    fireEvent.press(screen.getByTestId("entry-component-a"))
+
+    // Simulate the sync pull that confirms this device's own push.
+    await act(async () => {
+      notifyListDataChanged("sync-list")
+    })
+
+    // Give the resulting reload a chance to run and settle.
+    await waitFor(() => {
+      expect(screen.getByTestId("entry-component-a")).toBeTruthy()
+    })
+
+    const after = screen
+      .getAllByTestId(/^entry-component-/)
+      .map((e) => e.props.testID)
+
+    expect(after).toEqual(before)
+    expect(screen.queryByAccessibilityHint("loading data")).toBeNull()
   })
 })

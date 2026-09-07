@@ -1,6 +1,7 @@
 import {
   formatSortMode,
   isSortedByMode,
+  mergeIngredientsPreservingOrder,
   sortIngredientsByMode,
 } from "@/utils/sortIngredients"
 import { SortMode } from "@/types/SortMode"
@@ -122,6 +123,66 @@ describe("isSortedByMode", () => {
     ]
 
     expect(isSortedByMode(items, SortMode.DATE)).toBe(false)
+  })
+})
+
+describe("mergeIngredientsPreservingOrder", () => {
+  it("patches an existing item's fields without moving its position", () => {
+    const existing = [
+      makeIngredient({ id: "1", name: "Milk", completed: false }),
+      makeIngredient({ id: "2", name: "Bread", completed: false }),
+    ]
+    const fresh = [
+      makeIngredient({ id: "2", name: "Bread", completed: false }),
+      makeIngredient({ id: "1", name: "Milk", completed: true }), // toggled
+    ]
+
+    const merged = mergeIngredientsPreservingOrder(existing, fresh)
+
+    expect(merged.map((i) => i.id)).toEqual(["1", "2"])
+    expect(merged[0].completed).toBe(true)
+  })
+
+  it("appends a brand-new item at the end", () => {
+    const existing = [makeIngredient({ id: "1", name: "Milk" })]
+    const fresh = [
+      makeIngredient({ id: "1", name: "Milk" }),
+      makeIngredient({ id: "2", name: "Bread" }),
+    ]
+
+    const merged = mergeIngredientsPreservingOrder(existing, fresh)
+
+    expect(merged.map((i) => i.id)).toEqual(["1", "2"])
+  })
+
+  it("drops an item no longer present", () => {
+    const existing = [
+      makeIngredient({ id: "1", name: "Milk" }),
+      makeIngredient({ id: "2", name: "Bread" }),
+    ]
+    const fresh = [makeIngredient({ id: "2", name: "Bread" })]
+
+    const merged = mergeIngredientsPreservingOrder(existing, fresh)
+
+    expect(merged.map((i) => i.id)).toEqual(["2"])
+  })
+
+  it("handles patch, append, and drop together", () => {
+    const existing = [
+      makeIngredient({ id: "1", name: "Milk", completed: false }),
+      makeIngredient({ id: "2", name: "Bread", completed: false }), // will be dropped
+      makeIngredient({ id: "3", name: "Eggs", completed: false }),
+    ]
+    const fresh = [
+      makeIngredient({ id: "3", name: "Eggs", completed: true }), // patched
+      makeIngredient({ id: "1", name: "Milk", completed: false }),
+      makeIngredient({ id: "4", name: "Cheese", completed: false }), // new
+    ]
+
+    const merged = mergeIngredientsPreservingOrder(existing, fresh)
+
+    expect(merged.map((i) => i.id)).toEqual(["1", "3", "4"])
+    expect(merged.find((i) => i.id === "3")?.completed).toBe(true)
   })
 })
 
