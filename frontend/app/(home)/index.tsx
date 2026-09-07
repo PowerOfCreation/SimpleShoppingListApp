@@ -256,20 +256,36 @@ export default function Index() {
             (syncStatus === "syncing" ? (
               <ActivityIndicator
                 testID="sync-status-icon-syncing"
+                accessibilityLabel="Syncing"
                 size="small"
                 color={accentColor}
                 style={styles.syncStatusIcon}
               />
             ) : (
               <MaterialIcons
-                testID={
-                  syncStatus === "error"
-                    ? "sync-status-icon-error"
-                    : "sync-status-icon-synced"
+                testID={`sync-status-icon-${syncStatus}`}
+                accessibilityLabel={
+                  syncStatus === "offline"
+                    ? "Offline"
+                    : syncStatus === "error"
+                      ? "Sync failed"
+                      : "Synced"
                 }
-                name={syncStatus === "error" ? "error" : "cloud-done"}
+                name={
+                  syncStatus === "offline"
+                    ? "cloud-off"
+                    : syncStatus === "error"
+                      ? "error"
+                      : "cloud-done"
+                }
                 size={22}
-                color={syncStatus === "error" ? dangerColor : accentColor}
+                color={
+                  syncStatus === "offline"
+                    ? textColor
+                    : syncStatus === "error"
+                      ? dangerColor
+                      : accentColor
+                }
                 style={styles.syncStatusIcon}
               />
             ))}
