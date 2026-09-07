@@ -1,5 +1,7 @@
 import { Ingredient } from "@/types/Ingredient"
 import { SortMode } from "@/types/SortMode"
+import { categorizeIngredient } from "@/utils/categorize"
+import { categoryOrder } from "@/constants/Categories"
 
 function compareByDate(a: Ingredient, b: Ingredient): number {
   return (b.created_at || 0) - (a.created_at || 0)
@@ -14,21 +16,43 @@ function compareByPriority(a: Ingredient, b: Ingredient): number {
   return compareByDate(a, b)
 }
 
+function compareByCategory(a: Ingredient, b: Ingredient): number {
+  const aOrder = categoryOrder(categorizeIngredient(a.name))
+  const bOrder = categoryOrder(categorizeIngredient(b.name))
+  if (aOrder !== bOrder) {
+    return aOrder - bOrder
+  }
+  return compareByDate(a, b)
+}
+
+function compareByMode(
+  mode: SortMode
+): (a: Ingredient, b: Ingredient) => number {
+  switch (mode) {
+    case SortMode.PRIORITY:
+      return compareByPriority
+    case SortMode.CATEGORY:
+      return compareByCategory
+    case SortMode.DATE:
+      return compareByDate
+  }
+}
+
 /**
- * Sorts ingredients: incomplete items first, then (in priority mode only)
- * by priority, then by creation date (newest first)
+ * Sorts ingredients: incomplete items first, then by the active mode
+ * (priority, category, or creation date), falling back to creation date
+ * (newest first) as a tiebreak within priority and category modes.
  */
 export function sortIngredientsByMode(
   ingredients: Ingredient[],
   mode: SortMode
 ): Ingredient[] {
+  const compare = compareByMode(mode)
   return [...ingredients].sort((a, b) => {
     if (a.completed !== b.completed) {
       return a.completed ? 1 : -1
     }
-    return mode === SortMode.PRIORITY
-      ? compareByPriority(a, b)
-      : compareByDate(a, b)
+    return compare(a, b)
   })
 }
 
@@ -79,6 +103,8 @@ export function formatSortMode(mode: SortMode): string {
   switch (mode) {
     case SortMode.PRIORITY:
       return "Sorted by priority"
+    case SortMode.CATEGORY:
+      return "Sorted by category"
     case SortMode.DATE:
       return "Sorted by date added"
   }
