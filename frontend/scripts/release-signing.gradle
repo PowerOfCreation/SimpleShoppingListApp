@@ -1,0 +1,15 @@
+// Applied only by release CI after Expo generates the native project.
+// Secrets are read from the environment and never written to the project.
+allprojects {
+    afterEvaluate { project ->
+        if (project.plugins.hasPlugin('com.android.application')) {
+            def android = project.extensions.getByName('android')
+            def signing = android.signingConfigs.create('ciRelease')
+            signing.storeFile = new File(System.getenv('ANDROID_RELEASE_KEYSTORE'))
+            signing.storePassword = System.getenv('ANDROID_RELEASE_STORE_PASSWORD')
+            signing.keyAlias = System.getenv('ANDROID_RELEASE_KEY_ALIAS')
+            signing.keyPassword = System.getenv('ANDROID_RELEASE_KEY_PASSWORD')
+            android.buildTypes.release.signingConfig = signing
+        }
+    }
+}
