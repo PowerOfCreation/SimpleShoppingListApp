@@ -7,7 +7,10 @@ import { EventApplier } from "@/api/sync/event-applier"
 import { createLogger } from "@/api/common/logger"
 import { notifySyncListsChanged } from "@/api/sync/sync-events"
 import { reportSyncStarted, reportSyncFinished } from "@/api/sync/sync-status"
-import { startListSync } from "@/api/sync/list-sync-status"
+import {
+  startListSync,
+  setListPermissionDenied,
+} from "@/api/sync/list-sync-status"
 import { DomainEventRow, SYNCABLE_EVENT_TYPES } from "@/types/DomainEvent"
 
 const logger = createLogger("SyncEngine")
@@ -210,11 +213,16 @@ export class SyncEngine {
           `Failed to send events for list ${listId ?? "(none)"}`,
           error
         )
+        if (error.httpStatus === 403 && listId !== null) {
+          await setListPermissionDenied(listId, true)
+        }
         if (!error.retryable) {
           await this.giveUpOnGroup(listId, eventIds)
         }
         return false
       }
+
+      if (listId !== null) await setListPermissionDenied(listId, false)
 
       // Confirm only what we actually sent: the server echoes back what it
       // stored, and an id we never put on the wire has no business marking
@@ -327,6 +335,14 @@ export class SyncEngine {
   private async reconcileBatch(listIds: string[]): Promise<void> {
     const knownResult = await this.client.getKnownEventIds(listIds)
     if (!knownResult.success) {
+      if (knownResult.getError().httpStatus === 403) {
+        if (listIds.length > 1) {
+          for (const id of listIds) await this.reconcileBatch([id])
+        } else {
+          await setListPermissionDenied(listIds[0], true)
+          await this.giveUpOnGroup(listIds[0], [])
+        }
+      }
       logger.warn(
         "Reconcile failed, will retry on the next trigger",
         knownResult.getError()
@@ -339,6 +355,15 @@ export class SyncEngine {
     // guard for this batch; the missing-event direction still runs.
     const headsResult = await this.client.getListHeads(listIds)
     if (!headsResult.success) {
+      if (headsResult.getError().httpStatus === 403) {
+        if (listIds.length > 1) {
+          for (const id of listIds) await this.reconcileBatch([id])
+        } else {
+          await setListPermissionDenied(listIds[0], true)
+          await this.giveUpOnGroup(listIds[0], [])
+        }
+        return
+      }
       logger.warn(
         "Reconcile: failed to fetch list heads, skipping drift check for this batch",
         headsResult.getError()
@@ -452,6 +477,18 @@ export class SyncEngine {
     try {
       const headsResult = await this.client.getListHeads(listIds)
       if (!headsResult.success) {
+        if (headsResult.getError().httpStatus === 403) {
+          if (listIds.length > 1) {
+            let allOk = true
+            for (const id of listIds) {
+              if (!(await this.pull([id]))) allOk = false
+            }
+            result = allOk
+            return result
+          }
+          await setListPermissionDenied(listIds[0], true)
+          await this.giveUpOnGroup(listIds[0], [])
+        }
         logger.warn(
           "Failed to fetch list heads, will retry on the next trigger",
           headsResult.getError()
@@ -552,12 +589,17 @@ export class SyncEngine {
         this.pullPageLimit
       )
       if (!pageResult.success) {
+        if (pageResult.getError().httpStatus === 403) {
+          await setListPermissionDenied(listId, true)
+          await this.giveUpOnGroup(listId, [])
+        }
         logger.warn(
           `Failed to pull events for list ${listId}, will retry on the next trigger`,
           pageResult.getError()
         )
         return false
       }
+      await setListPermissionDenied(listId, false)
       const page = pageResult.getValue()!
 
       if (page.events.length > 0) {

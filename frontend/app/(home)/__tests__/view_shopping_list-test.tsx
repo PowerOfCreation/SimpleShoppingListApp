@@ -1,4 +1,5 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react-native"
+import { setListPermissionDenied } from "@/api/sync/list-sync-status"
 import { renderRouter } from "expo-router/testing-library"
 import ViewShoppingList from "../view_shopping_list"
 import { IngredientRepository } from "@/database/ingredient-repository"
@@ -245,4 +246,19 @@ describe("<ViewShoppingList /> Component Tests", () => {
     expect(screen.queryByText("Dairy & Cheese")).toBeNull()
     expect(screen.queryByText("Fruit & Vegetables")).toBeNull()
   })
+})
+
+it("shows the permission explanation above the items of an offline list", async () => {
+  const db = getDatabase()
+  await initializeAndMigrateDatabase(db)
+  await createTestList(db, { id: "denied-detail", name: "Local groceries" })
+  await setListPermissionDenied("denied-detail", true)
+  renderShoppingListView("denied-detail")
+  await waitForAppReady()
+  fireEvent.press(screen.getByRole("button", { name: "No permission to sync" }))
+  expect(
+    screen.getByText(/You can keep using the list on this device/)
+  ).toBeTruthy()
+  fireEvent.press(screen.getByText("Close"))
+  expect(screen.getByTestId("add-button")).toBeTruthy()
 })

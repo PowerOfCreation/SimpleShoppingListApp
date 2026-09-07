@@ -1,4 +1,7 @@
-import { startListSync } from "@/api/sync/list-sync-status"
+import {
+  startListSync,
+  setListPermissionDenied,
+} from "@/api/sync/list-sync-status"
 import * as React from "react"
 import * as ReactNative from "react-native"
 import { act, render, fireEvent } from "@testing-library/react-native"
@@ -15,6 +18,8 @@ jest.mock("@expo/vector-icons", () => {
     ),
   }
 })
+
+jest.mock("@/database/preferences-repository")
 
 // Define default props
 const defaultProps: ShoppingListEntryProps = {
@@ -383,4 +388,30 @@ it("updates only the failed list and keeps a permanent rejection visible when di
     <ShoppingListEntry {...defaultProps} id="status-bad" syncEnabled={false} />
   )
   expect(getByText(/Sync failed · Sync disabled/)).toBeTruthy()
+})
+
+it("explains denied sync even when sync is disabled without opening the list", async () => {
+  await setListPermissionDenied("denied-entry", true)
+  const onPress = jest.fn()
+  const screen = render(
+    <ShoppingListEntry
+      {...defaultProps}
+      id="denied-entry"
+      syncEnabled={false}
+      onPress={onPress}
+    />
+  )
+  expect(
+    screen.getByTestId("shopping-list-sync-icon-denied-entry")
+  ).toHaveTextContent("lock")
+  const stopPropagation = jest.fn()
+  fireEvent.press(
+    screen.getByRole("button", { name: "No permission to sync" }),
+    { stopPropagation }
+  )
+  expect(stopPropagation).toHaveBeenCalled()
+  expect(onPress).not.toHaveBeenCalled()
+  expect(screen.getByText(/The owner may have removed you/)).toBeTruthy()
+  fireEvent.press(screen.getByText("Close"))
+  expect(screen.queryByText(/The owner may have removed you/)).toBeNull()
 })

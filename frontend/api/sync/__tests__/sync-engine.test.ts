@@ -11,6 +11,7 @@ import { SyncError, DbQueryError } from "@/api/common/error-types"
 import { DomainEventRow, EventTypes } from "@/types/DomainEvent"
 import { flushMicrotasks } from "../test-helpers"
 
+jest.mock("@/database/preferences-repository")
 jest.mock("@/database/outbox-repository")
 jest.mock("@/database/event-repository")
 jest.mock("@/database/sync-cursor-repository")
@@ -369,6 +370,66 @@ describe("SyncEngine", () => {
 
       expect(listSyncSettings.setEnabled).toHaveBeenCalledWith("list-1", false)
       expect(outbox.cancelForList).toHaveBeenCalledWith("list-1")
+    })
+
+    it("records permission denial for a rejected upload and clears it after an authorized upload", async () => {
+      outbox.getPending.mockResolvedValue(
+        Result.ok([makeOutboxRow("permission-event")])
+      )
+      events.getByEventIds.mockResolvedValue(
+        Result.ok([
+          makeEvent({
+            event_id: "permission-event",
+            list_id: "permission-list",
+          }),
+        ])
+      )
+      client.sendEvents.mockResolvedValue(
+        Result.fail(new SyncError("Forbidden", false, undefined, 403))
+      )
+      await engine.flush()
+      expect(getListSyncStatus("permission-list")).toBe("forbidden")
+      expect(listSyncSettings.setEnabled).toHaveBeenCalledWith(
+        "permission-list",
+        false
+      )
+      client.sendEvents.mockResolvedValue(
+        Result.ok([{ eventId: "permission-event", seq: 1 }])
+      )
+      await engine.flush()
+      expect(getListSyncStatus("permission-list")).toBe("synced")
+    })
+
+    it("isolates a forbidden list in a rejected heads batch", async () => {
+      client.getListHeads.mockImplementation(async (ids) =>
+        ids.includes("denied-head")
+          ? Result.fail(new SyncError("Forbidden", false, undefined, 403))
+          : Result.ok(ids.map((listId) => ({ listId, seq: 0, eventId: null })))
+      )
+      await engine.pull(["denied-head", "allowed-head"])
+      expect(getListSyncStatus("denied-head")).toBe("forbidden")
+      expect(getListSyncStatus("allowed-head")).toBe("synced")
+      expect(listSyncSettings.setEnabled).toHaveBeenCalledWith(
+        "denied-head",
+        false
+      )
+      expect(listSyncSettings.setEnabled).not.toHaveBeenCalledWith(
+        "allowed-head",
+        false
+      )
+    })
+
+    it("records permission denial when access is lost while downloading events", async () => {
+      client.getListHeads.mockResolvedValue(
+        Result.ok([{ listId: "denied-page", seq: 1, eventId: "remote" }])
+      )
+      client.getEventsSince.mockResolvedValue(
+        Result.fail(new SyncError("Forbidden", false, undefined, 403))
+      )
+      await engine.pull(["denied-page"])
+      expect(getListSyncStatus("denied-page")).toBe("forbidden")
+      expect(outbox.cancelForList).toHaveBeenCalledWith("denied-page")
+      expect(applier.apply).not.toHaveBeenCalled()
     })
 
     it("does not touch list_sync_settings for a retryable failure", async () => {

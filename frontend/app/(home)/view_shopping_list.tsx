@@ -1,4 +1,6 @@
 import { Palette } from "@/constants/Colors"
+import { ListSyncStatusIndicator } from "@/components/ListSyncStatusIndicator"
+import { useListSyncEnabled } from "@/hooks/useListSyncEnabled"
 import { Entry } from "@/components/Entry"
 import React from "react"
 import {
@@ -43,6 +45,7 @@ export default function ViewShoppingList() {
     deleteIngredient,
     sortIngredients,
   } = useIngredients()
+  const syncEnabled = useListSyncEnabled(listId)
   const [sortModeMessage, setSortModeMessage] = React.useState<string | null>(
     null
   )
@@ -201,9 +204,17 @@ export default function ViewShoppingList() {
       edges={["bottom"]}
     >
       <View style={styles.summary}>
-        <ThemedText type="title" style={styles.title}>
-          {listName}
-        </ThemedText>
+        <View style={styles.titleRow}>
+          <ThemedText type="title" style={styles.title}>
+            {listName}
+          </ThemedText>
+          {listId ? (
+            <ListSyncStatusIndicator
+              listId={listId}
+              syncEnabled={syncEnabled}
+            />
+          ) : null}
+        </View>
         <View style={styles.progressRow}>
           <ThemedText>
             <ThemedText type="defaultSemiBold">
@@ -248,7 +259,13 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   summary: { paddingHorizontal: 22, paddingTop: 12, paddingBottom: 20 },
-  title: { fontSize: 32, lineHeight: 40, marginBottom: 26 },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 26,
+  },
+  title: { flexShrink: 1, fontSize: 32, lineHeight: 40 },
   progressRow: {
     flexDirection: "row",
     alignItems: "center",

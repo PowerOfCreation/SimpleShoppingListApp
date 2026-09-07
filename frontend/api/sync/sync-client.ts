@@ -147,7 +147,7 @@ function nonRetryableError(response: Response): SyncError | null {
     return new SyncError("Unauthorized", false)
   }
   if (response.status === 403) {
-    return new SyncError("Forbidden", false)
+    return new SyncError("Forbidden", false, undefined, 403)
   }
   return null
 }

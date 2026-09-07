@@ -8,9 +8,11 @@ import { Palette } from "@/constants/Colors"
 export function SyncStatusPopup({
   children,
   offline,
+  explanation,
 }: {
   children: React.ReactNode
-  offline: boolean
+  offline?: boolean
+  explanation?: { title: string; message: string }
 }) {
   const [visible, setVisible] = useState(false)
   const details = useSyncExternalStore(onSyncStatusChanged, getSyncDetails)
@@ -23,8 +25,11 @@ export function SyncStatusPopup({
     <>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Show sync information"
-        onPress={() => setVisible(true)}
+        accessibilityLabel={explanation?.title ?? "Show sync information"}
+        onPress={(event) => {
+          event?.stopPropagation()
+          setVisible(true)
+        }}
         style={styles.trigger}
       >
         {children}
@@ -47,23 +52,35 @@ export function SyncStatusPopup({
             style={[styles.popup, { backgroundColor: surface }]}
           >
             <ScrollView>
-              <ThemedText type="defaultSemiBold">Sync information</ThemedText>
-              <ThemedText style={styles.note}>Current app session</ThemedText>
-              <ThemedText style={styles.row}>
-                Last sync attempt: {"\n"}
-                {formatTime(details.lastAttemptAt)}
+              <ThemedText type="defaultSemiBold">
+                {explanation?.title ?? "Sync information"}
               </ThemedText>
-              <ThemedText style={styles.row}>
-                Last successful sync: {"\n"}
-                {formatTime(details.lastSuccessAt)}
-              </ThemedText>
-              {offline ? (
-                <ThemedText style={styles.row}>Offline</ThemedText>
-              ) : details.status === "syncing" ? (
-                <ThemedText style={styles.row}>Syncing…</ThemedText>
-              ) : null}
-              {details.error && (
-                <ThemedText style={styles.row}>{details.error}</ThemedText>
+              {explanation ? (
+                <ThemedText style={styles.row}>
+                  {explanation.message}
+                </ThemedText>
+              ) : (
+                <>
+                  <ThemedText style={styles.note}>
+                    Current app session
+                  </ThemedText>
+                  <ThemedText style={styles.row}>
+                    Last sync attempt: {"\n"}
+                    {formatTime(details.lastAttemptAt)}
+                  </ThemedText>
+                  <ThemedText style={styles.row}>
+                    Last successful sync: {"\n"}
+                    {formatTime(details.lastSuccessAt)}
+                  </ThemedText>
+                  {offline ? (
+                    <ThemedText style={styles.row}>Offline</ThemedText>
+                  ) : details.status === "syncing" ? (
+                    <ThemedText style={styles.row}>Syncing…</ThemedText>
+                  ) : null}
+                  {details.error && (
+                    <ThemedText style={styles.row}>{details.error}</ThemedText>
+                  )}
+                </>
               )}
               <Pressable
                 accessibilityRole="button"

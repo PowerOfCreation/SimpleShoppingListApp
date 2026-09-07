@@ -108,7 +108,8 @@ export class SyncError extends AppError {
   constructor(
     message: string = "Sync failed",
     public retryable: boolean = true,
-    public originalError?: unknown
+    public originalError?: unknown,
+    public httpStatus?: number
   ) {
     super(message)
   }
