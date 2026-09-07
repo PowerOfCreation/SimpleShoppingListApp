@@ -1,7 +1,7 @@
 import { Ingredient } from "@/types/Ingredient"
 import { SortMode } from "@/types/SortMode"
 import { categorizeIngredient } from "@/utils/categorize"
-import { categoryOrder } from "@/constants/Categories"
+import { Category, categoryOrder } from "@/constants/Categories"
 
 function compareByDate(a: Ingredient, b: Ingredient): number {
   return (b.created_at || 0) - (a.created_at || 0)
@@ -97,6 +97,45 @@ export function mergeIngredientsPreservingOrder(
     }
   }
   return merged
+}
+
+export type IngredientSection = {
+  category: Category | null
+  data: Ingredient[]
+}
+
+/**
+ * Groups an already-sorted ingredient list into sections by consecutive
+ * category, for display as section headers. Only meaningful in category
+ * mode; other modes come back as a single section with no header (category:
+ * null), so callers can always render through the same section list.
+ *
+ * Relies on sortIngredientsByMode having already made same-category items
+ * consecutive within each of the open/completed blocks it produces. An open
+ * and a completed item of the same category merge into one section when
+ * adjacent (nothing else to distinguish them but the row's own checkbox);
+ * if a different category's items sit between them, the category legitimately
+ * repeats as two separate sections.
+ */
+export function sectionIngredientsByMode(
+  ingredients: Ingredient[],
+  mode: SortMode
+): IngredientSection[] {
+  if (mode !== SortMode.CATEGORY) {
+    return ingredients.length ? [{ category: null, data: ingredients }] : []
+  }
+
+  const sections: IngredientSection[] = []
+  for (const item of ingredients) {
+    const category = categorizeIngredient(item.name)
+    const current = sections[sections.length - 1]
+    if (current && current.category === category) {
+      current.data.push(item)
+    } else {
+      sections.push({ category, data: [item] })
+    }
+  }
+  return sections
 }
 
 export function formatSortMode(mode: SortMode): string {

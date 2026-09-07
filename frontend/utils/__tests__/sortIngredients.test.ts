@@ -2,11 +2,13 @@ import {
   formatSortMode,
   isSortedByMode,
   mergeIngredientsPreservingOrder,
+  sectionIngredientsByMode,
   sortIngredientsByMode,
 } from "@/utils/sortIngredients"
 import { SortMode } from "@/types/SortMode"
 import { Priority } from "@/types/Priority"
 import { Ingredient } from "@/types/Ingredient"
+import { Category } from "@/constants/Categories"
 
 function makeIngredient(overrides: Partial<Ingredient>): Ingredient {
   return {
@@ -217,6 +219,111 @@ describe("mergeIngredientsPreservingOrder", () => {
 
     expect(merged.map((i) => i.id)).toEqual(["1", "3", "4"])
     expect(merged.find((i) => i.id === "3")?.completed).toBe(true)
+  })
+})
+
+describe("sectionIngredientsByMode", () => {
+  it("returns a single unlabeled section for non-category modes", () => {
+    const items = [
+      makeIngredient({ id: "1", name: "Banane", created_at: 1 }),
+      makeIngredient({ id: "2", name: "Milch", created_at: 2 }),
+    ]
+
+    const sections = sectionIngredientsByMode(items, SortMode.DATE)
+
+    expect(sections).toEqual([{ category: null, data: items }])
+  })
+
+  it("returns no sections for an empty list", () => {
+    expect(sectionIngredientsByMode([], SortMode.DATE)).toEqual([])
+    expect(sectionIngredientsByMode([], SortMode.CATEGORY)).toEqual([])
+  })
+
+  it("groups consecutive same-category items into one section, in category order", () => {
+    const sorted = sortIngredientsByMode(
+      [
+        makeIngredient({ id: "1", name: "Klopapier", created_at: 1 }), // Household
+        makeIngredient({ id: "2", name: "Banane", created_at: 2 }), // Fruit & Vegetables
+        makeIngredient({ id: "3", name: "Apfel", created_at: 3 }), // Fruit & Vegetables
+        makeIngredient({ id: "4", name: "Milch", created_at: 4 }), // Dairy & Cheese
+      ],
+      SortMode.CATEGORY
+    )
+
+    const sections = sectionIngredientsByMode(sorted, SortMode.CATEGORY)
+
+    expect(sections).toEqual([
+      {
+        category: Category.FRUIT_VEGETABLES,
+        data: [sorted[0], sorted[1]],
+      },
+      { category: Category.DAIRY_CHEESE, data: [sorted[2]] },
+      { category: Category.HOUSEHOLD, data: [sorted[3]] },
+    ])
+  })
+
+  it("merges an open and a completed item of the same category when adjacent", () => {
+    const sorted = sortIngredientsByMode(
+      [
+        makeIngredient({
+          id: "1",
+          name: "Apfel",
+          completed: true,
+          created_at: 1,
+        }),
+        makeIngredient({
+          id: "2",
+          name: "Banane",
+          completed: false,
+          created_at: 2,
+        }),
+      ],
+      SortMode.CATEGORY
+    )
+
+    const sections = sectionIngredientsByMode(sorted, SortMode.CATEGORY)
+
+    expect(sections).toEqual([
+      { category: Category.FRUIT_VEGETABLES, data: sorted },
+    ])
+  })
+
+  it("splits the same category into two sections when a different category sits between them", () => {
+    // sortIngredientsByMode always puts completed items after open ones. An
+    // open Household item breaks the adjacency between the open and
+    // completed Fruit & Vegetables items, so the category repeats as a
+    // second section rather than merging.
+    const sorted = sortIngredientsByMode(
+      [
+        makeIngredient({
+          id: "1",
+          name: "Apfel",
+          completed: true,
+          created_at: 1,
+        }),
+        makeIngredient({
+          id: "2",
+          name: "Klopapier",
+          completed: false,
+          created_at: 2,
+        }),
+        makeIngredient({
+          id: "3",
+          name: "Banane",
+          completed: false,
+          created_at: 3,
+        }),
+      ],
+      SortMode.CATEGORY
+    )
+
+    const sections = sectionIngredientsByMode(sorted, SortMode.CATEGORY)
+
+    expect(sections).toEqual([
+      { category: Category.FRUIT_VEGETABLES, data: [sorted[0]] },
+      { category: Category.HOUSEHOLD, data: [sorted[1]] },
+      { category: Category.FRUIT_VEGETABLES, data: [sorted[2]] },
+    ])
   })
 })
 

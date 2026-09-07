@@ -2,7 +2,7 @@ import { Palette } from "@/constants/Colors"
 import { Entry } from "@/components/Entry"
 import React from "react"
 import {
-  FlatList,
+  SectionList,
   StyleSheet,
   ActivityIndicator,
   View,
@@ -19,7 +19,12 @@ import { SystemMessage } from "@/components/SystemMessage"
 import { ActionButton } from "@/components/ActionButton"
 import { useIngredients } from "@/hooks/useIngredients"
 import { useThemeColor } from "@/hooks/useThemeColor"
-import { formatSortMode } from "@/utils/sortIngredients"
+import {
+  formatSortMode,
+  sectionIngredientsByMode,
+  IngredientSection,
+} from "@/utils/sortIngredients"
+import { formatCategory } from "@/constants/Categories"
 
 export default function ViewShoppingList() {
   const {
@@ -48,6 +53,7 @@ export default function ViewShoppingList() {
   const backgroundColor = useThemeColor({}, "background")
   const accentColor = useThemeColor({}, "accent")
   const textColor = useThemeColor({}, "text")
+  const secondaryColor = useThemeColor({}, "textSecondary")
   const completedCount = ingredients.filter((item) => item.completed).length
 
   React.useEffect(() => {
@@ -129,6 +135,26 @@ export default function ViewShoppingList() {
     )
   }
 
+  const renderSectionHeader = ({ section }: { section: IngredientSection }) => {
+    if (!section.category) {
+      return null
+    }
+    return (
+      <View style={styles.categoryHeader}>
+        <ThemedText
+          style={[styles.categoryHeaderLabel, { color: secondaryColor }]}
+        >
+          {formatCategory(section.category)}
+        </ThemedText>
+        <ThemedText
+          style={[styles.categoryHeaderCount, { color: secondaryColor }]}
+        >
+          {section.data.length}
+        </ThemedText>
+      </View>
+    )
+  }
+
   const renderContent = () => {
     if (isLoading) {
       return (
@@ -155,14 +181,16 @@ export default function ViewShoppingList() {
     }
 
     return (
-      <FlatList
+      <SectionList
         contentContainerStyle={styles.listContent}
-        data={ingredients}
+        sections={sectionIngredientsByMode(ingredients, sortMode)}
         renderItem={renderEntry}
+        renderSectionHeader={renderSectionHeader}
         keyExtractor={(item) => item.id}
         extraData={error}
         removeClippedSubviews={false}
         keyboardShouldPersistTaps="handled"
+        stickySectionHeadersEnabled={false}
       />
     )
   }
@@ -250,5 +278,22 @@ const styles = StyleSheet.create({
   },
   sortIcon: {
     transform: [{ scaleX: -1 }],
+  },
+  categoryHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingTop: 18,
+    paddingBottom: 6,
+  },
+  categoryHeaderLabel: {
+    fontSize: 12,
+    fontWeight: "600",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  categoryHeaderCount: {
+    fontSize: 12,
+    fontWeight: "600",
   },
 })

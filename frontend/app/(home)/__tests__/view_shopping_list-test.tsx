@@ -214,4 +214,35 @@ describe("<ViewShoppingList /> Component Tests", () => {
     expect(after).toEqual(before)
     expect(screen.queryByAccessibilityHint("loading data")).toBeNull()
   })
+
+  it("shows no category headers in the default (date) sort mode", async () => {
+    // The sort button lives in navigation.setOptions({ headerRight }),
+    // which the native stack header doesn't render in this test
+    // environment, so it can't be pressed here to reach category mode.
+    // Section-grouping logic itself is covered directly in
+    // utils/__tests__/sortIngredients.test.ts (sectionIngredientsByMode).
+    await createTestList(db, {
+      id: "category-list",
+      name: "Category List",
+    })
+    await createTestIngredient(db, {
+      id: "1",
+      name: "Milch",
+      completed: false,
+      list_id: "category-list",
+    })
+    await createTestIngredient(db, {
+      id: "2",
+      name: "Banane",
+      completed: false,
+      list_id: "category-list",
+    })
+
+    renderShoppingListView("category-list")
+    await waitForAppReady()
+
+    expect(await screen.findByText("Milch")).toBeTruthy()
+    expect(screen.queryByText("Dairy & Cheese")).toBeNull()
+    expect(screen.queryByText("Fruit & Vegetables")).toBeNull()
+  })
 })
