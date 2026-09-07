@@ -158,6 +158,9 @@ export class SyncEngine {
         }
       }
       return ok
+    } catch (error) {
+      ok = false
+      throw error
     } finally {
       this.flushing = false
       reportSyncFinished(ok)
@@ -405,38 +408,41 @@ export class SyncEngine {
     }
     reportSyncStarted()
 
-    const headsResult = await this.client.getListHeads(listIds)
-    if (!headsResult.success) {
-      logger.warn(
-        "Failed to fetch list heads, will retry on the next trigger",
-        headsResult.getError()
+    let result = false
+    try {
+      const headsResult = await this.client.getListHeads(listIds)
+      if (!headsResult.success) {
+        logger.warn(
+          "Failed to fetch list heads, will retry on the next trigger",
+          headsResult.getError()
+        )
+        return false
+      }
+      const headByListId = new Map(
+        headsResult.getValue()!.map((head) => [head.listId, head])
       )
-      reportSyncFinished(false)
-      return false
-    }
-    const headByListId = new Map(
-      headsResult.getValue()!.map((head) => [head.listId, head])
-    )
 
-    let ok = true
-    for (const listId of listIds) {
-      const head = headByListId.get(listId)
-      if (!head) {
-        // The server answers every requested id (see SyncPullController);
-        // a missing entry would mean a response we can't trust - skip
-        // rather than guess.
-        continue
+      let ok = true
+      for (const listId of listIds) {
+        const head = headByListId.get(listId)
+        if (!head) {
+          // The server answers every requested id (see SyncPullController);
+          // a missing entry would mean a response we can't trust - skip
+          // rather than guess.
+          continue
+        }
+        const listOk = await this.pullListToHead(listId, head.seq)
+        if (!listOk) {
+          ok = false
+        }
       }
-      const listOk = await this.pullListToHead(listId, head.seq)
-      if (!listOk) {
-        ok = false
-      }
-    }
 
-    const flushOk = await this.flush()
-    const result = ok && flushOk
-    reportSyncFinished(result)
-    return result
+      const flushOk = await this.flush()
+      result = ok && flushOk
+      return result
+    } finally {
+      reportSyncFinished(result)
+    }
   }
 
   /** Single-list entry point - e.g. a WebSocket "new event for this list" notification. */

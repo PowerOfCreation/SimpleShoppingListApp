@@ -10,6 +10,7 @@ import { getPreference } from "@/database/preferences-repository"
 import { ShoppingListOverview } from "@/types/ShoppingListOverview"
 import { ThemedText } from "@/components/ThemedText"
 import { DrawerToggleButton } from "@/components/DrawerToggleButton"
+import { SyncStatusPopup } from "@/components/SyncStatusPopup"
 import { ConfirmDialog } from "@/components/ConfirmDialog"
 import { useShoppingLists } from "@/hooks/useShoppingLists"
 import { useSyncStatus } from "@/hooks/useSyncStatus"
@@ -252,43 +253,46 @@ export default function Index() {
           <ThemedText type="title" style={styles.headerTitle}>
             My lists
           </ThemedText>
-          {isSignedIn &&
-            (syncStatus === "syncing" ? (
-              <ActivityIndicator
-                testID="sync-status-icon-syncing"
-                accessibilityLabel="Syncing"
-                size="small"
-                color={accentColor}
-                style={styles.syncStatusIcon}
-              />
-            ) : (
-              <MaterialIcons
-                testID={`sync-status-icon-${syncStatus}`}
-                accessibilityLabel={
-                  syncStatus === "offline"
-                    ? "Offline"
-                    : syncStatus === "error"
-                      ? "Sync failed"
-                      : "Synced"
-                }
-                name={
-                  syncStatus === "offline"
-                    ? "cloud-off"
-                    : syncStatus === "error"
-                      ? "error"
-                      : "cloud-done"
-                }
-                size={22}
-                color={
-                  syncStatus === "offline"
-                    ? textColor
-                    : syncStatus === "error"
-                      ? dangerColor
-                      : accentColor
-                }
-                style={styles.syncStatusIcon}
-              />
-            ))}
+          {isSignedIn && (
+            <SyncStatusPopup offline={syncStatus === "offline"}>
+              {syncStatus === "syncing" ? (
+                <ActivityIndicator
+                  testID="sync-status-icon-syncing"
+                  accessibilityLabel="Syncing"
+                  size="small"
+                  color={accentColor}
+                  style={styles.syncStatusIcon}
+                />
+              ) : (
+                <MaterialIcons
+                  testID={`sync-status-icon-${syncStatus}`}
+                  accessibilityLabel={
+                    syncStatus === "offline"
+                      ? "Offline"
+                      : syncStatus === "error"
+                        ? "Sync failed"
+                        : "Synced"
+                  }
+                  name={
+                    syncStatus === "offline"
+                      ? "cloud-off"
+                      : syncStatus === "error"
+                        ? "error"
+                        : "cloud-done"
+                  }
+                  size={22}
+                  color={
+                    syncStatus === "offline"
+                      ? textColor
+                      : syncStatus === "error"
+                        ? dangerColor
+                        : accentColor
+                  }
+                  style={styles.syncStatusIcon}
+                />
+              )}
+            </SyncStatusPopup>
+          )}
         </View>
       </View>
       {renderContent()}
