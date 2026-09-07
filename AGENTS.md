@@ -2,6 +2,14 @@
 
 Guidance for working with this monorepo (frontend + backend of the offline-first shopping list app).
 
+## Git and PR workflow
+
+- Unless the user requests otherwise, complete repository change tasks through relevant validation, a commit, a push, and a pull request. Do not merge automatically. Read-only reviews and questions do not require a PR.
+- Before editing, inspect the branch, worktrees, and Git status; record pre-existing changes. Choose the task branch and working directory first. If an isolated worktree is needed, create it before implementation, using current `origin/main` unless the task requires another base.
+- Keep each task's edits in its chosen worktree. Do not leave duplicate uncommitted changes in the original workspace when preparing a PR elsewhere.
+- If your own changes must be transferred later, verify that they are committed and pushed on the PR branch, then remove only the redundant changes you introduced in the original workspace. Preserve pre-existing and concurrent user or other-task edits; avoid blanket reset or clean commands.
+- Before finishing, check Git status in both the task worktree and any original workspace you touched. Leave no uncommitted changes from your task. Report the PR link, validation results, and any remaining local changes or blockers explicitly.
+
 ## Project Overview
 
 - **Frontend** (`frontend/`): React Native / Expo (CNG), offline-first shopping list. All data lives in local SQLite (`expo-sqlite`); sync and Keycloak login are strictly optional add-ons.
