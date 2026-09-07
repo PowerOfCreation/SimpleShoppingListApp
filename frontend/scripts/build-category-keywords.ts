@@ -1,9 +1,11 @@
 /// <reference types="node" />
 /**
  * Generates constants/category-keywords.generated.json from the Open Food
- * Facts taxonomies (food, beauty, petfood, product). Not run in CI - run
- * manually and commit the result. The tsconfig's "module": "preserve" makes
- * plain ts-node try native ESM resolution and fail on extensionless
+ * Facts taxonomies vendored in scripts/openfoodfacts-taxonomies/ (see
+ * NOTICE.md there for source, license, and how to refresh them). Reads
+ * local files only - no network access needed to build. Not run in CI -
+ * run manually and commit the result. The tsconfig's "module": "preserve"
+ * makes plain ts-node try native ESM resolution and fail on extensionless
  * imports, so force CommonJS for this one-off run:
  *
  *   TS_NODE_COMPILER_OPTIONS='{"module":"commonjs"}' \
@@ -20,14 +22,13 @@ import * as fs from "fs"
 import * as path from "path"
 import { Category } from "../constants/Categories"
 
-const TAXONOMY_URLS: Record<string, string> = {
-  food: "https://raw.githubusercontent.com/openfoodfacts/openfoodfacts-server/main/taxonomies/food/categories.txt",
-  beauty:
-    "https://raw.githubusercontent.com/openfoodfacts/openfoodfacts-server/main/taxonomies/beauty/categories.txt",
-  petfood:
-    "https://raw.githubusercontent.com/openfoodfacts/openfoodfacts-server/main/taxonomies/petfood/categories.txt",
-  product:
-    "https://raw.githubusercontent.com/openfoodfacts/openfoodfacts-server/main/taxonomies/product/categories.txt",
+const TAXONOMY_DIR = path.join(__dirname, "openfoodfacts-taxonomies")
+
+const TAXONOMY_FILES: Record<string, string> = {
+  food: "food-categories.txt",
+  beauty: "beauty-categories.txt",
+  petfood: "petfood-categories.txt",
+  product: "product-categories.txt",
 }
 
 const OUTPUT_PATH = path.join(
@@ -203,16 +204,18 @@ function cleanTerm(term: string): string | undefined {
   return t
 }
 
-async function main() {
+function main() {
   const keywordDepth = new Map<string, { depth: number; category: Category }>()
   const stats: Record<string, number> = {}
 
-  for (const [name, url] of Object.entries(TAXONOMY_URLS)) {
-    const res = await fetch(url)
-    if (!res.ok) {
-      throw new Error(`Failed to fetch ${name} taxonomy: HTTP ${res.status}`)
+  for (const [name, fileName] of Object.entries(TAXONOMY_FILES)) {
+    const filePath = path.join(TAXONOMY_DIR, fileName)
+    if (!fs.existsSync(filePath)) {
+      throw new Error(
+        `Missing vendored taxonomy file for ${name}: ${filePath}. See scripts/openfoodfacts-taxonomies/NOTICE.md.`
+      )
     }
-    const text = await res.text()
+    const text = fs.readFileSync(filePath, "utf-8")
     const nodes = parseTaxonomy(text)
 
     for (const [key, node] of nodes) {
@@ -250,7 +253,9 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+try {
+  main()
+} catch (err) {
   console.error(err)
   process.exit(1)
-})
+}
