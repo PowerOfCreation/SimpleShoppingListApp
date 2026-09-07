@@ -103,6 +103,10 @@ export default function RootLayout() {
                 headerShown: false,
               }}
             />
+            <Drawer.Screen
+              name="(about)"
+              options={{ drawerLabel: "About", headerShown: false }}
+            />
           </Drawer>
         </SyncProvider>
       </AuthProvider>
