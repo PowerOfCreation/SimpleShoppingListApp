@@ -33,6 +33,15 @@ export default function AboutScreen() {
     }
   }
 
+  async function openOpenFoodFacts() {
+    try {
+      setLinkError(null)
+      await Linking.openURL("https://world.openfoodfacts.org/data")
+    } catch {
+      setLinkError("Could not open the link. Please try again.")
+    }
+  }
+
   return (
     <SafeAreaView
       edges={["bottom"]}
@@ -54,6 +63,13 @@ export default function AboutScreen() {
             </ThemedText>
             <ThemedText style={{ color: secondary }}>
               Your shopping lists, available offline.
+            </ThemedText>
+            <ThemedText
+              style={{ color: secondary }}
+              onPress={() => void openOpenFoodFacts()}
+            >
+              Category suggestions use data from Open Food Facts, licensed under
+              the Open Database License (ODbL).
             </ThemedText>
             <ThemedText type="subtitle">Changelog</ThemedText>
             <ThemedText style={{ color: secondary }}>
