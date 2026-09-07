@@ -2,6 +2,7 @@ import { ActionButton } from "@/components/ActionButton"
 import { Palette } from "@/constants/Colors"
 import React from "react"
 import { FlatList, StyleSheet, ActivityIndicator, View } from "react-native"
+import { MaterialIcons } from "@expo/vector-icons"
 import { SafeAreaView } from "react-native-safe-area-context"
 import { router, useFocusEffect } from "expo-router"
 import { getPreference } from "@/database/preferences-repository"
@@ -11,6 +12,7 @@ import { ThemedText } from "@/components/ThemedText"
 import { DrawerToggleButton } from "@/components/DrawerToggleButton"
 import { ConfirmDialog } from "@/components/ConfirmDialog"
 import { useShoppingLists } from "@/hooks/useShoppingLists"
+import { useSyncStatus } from "@/hooks/useSyncStatus"
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { ShoppingListEntry } from "@/components/ShoppingListEntry"
 import { getShoppingListService } from "@/api/shopping-list-service"
@@ -29,10 +31,13 @@ export default function Index() {
   const syncEngine = useSyncEngine()
   const backgroundColor = useThemeColor({}, "background")
   const textColor = useThemeColor({}, "text")
+  const accentColor = useThemeColor({}, "accent")
+  const dangerColor = useThemeColor({}, "danger")
   const [isCheckingPreference, setIsCheckingPreference] = React.useState(true)
   const hasNavigatedRef = React.useRef(false)
   const { status } = useAuth()
   const isSignedIn = status === "signedIn"
+  const syncStatus = useSyncStatus()
   const { load: loadSharedSyncedLists } = useSharedSyncedLists()
   const [syncOffConfirmId, setSyncOffConfirmId] = React.useState<string | null>(
     null
@@ -243,9 +248,32 @@ export default function Index() {
     >
       <View style={styles.header}>
         <DrawerToggleButton tintColor={textColor} style={styles.menuButton} />
-        <ThemedText type="title" style={styles.headerTitle}>
-          My lists
-        </ThemedText>
+        <View style={styles.titleRow}>
+          <ThemedText type="title" style={styles.headerTitle}>
+            My lists
+          </ThemedText>
+          {isSignedIn &&
+            (syncStatus === "syncing" ? (
+              <ActivityIndicator
+                testID="sync-status-icon-syncing"
+                size="small"
+                color={accentColor}
+                style={styles.syncStatusIcon}
+              />
+            ) : (
+              <MaterialIcons
+                testID={
+                  syncStatus === "error"
+                    ? "sync-status-icon-error"
+                    : "sync-status-icon-synced"
+                }
+                name={syncStatus === "error" ? "error" : "cloud-done"}
+                size={22}
+                color={syncStatus === "error" ? dangerColor : accentColor}
+                style={styles.syncStatusIcon}
+              />
+            ))}
+        </View>
       </View>
       {renderContent()}
       <ActionButton
@@ -290,10 +318,18 @@ const styles = StyleSheet.create({
     minHeight: 44,
     justifyContent: "center",
   },
+  titleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
   headerTitle: {
     marginTop: 12,
     fontSize: 34,
     lineHeight: 42,
+  },
+  syncStatusIcon: {
+    marginLeft: 10,
+    marginTop: 12,
   },
   listContent: { paddingHorizontal: 22, paddingBottom: 110 },
   centered: {
