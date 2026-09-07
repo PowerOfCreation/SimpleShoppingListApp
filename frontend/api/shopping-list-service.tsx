@@ -196,6 +196,59 @@ export class ShoppingListService {
     }
   }
 
+  /**
+   * Turns sync off for every list this device currently syncs - logout's
+   * "stop sharing my further changes" step. Unlike setSyncEnabled(id, false)
+   * (a deliberate per-list "leave it off"), this removes the
+   * list_sync_settings row entirely: logging out isn't a decision to stop
+   * syncing these lists forever, so the next login's discovery pass
+   * (SyncCoordinator.discoverLists, keyed off getKnownIds()) should treat
+   * them as unseen again and re-enable whichever ones the server still
+   * reports for this account.
+   */
+  async disableAllSync(): Promise<Result<void, DbQueryError>> {
+    try {
+      const idsResult = await this.listSyncSettingsRepository.getEnabledIds()
+      if (!idsResult.success) {
+        return Result.fail(idsResult.getError())
+      }
+      const listIds = idsResult.getValue()!
+
+      // Best-effort per list: a failure on one list must not leave the
+      // remaining ones still fully sync-enabled after logout completes.
+      let firstError: DbQueryError | undefined
+      for (const listId of listIds) {
+        const settingResult =
+          await this.listSyncSettingsRepository.remove(listId)
+        if (!settingResult.success) {
+          firstError ??= settingResult.getError()
+          continue
+        }
+        const cancelResult = await this.outboxRepository.cancelForList(listId)
+        if (!cancelResult.success) {
+          firstError ??= cancelResult.getError()
+        }
+      }
+
+      if (listIds.length > 0) {
+        notifyOutboxChanged()
+        notifySyncListsChanged()
+      }
+
+      return firstError ? Result.fail(firstError) : Result.ok(undefined)
+    } catch (error) {
+      logger.error("Error disabling sync for all lists", error)
+      return Result.fail(
+        new DbQueryError(
+          "Failed to disable sync for all lists",
+          "disableAllSync",
+          "IngredientList",
+          error
+        )
+      )
+    }
+  }
+
   async updateName(
     listId: string,
     newName: string

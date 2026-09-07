@@ -32,6 +32,9 @@ func Passthrough(next echo.HandlerFunc) echo.HandlerFunc {
 
 // NewKeycloakAuth builds an Echo middleware that verifies a bearer token's
 // signature (via JWKS), issuer, and expiry, rejecting otherwise with 401.
+// When profiles is non-nil, it also refreshes given_name from verified
+// tokens before handling requests (tests that don't care about profile
+// refresh pass nil).
 //
 // Keycloak access tokens carry `aud: "account"` for every client, so the
 // real client is checked via `azp` instead (SkipClientIDCheck: true).
@@ -43,16 +46,7 @@ func Passthrough(next echo.HandlerFunc) echo.HandlerFunc {
 // Verifying the token is only step one: it proves *who* the caller is, not
 // *what* they may touch. List-level access (list_members) is enforced
 // separately, by ListAccessService - see sync-sharing-target.md §2.
-func NewKeycloakAuth(ctx context.Context, logger *slog.Logger) (echo.MiddlewareFunc, error) {
-	return newKeycloakAuth(ctx, logger, nil)
-}
-
-// NewKeycloakAuthWithProfiles refreshes given_name from verified tokens before
-// handling requests, including the first push and invite redemption.
-func NewKeycloakAuthWithProfiles(ctx context.Context, logger *slog.Logger, profiles repositories.UserProfileRepository) (echo.MiddlewareFunc, error) {
-	return newKeycloakAuth(ctx, logger, profiles)
-}
-func newKeycloakAuth(ctx context.Context, logger *slog.Logger, profiles repositories.UserProfileRepository) (echo.MiddlewareFunc, error) {
+func NewKeycloakAuth(ctx context.Context, logger *slog.Logger, profiles repositories.UserProfileRepository) (echo.MiddlewareFunc, error) {
 	issuer := os.Getenv(envKeycloakIssuer)
 	clientID := os.Getenv(envKeycloakClientID)
 
@@ -111,12 +105,16 @@ func newKeycloakAuth(ctx context.Context, logger *slog.Logger, profiles reposito
 
 			profile, err := entities.NewUserProfile(idToken.Subject, claims.GivenName)
 			if err != nil {
+				RequestScopedLogger(logger, c).Warn("rejected request", "reason", "invalid subject", "error", err)
 				return c.JSON(http.StatusUnauthorized, map[string]string{"error": "invalid token"})
 			}
+			// Best-effort from here: this middleware guards every
+			// authenticated route (events, sync, sharing, WebSocket), so a
+			// profile-store hiccup must not turn into a 500 for unrelated
+			// requests - the refresh is retried on the caller's next request.
 			if profiles != nil {
 				if err := profiles.Upsert(c.Request().Context(), profile); err != nil {
 					RequestScopedLogger(logger, c).Error("failed to update user profile", "error", err)
-					return c.JSON(http.StatusInternalServerError, map[string]string{"error": "Internal server error"})
 				}
 			}
 

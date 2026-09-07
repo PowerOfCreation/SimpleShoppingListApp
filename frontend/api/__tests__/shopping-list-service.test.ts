@@ -85,7 +85,7 @@ describe("ShoppingListService", () => {
       removeWithin: jest.fn().mockResolvedValue(undefined),
       isEnabled: jest.fn(),
       getEnabledIds: jest.fn(),
-      remove: jest.fn(),
+      remove: jest.fn().mockResolvedValue(Result.ok(undefined)),
     } as unknown as jest.Mocked<ListSyncSettingsRepository>
 
     MockIngredientListRepository.mockImplementation(() => mockRepository)
@@ -274,6 +274,59 @@ describe("ShoppingListService", () => {
       expect(mockEventRepository.getByListId).not.toHaveBeenCalled()
       expect(mockEventRepository.appendAll).not.toHaveBeenCalled()
       expect(mockEventRepository.enqueueExistingForSync).not.toHaveBeenCalled()
+    })
+  })
+
+  describe("disableAllSync", () => {
+    it("removes the sync setting for every currently-synced list and cancels its pending outbox rows", async () => {
+      mockListSyncSettingsRepository.getEnabledIds.mockResolvedValue(
+        Result.ok(["list-1", "list-2"])
+      )
+
+      const result = await service.disableAllSync()
+
+      expect(result.success).toBe(true)
+      expect(mockListSyncSettingsRepository.remove).toHaveBeenNthCalledWith(
+        1,
+        "list-1"
+      )
+      expect(mockListSyncSettingsRepository.remove).toHaveBeenNthCalledWith(
+        2,
+        "list-2"
+      )
+      expect(mockOutboxRepository.cancelForList).toHaveBeenCalledWith("list-1")
+      expect(mockOutboxRepository.cancelForList).toHaveBeenCalledWith("list-2")
+    })
+
+    it("does nothing when no list is currently synced", async () => {
+      mockListSyncSettingsRepository.getEnabledIds.mockResolvedValue(
+        Result.ok([])
+      )
+
+      const result = await service.disableAllSync()
+
+      expect(result.success).toBe(true)
+      expect(mockListSyncSettingsRepository.remove).not.toHaveBeenCalled()
+      expect(mockOutboxRepository.cancelForList).not.toHaveBeenCalled()
+    })
+
+    it("reports a failure on one list but still disables sync for the rest", async () => {
+      mockListSyncSettingsRepository.getEnabledIds.mockResolvedValue(
+        Result.ok(["list-1", "list-2"])
+      )
+      mockOutboxRepository.cancelForList.mockResolvedValueOnce(
+        Result.fail(new Error("db locked") as never)
+      )
+
+      const result = await service.disableAllSync()
+
+      expect(result.success).toBe(false)
+      expect(mockListSyncSettingsRepository.remove).toHaveBeenCalledTimes(2)
+      expect(mockListSyncSettingsRepository.remove).toHaveBeenNthCalledWith(
+        2,
+        "list-2"
+      )
+      expect(mockOutboxRepository.cancelForList).toHaveBeenCalledWith("list-2")
     })
   })
 

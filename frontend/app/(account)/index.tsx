@@ -4,18 +4,40 @@ import { SafeAreaView } from "react-native-safe-area-context"
 
 import { isAuthConfigured } from "@/api/auth/config"
 import { useAuth } from "@/api/auth/AuthProvider"
+import { ConfirmDialog } from "@/components/ConfirmDialog"
 import { PrimaryButton } from "@/components/PrimaryButton"
 import { ThemedText } from "@/components/ThemedText"
+import {
+  sharedSyncWarning,
+  useSharedSyncedLists,
+} from "@/hooks/useSharedSyncedLists"
 import { useThemeColor } from "@/hooks/useThemeColor"
+
+function logoutWarning(sharedListNames: string[]): string {
+  return sharedSyncWarning(
+    "Signing out stops sync for all your lists on this device.",
+    sharedListNames
+  )
+}
 
 export default function AccountScreen() {
   const { status, user, error, busy, login, logout } = useAuth()
+  const { load: loadSharedSyncedLists, isLoading: loadingSharedLists } =
+    useSharedSyncedLists()
+  const [confirmVisible, setConfirmVisible] = React.useState(false)
+  const [sharedListNames, setSharedListNames] = React.useState<string[]>([])
   const backgroundColor = useThemeColor({}, "background")
   const secondaryColor = useThemeColor({}, "textSecondary")
   const dangerColor = useThemeColor({}, "danger")
   const dividerColor = useThemeColor({}, "divider")
 
   const configured = isAuthConfigured()
+
+  const handleSignOutPress = async () => {
+    const shared = await loadSharedSyncedLists()
+    setSharedListNames(shared ? shared.map((list) => list.name) : [])
+    setConfirmVisible(true)
+  }
 
   return (
     <SafeAreaView
@@ -42,8 +64,18 @@ export default function AccountScreen() {
               testID="account-logout"
               label="Sign out"
               variant="danger"
-              loading={busy}
-              onPress={logout}
+              loading={busy || loadingSharedLists}
+              onPress={handleSignOutPress}
+            />
+            <ConfirmDialog
+              testID="account-logout-confirm"
+              visible={confirmVisible}
+              title="Sign out?"
+              message={logoutWarning(sharedListNames)}
+              confirmLabel="Sign out"
+              destructive
+              onClose={() => setConfirmVisible(false)}
+              onConfirm={logout}
             />
           </>
         ) : (

@@ -9,6 +9,7 @@ import { getPreference } from "@/database/preferences-repository"
 import { ShoppingListOverview } from "@/types/ShoppingListOverview"
 import { ThemedText } from "@/components/ThemedText"
 import { DrawerToggleButton } from "@/components/DrawerToggleButton"
+import { ConfirmDialog } from "@/components/ConfirmDialog"
 import { useShoppingLists } from "@/hooks/useShoppingLists"
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { ShoppingListEntry } from "@/components/ShoppingListEntry"
@@ -16,6 +17,10 @@ import { getShoppingListService } from "@/api/shopping-list-service"
 import { createLogger } from "@/api/common/logger"
 import { useAuth } from "@/api/auth/AuthProvider"
 import { useSyncEngine } from "@/api/sync/SyncProvider"
+import {
+  sharedSyncWarning,
+  useSharedSyncedLists,
+} from "@/hooks/useSharedSyncedLists"
 
 const logger = createLogger("Index")
 
@@ -28,6 +33,10 @@ export default function Index() {
   const hasNavigatedRef = React.useRef(false)
   const { status } = useAuth()
   const isSignedIn = status === "signedIn"
+  const { load: loadSharedSyncedLists } = useSharedSyncedLists()
+  const [syncOffConfirmId, setSyncOffConfirmId] = React.useState<string | null>(
+    null
+  )
 
   React.useEffect(() => {
     if (hasNavigatedRef.current || isLoading) return
@@ -87,7 +96,7 @@ export default function Index() {
     }
   }
 
-  const handleToggleSync = async (id: string, enabled: boolean) => {
+  const applyToggleSync = async (id: string, enabled: boolean) => {
     const list = lists.find((l) => l.id === id)
     if (!list) return
 
@@ -106,6 +115,34 @@ export default function Index() {
       // Revert optimistic update on error
       updateList(id, { syncEnabled: previous })
     }
+  }
+
+  const handleToggleSync = async (id: string, enabled: boolean) => {
+    if (enabled) {
+      await applyToggleSync(id, true)
+      return
+    }
+
+    const list = lists.find((l) => l.id === id)
+    if (!list) return
+
+    // Turning sync off is purely local - the server copy and any members
+    // keep working. Warn first, same as sign-out's warning, since the owner
+    // otherwise has no way to notice they'd stop seeing a shared list's
+    // updates. A failed check (shared === null) can't rule out sharing, so
+    // it's treated the same as "shared" rather than skipping the warning.
+    const shared = await loadSharedSyncedLists(id)
+    if (shared === null || shared.length > 0) {
+      setSyncOffConfirmId(id)
+      return
+    }
+
+    await applyToggleSync(id, false)
+  }
+
+  const handleConfirmSyncOff = () => {
+    if (!syncOffConfirmId) return
+    applyToggleSync(syncOffConfirmId, false)
   }
 
   const handleShareList = (id: string) => {
@@ -193,6 +230,12 @@ export default function Index() {
     )
   }
 
+  // Re-derived from `lists` on every render instead of snapshotted at
+  // click-time, so a rename that lands while the dialog is open is reflected.
+  const syncOffConfirmName = syncOffConfirmId
+    ? lists.find((l) => l.id === syncOffConfirmId)?.name
+    : undefined
+
   return (
     <SafeAreaView
       style={[styles.container, { backgroundColor }]}
@@ -210,6 +253,23 @@ export default function Index() {
         symbol="+"
         label="New list"
         onPress={handleAddList}
+      />
+      <ConfirmDialog
+        testID="sync-off-confirm"
+        visible={syncOffConfirmId !== null}
+        title="Turn off sync?"
+        message={
+          syncOffConfirmName
+            ? sharedSyncWarning(
+                "Turning off sync stops further updates on this device.",
+                [syncOffConfirmName]
+              )
+            : ""
+        }
+        confirmLabel="Turn off sync"
+        destructive
+        onClose={() => setSyncOffConfirmId(null)}
+        onConfirm={handleConfirmSyncOff}
       />
     </SafeAreaView>
   )

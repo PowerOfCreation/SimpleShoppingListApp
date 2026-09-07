@@ -19,7 +19,7 @@ func TestKeycloakAuth_PersistsOnlyVerifiedGivenName(t *testing.T) {
 	p := newTestOIDCProvider(t)
 	t.Setenv(envKeycloakIssuer, p.issuer())
 	t.Setenv(envKeycloakClientID, testClientID)
-	mw, err := NewKeycloakAuthWithProfiles(context.Background(), testLogger(), postgres.NewSqlcUserProfileRepository(db.Queries))
+	mw, err := NewKeycloakAuth(context.Background(), testLogger(), postgres.NewSqlcUserProfileRepository(db.Queries))
 	require.NoError(t, err)
 	e := echo.New()
 	e.GET("/test", func(c echo.Context) error { return c.NoContent(http.StatusOK) }, mw)
