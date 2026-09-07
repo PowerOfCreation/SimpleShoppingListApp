@@ -55,6 +55,7 @@ const config = {
   name: IS_DEV ? "sholist (Dev)" : "sholist",
   slug: "sholist",
   version: process.env.RELEASE_VERSION?.split("-")[0] ?? "1.0.0",
+  extra: { releaseVersion: process.env.RELEASE_VERSION ?? null },
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   // The reverse-DNS scheme is what the OIDC login redirects back to (RFC 8252).
