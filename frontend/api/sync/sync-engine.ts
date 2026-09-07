@@ -6,6 +6,7 @@ import { SyncClient } from "@/api/sync/sync-client"
 import { EventApplier } from "@/api/sync/event-applier"
 import { createLogger } from "@/api/common/logger"
 import { notifySyncListsChanged } from "@/api/sync/sync-events"
+import { reportSyncStarted, reportSyncFinished } from "@/api/sync/sync-status"
 import { DomainEventRow, SYNCABLE_EVENT_TYPES } from "@/types/DomainEvent"
 
 const logger = createLogger("SyncEngine")
@@ -95,13 +96,15 @@ export class SyncEngine {
    * on a short page or after MAX_DRAIN_BATCHES pages. See
    * sync-design-decisions.md.
    */
-  async flush(): Promise<void> {
+  async flush(): Promise<boolean> {
     if (this.flushing) {
       // A flush is already in progress; let it finish rather than
       // overlapping two sends of the same rows.
-      return
+      return true
     }
     this.flushing = true
+    reportSyncStarted()
+    let ok = true
 
     try {
       let after: string | undefined
@@ -115,12 +118,13 @@ export class SyncEngine {
             "Failed to load pending outbox rows",
             pendingResult.getError()
           )
-          return
+          ok = false
+          return ok
         }
 
         const page = pendingResult.getValue()!
         if (page.length === 0) {
-          return
+          return ok
         }
         // Advance from the full page, not the inFlight-filtered one below,
         // so pagination can't stall on a row already in flight.
@@ -136,29 +140,35 @@ export class SyncEngine {
               "Failed to load events for pending outbox rows",
               eventsResult.getError()
             )
-            return
+            ok = false
+            return ok
           }
           const events = eventsResult.getValue()!
           for (const [listId, group] of groupByListId(events)) {
-            await this.sendGroup(listId, group)
+            const groupOk = await this.sendGroup(listId, group)
+            if (!groupOk) {
+              ok = false
+            }
           }
         }
 
         if (page.length < this.batchLimit) {
           // Short page - nothing more to drain right now.
-          return
+          return ok
         }
       }
+      return ok
     } finally {
       this.flushing = false
+      reportSyncFinished(ok)
     }
   }
 
-  /** Sends one list_id-group of events and bumps their attempt count, regardless of outcome - a non-retryable rejection gives up on the group instead of leaving it pending forever. */
+  /** Sends one list_id-group of events and bumps their attempt count, regardless of outcome - a non-retryable rejection gives up on the group instead of leaving it pending forever. Returns whether the send succeeded. */
   private async sendGroup(
     listId: string | null,
     group: DomainEventRow[]
-  ): Promise<void> {
+  ): Promise<boolean> {
     const eventIds = group.map((event) => event.event_id)
     eventIds.forEach((id) => this.inFlight.add(id))
     try {
@@ -176,7 +186,7 @@ export class SyncEngine {
         if (!error.retryable) {
           await this.giveUpOnGroup(listId, eventIds)
         }
-        return
+        return false
       }
 
       // Confirm only what we actually sent: the server echoes back what it
@@ -193,7 +203,9 @@ export class SyncEngine {
           `Failed to mark ${confirmed.length} confirmed events as synced`,
           markResult.getError()
         )
+        return false
       }
+      return true
     } finally {
       eventIds.forEach((id) => this.inFlight.delete(id))
     }
@@ -387,10 +399,11 @@ export class SyncEngine {
    * local cursor and pulls whatever's missing, then flushes - pull runs
    * first so local state reflects remote before anything new goes out.
    */
-  async pull(listIds: string[]): Promise<void> {
+  async pull(listIds: string[]): Promise<boolean> {
     if (listIds.length === 0) {
-      return
+      return true
     }
+    reportSyncStarted()
 
     const headsResult = await this.client.getListHeads(listIds)
     if (!headsResult.success) {
@@ -398,12 +411,14 @@ export class SyncEngine {
         "Failed to fetch list heads, will retry on the next trigger",
         headsResult.getError()
       )
-      return
+      reportSyncFinished(false)
+      return false
     }
     const headByListId = new Map(
       headsResult.getValue()!.map((head) => [head.listId, head])
     )
 
+    let ok = true
     for (const listId of listIds) {
       const head = headByListId.get(listId)
       if (!head) {
@@ -412,10 +427,16 @@ export class SyncEngine {
         // rather than guess.
         continue
       }
-      await this.pullListToHead(listId, head.seq)
+      const listOk = await this.pullListToHead(listId, head.seq)
+      if (!listOk) {
+        ok = false
+      }
     }
 
-    await this.flush()
+    const flushOk = await this.flush()
+    const result = ok && flushOk
+    reportSyncFinished(result)
+    return result
   }
 
   /** Single-list entry point - e.g. a WebSocket "new event for this list" notification. */
@@ -441,11 +462,14 @@ export class SyncEngine {
     return cursorResult.getValue()?.last_seen_seq ?? 0
   }
 
-  private async pullListToHead(listId: string, headSeq: number): Promise<void> {
+  private async pullListToHead(
+    listId: string,
+    headSeq: number
+  ): Promise<boolean> {
     const cursorSeq = await this.readCursorSeq(listId)
     if (cursorSeq === null) {
       // Already logged; skip this list, the next trigger retries.
-      return
+      return false
     }
 
     if (headSeq < cursorSeq) {
@@ -457,12 +481,12 @@ export class SyncEngine {
         `Server head for list ${listId} (seq ${headSeq}) is behind our cursor (seq ${cursorSeq}) - clamping down`
       )
       await this.cursorRepository.set(listId, headSeq, Date.now())
-      return
+      return true
     }
 
     if (headSeq === cursorSeq) {
       // Already caught up - nothing to pull for this list.
-      return
+      return true
     }
 
     let since = cursorSeq
@@ -478,7 +502,7 @@ export class SyncEngine {
           `Failed to pull events for list ${listId}, will retry on the next trigger`,
           pageResult.getError()
         )
-        return
+        return false
       }
       const page = pageResult.getValue()!
 
@@ -493,12 +517,13 @@ export class SyncEngine {
             `Failed to apply pulled events for list ${listId}`,
             applyResult.getError()
           )
-          return
+          return false
         }
       }
 
       since = page.nextSeq
       hasMore = page.hasMore
     }
+    return true
   }
 }

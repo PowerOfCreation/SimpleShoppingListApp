@@ -212,7 +212,7 @@ describe("SyncEngine", () => {
         Result.fail(new SyncError("network down", true))
       )
 
-      await expect(engine.flush()).resolves.toBeUndefined()
+      await expect(engine.flush()).resolves.toBe(false)
       expect(outbox.bumpAttempt).toHaveBeenCalledWith("e1", expect.any(Number))
     })
 
@@ -437,7 +437,7 @@ describe("SyncEngine", () => {
         Result.fail(new DbQueryError("boom", "markSynced", "EventOutbox"))
       )
 
-      await expect(engine.flush()).resolves.toBeUndefined()
+      await expect(engine.flush()).resolves.toBe(false)
     })
 
     // seq has exactly one writer - the pull path (EventRepository.insertRemote)
@@ -776,7 +776,7 @@ describe("SyncEngine", () => {
     it("skips a list id the server's head response omitted, without crashing", async () => {
       client.getListHeads.mockResolvedValue(Result.ok([]))
 
-      await expect(engine.pull(["list-1"])).resolves.toBeUndefined()
+      await expect(engine.pull(["list-1"])).resolves.toBe(true)
 
       expect(client.getEventsSince).not.toHaveBeenCalled()
       // Still flushes - a head lookup gap for one list must not block
