@@ -8,6 +8,7 @@ import { useAuth } from "@/api/auth/AuthProvider"
 import { useSyncEngine } from "@/api/sync/SyncProvider"
 import { useSharedSyncedLists } from "@/hooks/useSharedSyncedLists"
 import { getShoppingListService } from "@/api/shopping-list-service"
+import { useNetworkState } from "expo-network"
 
 /**
  * Unit tests for the "turn off sync" confirmation added to the list screen:
@@ -18,6 +19,9 @@ import { getShoppingListService } from "@/api/shopping-list-service"
  */
 
 jest.mock("@/hooks/useShoppingLists")
+jest.mock("expo-network", () => ({
+  useNetworkState: jest.fn(() => ({ isConnected: true })),
+}))
 jest.mock("@/api/auth/AuthProvider")
 jest.mock("@/api/sync/SyncProvider")
 jest.mock("@/api/shopping-list-service")
@@ -77,6 +81,7 @@ describe("Index - turn off sync confirmation", () => {
   let setSyncEnabled: jest.Mock
 
   beforeEach(() => {
+    jest.mocked(useNetworkState).mockReturnValue({ isConnected: true })
     mockedUseAuth.mockReturnValue({ status: "signedIn" })
     mockedUseSyncEngine.mockReturnValue({ repairList: jest.fn() })
     setSyncEnabled = jest.fn().mockResolvedValue(Result.ok(undefined))
@@ -85,6 +90,19 @@ describe("Index - turn off sync confirmation", () => {
 
   afterEach(() => {
     jest.clearAllMocks()
+  })
+
+  it("shows a separate offline icon when the device loses its connection", async () => {
+    mockLists()
+    mockShared([])
+    jest.mocked(useNetworkState).mockReturnValue({ isConnected: false })
+
+    await renderIndex()
+
+    expect(screen.getByTestId("sync-status-icon-offline")).toBeTruthy()
+    expect(screen.getByLabelText("Offline")).toBeTruthy()
+    expect(screen.queryByTestId("sync-status-icon-error")).toBeNull()
+    expect(screen.queryByTestId("sync-status-icon-synced")).toBeNull()
   })
 
   it("asks for confirmation before turning off sync for a shared list", async () => {
