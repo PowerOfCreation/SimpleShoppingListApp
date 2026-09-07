@@ -16,6 +16,7 @@ import { setPreference } from "@/database/preferences-repository"
 import { Ingredient } from "@/types/Ingredient"
 import { ThemedText } from "@/components/ThemedText"
 import { SystemMessage } from "@/components/SystemMessage"
+import { ActionButton } from "@/components/ActionButton"
 import { useIngredients } from "@/hooks/useIngredients"
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { formatSortMode } from "@/utils/sortIngredients"
@@ -196,23 +197,20 @@ export default function ViewShoppingList() {
             />
           </View>
         </View>
-        <TouchableOpacity
-          testID="add-button"
-          accessibilityRole="button"
-          style={[styles.addButton, { borderColor: dividerColor }]}
-          onPress={() =>
-            router.push({ pathname: "/new_ingredient", params: { listId } })
-          }
-        >
-          <MaterialIcons name="add" size={28} color={textColor} />
-          <ThemedText style={styles.addLabel}>Add item</ThemedText>
-        </TouchableOpacity>
       </View>
       <SystemMessage
         message={sortModeMessage}
         onHide={() => setSortModeMessage(null)}
       />
       {renderContent()}
+      <ActionButton
+        testID="add-button"
+        symbol="+"
+        label="Add item"
+        onPress={() =>
+          router.push({ pathname: "/new_ingredient", params: { listId } })
+        }
+      />
     </SafeAreaView>
   )
 }
@@ -231,17 +229,7 @@ const styles = StyleSheet.create({
   },
   progressTrack: { flex: 1, height: 7, borderRadius: 4, overflow: "hidden" },
   progressFill: { height: "100%" },
-  addButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 14,
-    borderWidth: 1,
-    borderRadius: 7,
-    minHeight: 46,
-    paddingHorizontal: 12,
-  },
-  addLabel: { fontSize: 17 },
-  listContent: { paddingHorizontal: 22, paddingBottom: 24 },
+  listContent: { paddingHorizontal: 22, paddingBottom: 110 },
   centered: {
     flex: 1,
     justifyContent: "center",
