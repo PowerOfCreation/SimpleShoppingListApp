@@ -1,16 +1,29 @@
-/**
- * Tracks the sync engine's current activity for UI display (e.g. the home
- * screen's header icon) - purely observational, sync logic itself never
- * reads it back. Mirrors sync-events.ts's pub/sub pattern.
- */
-
+/** Observational, device-local sync diagnostics for the current app session. */
 export type SyncStatus = "synced" | "syncing" | "error"
 
-let status: SyncStatus = "synced"
+type SyncDetails = {
+  status: SyncStatus
+  lastAttemptAt: number | null
+  lastSuccessAt: number | null
+  error: string | null
+}
+
+let details: SyncDetails = {
+  status: "synced",
+  lastAttemptAt: null,
+  lastSuccessAt: null,
+  error: null,
+}
+let activePasses = 0
+let passFailed = false
 const listeners = new Set<() => void>()
 
 export function getSyncStatus(): SyncStatus {
-  return status
+  return details.status
+}
+
+export function getSyncDetails(): SyncDetails {
+  return details
 }
 
 export function onSyncStatusChanged(listener: () => void): () => void {
@@ -18,22 +31,26 @@ export function onSyncStatusChanged(listener: () => void): () => void {
   return () => listeners.delete(listener)
 }
 
-function setStatus(next: SyncStatus): void {
-  if (status === next) {
-    return
-  }
-  status = next
-  for (const listener of listeners) {
-    listener()
-  }
+function update(next: Partial<SyncDetails>): void {
+  details = { ...details, ...next }
+  for (const listener of listeners) listener()
 }
 
-/** Called when a pull/flush pass starts talking to the server. */
+/** Nested pull/flush passes count as one attempt. */
 export function reportSyncStarted(): void {
-  setStatus("syncing")
+  if (activePasses++ === 0) {
+    passFailed = false
+    update({ status: "syncing", lastAttemptAt: Date.now(), error: null })
+  }
 }
 
-/** Called when a pull/flush pass finishes - ok reflects whether every step it covered succeeded. */
 export function reportSyncFinished(ok: boolean): void {
-  setStatus(ok ? "synced" : "error")
+  passFailed = (activePasses > 0 && passFailed) || !ok
+  activePasses = Math.max(0, activePasses - 1)
+  if (activePasses > 0) return
+  update({
+    status: passFailed ? "error" : "synced",
+    lastSuccessAt: passFailed ? details.lastSuccessAt : Date.now(),
+    error: passFailed ? "Sync failed. Please try again later." : null,
+  })
 }

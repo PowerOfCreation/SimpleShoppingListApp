@@ -7,6 +7,7 @@ import { EventApplier } from "@/api/sync/event-applier"
 import { createLogger } from "@/api/common/logger"
 import { notifySyncListsChanged } from "@/api/sync/sync-events"
 import { reportSyncStarted, reportSyncFinished } from "@/api/sync/sync-status"
+import { startListSync } from "@/api/sync/list-sync-status"
 import { DomainEventRow, SYNCABLE_EVENT_TYPES } from "@/types/DomainEvent"
 
 const logger = createLogger("SyncEngine")
@@ -105,6 +106,10 @@ export class SyncEngine {
     this.flushing = true
     reportSyncStarted()
     let ok = true
+    const listPasses = new Map<
+      string,
+      { finish: (ok: boolean) => void; ok: boolean }
+    >()
 
     try {
       let after: string | undefined
@@ -145,7 +150,23 @@ export class SyncEngine {
           }
           const events = eventsResult.getValue()!
           for (const [listId, group] of groupByListId(events)) {
-            const groupOk = await this.sendGroup(listId, group)
+            if (listId !== null && !listPasses.has(listId)) {
+              listPasses.set(listId, {
+                finish: startListSync(listId, "push"),
+                ok: true,
+              })
+            }
+            let groupOk = false
+            try {
+              groupOk = await this.sendGroup(listId, group)
+            } catch (error) {
+              logger.error(
+                `Unexpected upload failure for list ${listId}`,
+                error
+              )
+            }
+            const pass = listId === null ? undefined : listPasses.get(listId)
+            if (pass) pass.ok &&= groupOk
             if (!groupOk) {
               ok = false
             }
@@ -158,8 +179,12 @@ export class SyncEngine {
         }
       }
       return ok
+    } catch (error) {
+      ok = false
+      throw error
     } finally {
       this.flushing = false
+      for (const pass of listPasses.values()) pass.finish(pass.ok)
       reportSyncFinished(ok)
     }
   }
@@ -171,6 +196,8 @@ export class SyncEngine {
   ): Promise<boolean> {
     const eventIds = group.map((event) => event.event_id)
     eventIds.forEach((id) => this.inFlight.add(id))
+    const finish = listId === null ? undefined : startListSync(listId, "push")
+    let confirmedAll = false
     try {
       const sendResult = await this.client.sendEvents(group)
       const now = Date.now()
@@ -205,8 +232,10 @@ export class SyncEngine {
         )
         return false
       }
+      confirmedAll = new Set(confirmed).size === sent.size
       return true
     } finally {
+      finish?.(confirmedAll)
       eventIds.forEach((id) => this.inFlight.delete(id))
     }
   }
@@ -323,50 +352,63 @@ export class SyncEngine {
     )
 
     for (const listId of listIds) {
-      const eventsResult = await this.eventRepository.getByListId(listId)
-      if (!eventsResult.success) {
-        logger.warn(
-          `Reconcile: failed to load history for list ${listId}`,
-          eventsResult.getError()
-        )
-        continue
-      }
-      const syncable = eventsResult
-        .getValue()!
-        .filter((event) => SYNCABLE_EVENT_TYPES.includes(event.event_type))
+      const finish = startListSync(listId, "reconcile")
+      let ok = false
+      try {
+        const eventsResult = await this.eventRepository.getByListId(listId)
+        if (!eventsResult.success) {
+          logger.warn(
+            `Reconcile: failed to load history for list ${listId}`,
+            eventsResult.getError()
+          )
+          continue
+        }
+        ok = true
+        const syncable = eventsResult
+          .getValue()!
+          .filter((event) => SYNCABLE_EVENT_TYPES.includes(event.event_type))
 
-      const missing = syncable.filter((event) => !known.has(event.event_id))
-      if (missing.length > 0) {
-        // enqueueExistingForSync creates a fresh (pending) row for anything
-        // never queued before; resetToPending forces any existing row -
-        // even one already marked synced - back to pending. Together they
-        // cover both "never sent" and "server lost what it had acked".
-        await this.eventRepository.enqueueExistingForSync(missing)
-        await this.outboxRepository.resetToPending(
-          missing.map((event) => event.event_id)
-        )
-      }
+        const missing = syncable.filter((event) => !known.has(event.event_id))
+        if (missing.length > 0) {
+          // enqueueExistingForSync creates a fresh (pending) row for anything
+          // never queued before; resetToPending forces any existing row -
+          // even one already marked synced - back to pending. Together they
+          // cover both "never sent" and "server lost what it had acked".
+          const enqueueResult =
+            await this.eventRepository.enqueueExistingForSync(missing)
+          const resetResult = await this.outboxRepository.resetToPending(
+            missing.map((event) => event.event_id)
+          )
+          ok = enqueueResult.success && resetResult.success
+        }
 
-      // The opposite direction: the server already knows an event we still
-      // show as locally unconfirmed. Under the single-seq-writer invariant
-      // (sync-design-decisions.md, "Genau ein Writer für seq") that's the
-      // normal state of anything just pushed and acked but not yet pulled -
-      // it only means drift once our cursor has reached the server's head,
-      // since a pull that hasn't happened yet can't be blamed for not
-      // having assigned a seq.
-      const hasUnpulledKnownEvent = syncable.some(
-        (event) => event.seq === null && known.has(event.event_id)
-      )
-      if (!hasUnpulledKnownEvent) {
-        continue
-      }
-      const headSeq = headSeqByListId.get(listId)
-      if (headSeq === undefined) {
-        continue
-      }
-      const cursorSeq = await this.readCursorSeq(listId)
-      if (cursorSeq !== null && cursorSeq >= headSeq) {
-        await this.repairList(listId)
+        // The opposite direction: the server already knows an event we still
+        // show as locally unconfirmed. Under the single-seq-writer invariant
+        // (sync-design-decisions.md, "Genau ein Writer für seq") that's the
+        // normal state of anything just pushed and acked but not yet pulled -
+        // it only means drift once our cursor has reached the server's head,
+        // since a pull that hasn't happened yet can't be blamed for not
+        // having assigned a seq.
+        const hasUnpulledKnownEvent = syncable.some(
+          (event) => event.seq === null && known.has(event.event_id)
+        )
+        if (!hasUnpulledKnownEvent) {
+          continue
+        }
+        const headSeq = headSeqByListId.get(listId)
+        if (headSeq === undefined) {
+          continue
+        }
+        const cursorSeq = await this.readCursorSeq(listId)
+        if (cursorSeq === null) ok = false
+        if (cursorSeq !== null && cursorSeq >= headSeq) {
+          await this.repairList(listId)
+        }
+      } catch (error) {
+        ok = false
+        logger.error(`Unexpected reconcile failure for list ${listId}`, error)
+      } finally {
+        finish(ok)
       }
     }
   }
@@ -385,6 +427,7 @@ export class SyncEngine {
   async repairList(listId: string): Promise<void> {
     const clearResult = await this.cursorRepository.clear(listId)
     if (!clearResult.success) {
+      startListSync(listId, "pull")(false)
       logger.error(
         `Failed to clear pull cursor for list ${listId} before repair`,
         clearResult.getError()
@@ -405,38 +448,49 @@ export class SyncEngine {
     }
     reportSyncStarted()
 
-    const headsResult = await this.client.getListHeads(listIds)
-    if (!headsResult.success) {
-      logger.warn(
-        "Failed to fetch list heads, will retry on the next trigger",
-        headsResult.getError()
+    let result = false
+    try {
+      const headsResult = await this.client.getListHeads(listIds)
+      if (!headsResult.success) {
+        logger.warn(
+          "Failed to fetch list heads, will retry on the next trigger",
+          headsResult.getError()
+        )
+        return false
+      }
+      const headByListId = new Map(
+        headsResult.getValue()!.map((head) => [head.listId, head])
       )
-      reportSyncFinished(false)
-      return false
-    }
-    const headByListId = new Map(
-      headsResult.getValue()!.map((head) => [head.listId, head])
-    )
 
-    let ok = true
-    for (const listId of listIds) {
-      const head = headByListId.get(listId)
-      if (!head) {
-        // The server answers every requested id (see SyncPullController);
-        // a missing entry would mean a response we can't trust - skip
-        // rather than guess.
-        continue
+      let ok = true
+      for (const listId of listIds) {
+        const head = headByListId.get(listId)
+        if (!head) {
+          // The server answers every requested id (see SyncPullController);
+          // a missing entry would mean a response we can't trust - skip
+          // rather than guess.
+          continue
+        }
+        const finish = startListSync(listId, "pull")
+        let listOk = false
+        try {
+          listOk = await this.pullListToHead(listId, head.seq)
+        } catch (error) {
+          logger.error(`Unexpected download failure for list ${listId}`, error)
+        } finally {
+          finish(listOk)
+        }
+        if (!listOk) {
+          ok = false
+        }
       }
-      const listOk = await this.pullListToHead(listId, head.seq)
-      if (!listOk) {
-        ok = false
-      }
-    }
 
-    const flushOk = await this.flush()
-    const result = ok && flushOk
-    reportSyncFinished(result)
-    return result
+      const flushOk = await this.flush()
+      result = ok && flushOk
+      return result
+    } finally {
+      reportSyncFinished(result)
+    }
   }
 
   /** Single-list entry point - e.g. a WebSocket "new event for this list" notification. */

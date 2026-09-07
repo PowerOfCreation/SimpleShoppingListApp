@@ -1,6 +1,7 @@
+import { startListSync } from "@/api/sync/list-sync-status"
 import * as React from "react"
 import * as ReactNative from "react-native"
-import { render, fireEvent } from "@testing-library/react-native"
+import { act, render, fireEvent } from "@testing-library/react-native"
 import { ShoppingListEntry, ShoppingListEntryProps } from "../ShoppingListEntry"
 
 // The real @expo/vector-icons component loads its font asynchronously, which
@@ -359,4 +360,27 @@ describe("ShoppingListEntry", () => {
     expect(onDelete).not.toHaveBeenCalled()
     expect(queryByTestId("shopping-list-delete-confirm-1-confirm")).toBeFalsy()
   })
+})
+
+it("updates only the failed list and keeps a permanent rejection visible when disabled", () => {
+  const { getByTestId, getByText, rerender } = render(
+    <>
+      <ShoppingListEntry {...defaultProps} id="status-bad" syncEnabled />
+      <ShoppingListEntry {...defaultProps} id="status-good" syncEnabled />
+    </>
+  )
+  act(() => {
+    startListSync("status-bad", "push")(false)
+    startListSync("status-good", "push")(true)
+  })
+  expect(getByTestId("shopping-list-sync-icon-status-bad")).toHaveTextContent(
+    /error/
+  )
+  expect(getByTestId("shopping-list-sync-icon-status-good")).toHaveTextContent(
+    /cloud-done/
+  )
+  rerender(
+    <ShoppingListEntry {...defaultProps} id="status-bad" syncEnabled={false} />
+  )
+  expect(getByText(/Sync failed · Sync disabled/)).toBeTruthy()
 })
