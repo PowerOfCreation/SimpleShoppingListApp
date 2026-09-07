@@ -1,3 +1,4 @@
+import { getListSyncStatus } from "../list-sync-status"
 import { SyncEngine, MAX_DRAIN_BATCHES } from "../sync-engine"
 import { OutboxRepository } from "@/database/outbox-repository"
 import { EventRepository } from "@/database/event-repository"
@@ -349,6 +350,8 @@ describe("SyncEngine", () => {
       expect(client.sendEvents).toHaveBeenCalledWith([
         expect.objectContaining({ event_id: "e2", list_id: "list-2" }),
       ])
+      expect(getListSyncStatus("list-1")).toBe("error")
+      expect(getListSyncStatus("list-2")).toBe("synced")
       // list-2's send succeeded even though list-1's failed non-retryably.
       expect(outbox.bumpAttempt).toHaveBeenCalledWith("e2", expect.any(Number))
     })
@@ -782,6 +785,26 @@ describe("SyncEngine", () => {
       // Still flushes - a head lookup gap for one list must not block
       // pushing whatever else is pending.
       expect(outbox.getPending).toHaveBeenCalled()
+    })
+
+    it("keeps download failures specific to their list and recovers on retry", async () => {
+      client.getListHeads.mockResolvedValue(
+        Result.ok([
+          { listId: "pull-bad", seq: 1, eventId: "a" },
+          { listId: "pull-good", seq: 0, eventId: "b" },
+        ])
+      )
+      client.getEventsSince.mockResolvedValue(
+        Result.fail(new SyncError("failed", true))
+      )
+      await engine.pull(["pull-bad", "pull-good"])
+      expect(getListSyncStatus("pull-bad")).toBe("error")
+      expect(getListSyncStatus("pull-good")).toBe("synced")
+      client.getEventsSince.mockResolvedValue(
+        Result.ok({ events: [], nextSeq: 1, hasMore: false })
+      )
+      await engine.pull(["pull-bad"])
+      expect(getListSyncStatus("pull-bad")).toBe("synced")
     })
 
     it("stops pulling a list (but still flushes) when fetching a page fails", async () => {

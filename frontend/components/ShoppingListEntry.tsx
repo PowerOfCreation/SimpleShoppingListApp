@@ -10,6 +10,7 @@ import { ContextMenu } from "./ContextMenu"
 import { RenameSheet } from "./RenameSheet"
 import { ConfirmDialog } from "./ConfirmDialog"
 import { useThemeColor } from "@/hooks/useThemeColor"
+import { useListSyncStatus } from "@/hooks/useListSyncStatus"
 import { MaterialIcons } from "@expo/vector-icons"
 
 export type ShoppingListEntryProps = {
@@ -37,6 +38,20 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
   const dividerColor = useThemeColor({}, "divider")
   const textSecondaryColor = useThemeColor({}, "textSecondary")
   const accentColor = useThemeColor({}, "accent")
+  const dangerColor = useThemeColor({}, "danger")
+  const syncStatus = useListSyncStatus(props.id)
+  const syncFailed = syncStatus === "error"
+  const syncLabel = syncFailed
+    ? props.syncEnabled
+      ? "Sync failed"
+      : "Sync failed · Sync disabled"
+    : !props.syncEnabled
+      ? "Private"
+      : syncStatus === "syncing"
+        ? "Syncing…"
+        : syncStatus === "synced"
+          ? "Synced"
+          : "Sync enabled"
 
   const ingredientCount = props.totalCount ?? 0
   const ingredientText = ingredientCount === 1 ? "ingredient" : "ingredients"
@@ -83,14 +98,32 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
               style={[styles.listDate, { color: textSecondaryColor }]}
               type="default"
             >
-              {props.syncEnabled ? "Sync enabled" : "Private"} ·{" "}
-              {ingredientCount} {ingredientCount === 1 ? "item" : "items"}
+              {syncLabel}
+              {" ·"} {ingredientCount}{" "}
+              {ingredientCount === 1 ? "item" : "items"}
             </ThemedText>
             <MaterialIcons
               testID={`shopping-list-sync-icon-${props.id}`}
-              name={props.syncEnabled ? "cloud" : "cloud-off"}
+              accessibilityLabel={syncLabel}
+              name={
+                syncFailed
+                  ? "error"
+                  : !props.syncEnabled
+                    ? "cloud-off"
+                    : syncStatus === "syncing"
+                      ? "sync"
+                      : syncStatus === "synced"
+                        ? "cloud-done"
+                        : "cloud"
+              }
               size={14}
-              color={props.syncEnabled ? accentColor : textSecondaryColor}
+              color={
+                syncFailed
+                  ? dangerColor
+                  : props.syncEnabled
+                    ? accentColor
+                    : textSecondaryColor
+              }
             />
           </View>
         </View>
