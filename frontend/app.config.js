@@ -54,7 +54,7 @@ const ANDROID_ARCHS = IS_DEV
 const config = {
   name: IS_DEV ? "sholist (Dev)" : "sholist",
   slug: "sholist",
-  version: "1.0.0",
+  version: process.env.RELEASE_VERSION?.split("-")[0] ?? "1.0.0",
   orientation: "portrait",
   icon: "./assets/images/icon.png",
   // The reverse-DNS scheme is what the OIDC login redirects back to (RFC 8252).
@@ -69,6 +69,7 @@ const config = {
     bundleIdentifier: BUNDLE_ID,
   },
   android: {
+    versionCode: Number(process.env.RELEASE_BUILD_NUMBER ?? 1),
     adaptiveIcon: {
       foregroundImage: "./assets/images/adaptive-icon.png",
       backgroundColor: "#ffffff",

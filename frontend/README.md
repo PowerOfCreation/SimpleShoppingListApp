@@ -32,6 +32,13 @@ screen just reports that login is not configured.
 pnpm install
 ```
 
+## Releases
+
+The [frontend release workflow](docs/releases.md) publishes immutable GitHub
+releases with signed Android APK/AAB and web artifacts, generated changelogs,
+and release candidates. See that guide for signing secrets and local APK update
+compatibility.
+
 ## Android builds
 
 Two separate apps can be installed in parallel on the same device. The app identifier is controlled via the `APP_VARIANT` environment variable in `app.config.js` — the `android/` and `ios/` folders are **not committed** and are generated on demand by `expo prebuild` (CNG pattern).

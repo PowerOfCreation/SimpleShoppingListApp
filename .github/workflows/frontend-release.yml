@@ -1,0 +1,196 @@
+name: Frontend Release
+
+on:
+  push:
+    tags:
+      - 'frontend-v*'
+  workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        type: choice
+        options: [rc, stable]
+        default: rc
+      version:
+        description: 'Base version (e.g. 1.2.0); empty = conventional-commit bump since last stable'
+        type: string
+        required: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: frontend-release
+  cancel-in-progress: false
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
+      prerelease: ${{ steps.release.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        with:
+          tool: git-cliff
+      - name: Resolve version and reject reused releases
+        id: release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+        run: bash frontend/scripts/release-version.sh
+
+  build:
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    env:
+      CI: '1'
+      APP_VARIANT: production
+      RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+      RELEASE_BUILD_NUMBER: ${{ github.run_number }}
+      EXPO_PUBLIC_KEYCLOAK_ISSUER: ${{ vars.EXPO_PUBLIC_KEYCLOAK_ISSUER }}
+      EXPO_PUBLIC_KEYCLOAK_CLIENT_ID: ${{ vars.EXPO_PUBLIC_KEYCLOAK_CLIENT_ID }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Check signing configuration
+        env:
+          KEYSTORE: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in KEYSTORE STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then
+              echo "::error::Missing Android signing secret: $name (see frontend/docs/releases.md)"
+              exit 1
+            fi
+          done
+      - uses: ./.github/actions/setup-node-install
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
+        with:
+          distribution: temurin
+          java-version: '17'
+      - name: Lint and test
+        working-directory: frontend
+        run: |
+          pnpm lint
+          pnpm test:ci --runInBand
+      - name: Export web
+        working-directory: frontend
+        env:
+          NODE_ENV: production
+        run: |
+          set -euo pipefail
+          pnpm exec expo export --platform web --output-dir dist-web
+          test -s dist-web/index.html
+          cp docs/web-hosting.md dist-web/HOSTING.md
+          mkdir -p release-assets
+          tar -czf release-assets/sholist-web.tar.gz -C dist-web .
+      - name: Generate Android project
+        working-directory: frontend
+        env:
+          NODE_ENV: production
+        run: pnpm exec expo prebuild --platform android --clean --non-interactive
+      - name: Build signed APK and AAB
+        working-directory: frontend
+        env:
+          NODE_ENV: production
+          ANDROID_RELEASE_KEYSTORE_BASE64: ${{ secrets.ANDROID_RELEASE_KEYSTORE_BASE64 }}
+          ANDROID_RELEASE_STORE_PASSWORD: ${{ secrets.ANDROID_RELEASE_STORE_PASSWORD }}
+          ANDROID_RELEASE_KEY_ALIAS: ${{ secrets.ANDROID_RELEASE_KEY_ALIAS }}
+          ANDROID_RELEASE_KEY_PASSWORD: ${{ secrets.ANDROID_RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          export ANDROID_RELEASE_KEYSTORE="$RUNNER_TEMP/sholist-release.keystore"
+          trap 'rm -f "$ANDROID_RELEASE_KEYSTORE"' EXIT
+          printf '%s' "$ANDROID_RELEASE_KEYSTORE_BASE64" | base64 --decode > "$ANDROID_RELEASE_KEYSTORE"
+          chmod 600 "$ANDROID_RELEASE_KEYSTORE"
+          cd android
+          ./gradlew --no-daemon --init-script ../scripts/release-signing.gradle assembleRelease bundleRelease
+          cd ..
+          cp android/app/build/outputs/apk/release/app-release.apk release-assets/sholist-android.apk
+          cp android/app/build/outputs/bundle/release/app-release.aab release-assets/sholist-android.aab
+          APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)
+          "$APKSIGNER" verify --verbose --print-certs release-assets/sholist-android.apk
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: frontend-release-assets
+          path: frontend/release-assets/*
+          if-no-files-found: error
+          retention-days: 7
+
+  publish:
+    needs: [prepare, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      TAG: ${{ needs.prepare.outputs.tag }}
+      VERSION: ${{ needs.prepare.outputs.version }}
+      PRERELEASE: ${{ needs.prepare.outputs.prerelease }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: frontend-release-assets
+          path: release-assets
+      - uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
+        with:
+          tool: git-cliff
+      - name: Generate changelog and checksums
+        run: |
+          set -euo pipefail
+          # Both RC and stable notes include all changes since the last stable,
+          # even when RC tags occur between that stable tag and this commit.
+          PREVIOUS=$(git tag --merged HEAD --sort=-version:refname | { grep -E '^frontend-v[0-9]+\.[0-9]+\.[0-9]+$' || true; } | { grep -Fxv "$TAG" || true; } | head -n 1)
+          RANGE=HEAD
+          if [ -n "$PREVIOUS" ]; then RANGE="$PREVIOUS..HEAD"; fi
+          git-cliff --config frontend/cliff.toml "$RANGE" --tag "$TAG" --strip header > changelog.md
+          printf '# Frontend %s\n\nSource: `%s`\nBuild number: `%s`\n\n' "$VERSION" "$(git rev-parse HEAD)" "$GITHUB_RUN_NUMBER" > notes.md
+          cat >> notes.md <<'NOTES'
+          Assets: signed Android APK (direct install), Android AAB (future store use), and static web export.
+          See HOSTING.md inside the web archive for required SQLite headers. iOS is not included.
+
+          Verify downloads with `sha256sum -c SHA256SUMS`.
+
+          NOTES
+          cat changelog.md >> notes.md
+          cd release-assets
+          test -s sholist-android.apk
+          test -s sholist-android.aab
+          test -s sholist-web.tar.gz
+          sha256sum sholist-android.apk sholist-android.aab sholist-web.tar.gz > SHA256SUMS
+      - name: Stage all assets then publish
+        run: |
+          set -euo pipefail
+          # Reruns can replace only a draft belonging to this exact commit.
+          # Never mutate published releases, even if immutability is disabled.
+          gh api --paginate "repos/$GITHUB_REPOSITORY/releases?per_page=100" --slurp > releases.json
+          EXISTING=$(jq --arg tag "$TAG" '[.[][] | select(.tag_name == $tag)][0] // empty' releases.json)
+          SHA=$(git rev-parse HEAD)
+          if [ -n "$EXISTING" ]; then
+            jq -e --arg sha "$SHA" '.draft == true and .target_commitish == $sha' <<< "$EXISTING" >/dev/null
+            gh release edit "$TAG" --notes-file notes.md --prerelease="$PRERELEASE"
+          else
+            gh release create "$TAG" --draft --target "$SHA" --title "Frontend $VERSION" \
+              --notes-file notes.md --prerelease="$PRERELEASE"
+          fi
+          gh release upload "$TAG" release-assets/* --clobber
+          # Validate the uploaded bytes before the draft becomes immutable.
+          gh release download "$TAG" --dir verify-assets
+          (cd verify-assets && sha256sum -c SHA256SUMS)
+          gh release edit "$TAG" --draft=false --latest=false
+          gh api "repos/$GITHUB_REPOSITORY/releases/tags/$TAG" --jq '.immutable' | grep -qx true || {
+            echo '::error::Enable release immutability in repository Settings > General > Releases. Published release is not immutable.'
+            exit 1
+          }
