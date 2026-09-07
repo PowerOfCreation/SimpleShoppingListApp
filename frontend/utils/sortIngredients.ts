@@ -45,6 +45,36 @@ export function isSortedByMode(
   return ingredients.every((item, index) => item.id === sorted[index].id)
 }
 
+/**
+ * Merges freshly-fetched ingredients into the existing display order: known
+ * items are patched in place (content updates, same position), brand-new
+ * items are appended, removed items drop out. Used for any background
+ * refresh (sync pull, screen refocus, post-delete) so that data changing
+ * under the user never itself repositions a row - only pressing "Sort" does.
+ */
+export function mergeIngredientsPreservingOrder(
+  existing: Ingredient[],
+  fresh: Ingredient[]
+): Ingredient[] {
+  const freshById = new Map(fresh.map((item) => [item.id, item]))
+  const seen = new Set<string>()
+  const merged: Ingredient[] = []
+
+  for (const item of existing) {
+    const updated = freshById.get(item.id)
+    if (updated) {
+      merged.push(updated)
+      seen.add(item.id)
+    }
+  }
+  for (const item of fresh) {
+    if (!seen.has(item.id)) {
+      merged.push(item)
+    }
+  }
+  return merged
+}
+
 export function formatSortMode(mode: SortMode): string {
   switch (mode) {
     case SortMode.PRIORITY:

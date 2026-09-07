@@ -7,7 +7,11 @@ import { getIngredientService } from "@/api/ingredient-service"
 import { createLogger } from "@/api/common/logger"
 import { IngredientListRepository } from "@/database/ingredient-list-repository"
 import { getDatabase } from "@/database/database"
-import { isSortedByMode, sortIngredientsByMode } from "@/utils/sortIngredients"
+import {
+  isSortedByMode,
+  mergeIngredientsPreservingOrder,
+  sortIngredientsByMode,
+} from "@/utils/sortIngredients"
 import { onListDataChanged } from "@/api/sync/sync-events"
 
 const logger = createLogger("useIngredients")
@@ -28,9 +32,17 @@ export function useIngredients() {
   // Bumped whenever the list is just re-sorted without switching mode,
   // so the UI can show feedback even when sortMode itself didn't change
   const [sortSignal, setSortSignal] = React.useState(0)
+  // Tracks which listId we've already done a first load for, so a reload
+  // triggered by something other than opening a (new) list - a sync pull,
+  // regaining focus, a delete - merges into the existing order instead of
+  // resorting from scratch. Only the very first load for a list sorts.
+  const lastLoadedListIdRef = React.useRef<string | undefined>(undefined)
 
   const loadIngredients = React.useCallback(async () => {
-    setIsLoading(true)
+    const isInitialLoadForList = lastLoadedListIdRef.current !== listId
+    if (isInitialLoadForList) {
+      setIsLoading(true)
+    }
     setError(null)
     try {
       const result = await getIngredientService().GetIngredients(listId)
@@ -42,12 +54,20 @@ export function useIngredients() {
         return
       }
 
-      setIngredients(sortIngredientsByMode(result.getValue() || [], sortMode))
+      const fresh = result.getValue() || []
+      lastLoadedListIdRef.current = listId
+      setIngredients((prev) =>
+        isInitialLoadForList
+          ? sortIngredientsByMode(fresh, sortMode)
+          : mergeIngredientsPreservingOrder(prev, fresh)
+      )
     } catch (err) {
       setError("Failed to load ingredients")
       logger.error("Error loading ingredients", err)
     } finally {
-      setIsLoading(false)
+      if (isInitialLoadForList) {
+        setIsLoading(false)
+      }
     }
   }, [listId, sortMode])
 
