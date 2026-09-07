@@ -87,6 +87,40 @@ describe("sortIngredientsByMode", () => {
 
     expect(sorted.map((i) => i.id)).toEqual(["2", "1"])
   })
+
+  it("category mode groups items by their detected category", () => {
+    const items = [
+      makeIngredient({ id: "1", name: "Klopapier", created_at: 1 }), // Household
+      makeIngredient({ id: "2", name: "Banane", created_at: 2 }), // Fruit & Vegetables
+      makeIngredient({ id: "3", name: "Milch", created_at: 3 }), // Dairy & Cheese
+    ]
+
+    const sorted = sortIngredientsByMode(items, SortMode.CATEGORY)
+
+    expect(sorted.map((i) => i.id)).toEqual(["2", "3", "1"])
+  })
+
+  it("category mode puts unrecognized names last, after known categories", () => {
+    const items = [
+      makeIngredient({ id: "1", name: "Xyzzyzzq", created_at: 1 }), // Other
+      makeIngredient({ id: "2", name: "Banane", created_at: 2 }), // Fruit & Vegetables
+    ]
+
+    const sorted = sortIngredientsByMode(items, SortMode.CATEGORY)
+
+    expect(sorted.map((i) => i.id)).toEqual(["2", "1"])
+  })
+
+  it("category mode falls back to creation date within the same category", () => {
+    const items = [
+      makeIngredient({ id: "1", name: "Banane", created_at: 1 }),
+      makeIngredient({ id: "2", name: "Apfel", created_at: 2 }),
+    ]
+
+    const sorted = sortIngredientsByMode(items, SortMode.CATEGORY)
+
+    expect(sorted.map((i) => i.id)).toEqual(["2", "1"])
+  })
 })
 
 describe("isSortedByMode", () => {
@@ -193,5 +227,9 @@ describe("formatSortMode", () => {
 
   it("formats PRIORITY", () => {
     expect(formatSortMode(SortMode.PRIORITY)).toBe("Sorted by priority")
+  })
+
+  it("formats CATEGORY", () => {
+    expect(formatSortMode(SortMode.CATEGORY)).toBe("Sorted by category")
   })
 })

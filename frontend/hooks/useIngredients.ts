@@ -16,6 +16,13 @@ import { onListDataChanged } from "@/api/sync/sync-events"
 
 const logger = createLogger("useIngredients")
 
+// Order the sort button cycles through on repeated presses.
+const SORT_MODE_CYCLE: Record<SortMode, SortMode> = {
+  [SortMode.DATE]: SortMode.PRIORITY,
+  [SortMode.PRIORITY]: SortMode.CATEGORY,
+  [SortMode.CATEGORY]: SortMode.DATE,
+}
+
 /**
  * Hook to manage ingredient state and operations
  * Encapsulates business logic and API interactions
@@ -296,8 +303,7 @@ export function useIngredients() {
    */
   const sortIngredients = React.useCallback(() => {
     if (isSortedByMode(ingredients, sortMode)) {
-      const nextMode =
-        sortMode === SortMode.DATE ? SortMode.PRIORITY : SortMode.DATE
+      const nextMode = SORT_MODE_CYCLE[sortMode]
       setSortMode(nextMode)
       setIngredients(sortIngredientsByMode(ingredients, nextMode))
     } else {
