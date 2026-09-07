@@ -34,10 +34,33 @@ pnpm install
 
 ## Releases
 
-The [frontend release workflow](docs/releases.md) publishes immutable GitHub
-releases with signed Android APK/AAB and web artifacts, generated changelogs,
-and release candidates. See that guide for signing secrets and local APK update
-compatibility.
+Run **Actions → Frontend Release** on the intended branch: choose `rc` or
+`stable` and optionally a base version (`1.2.0`). Without a version, git-cliff
+computes the next bump. Pushing `frontend-v1.2.0-rc.1` or `frontend-v1.2.0` also
+triggers a release. Outputs: signed Android APK/AAB, static web archive,
+checksums, and a frontend changelog. iOS and store submission are excluded.
+
+Repository setup:
+
+- Enable **Settings → General → Releases → Enable release immutability**.
+- Set Actions secrets `ANDROID_RELEASE_KEYSTORE_BASE64`,
+  `ANDROID_RELEASE_STORE_PASSWORD`, `ANDROID_RELEASE_KEY_ALIAS`, and
+  `ANDROID_RELEASE_KEY_PASSWORD` using your existing signing key.
+- For login/sync, set Actions variables `EXPO_PUBLIC_KEYCLOAK_ISSUER` and
+  `EXPO_PUBLIC_KEYCLOAK_CLIENT_ID`. The API URL comes from `.env.production`.
+
+APK updates require the same signing key and a non-decreasing version code.
+CI uses the workflow run number as `versionCode`. Local builds currently use
+`android/app/debug.keystore`; keep that key for compatible updates, but use a
+private production key before public distribution.
+
+To release a tested RC as stable, push the stable tag on the RC's commit.
+This rebuilds the app with a new build number; published RCs remain unchanged.
+To retry a failed draft publication, use **Re-run failed jobs** on its original run.
+
+Web hosting requires HTTPS, WASM support, and the `Cross-Origin-Opener-Policy:
+same-origin` and `Cross-Origin-Embedder-Policy: credentialless` response headers.
+The web archive includes a short `HOSTING.md` with these requirements.
 
 ## Android builds
 

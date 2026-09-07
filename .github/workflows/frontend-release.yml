@@ -68,7 +68,7 @@ jobs:
           set -euo pipefail
           for name in KEYSTORE STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
             if [ -z "${!name}" ]; then
-              echo "::error::Missing Android signing secret: $name (see frontend/docs/releases.md)"
+              echo "::error::Missing Android signing secret: $name (see frontend/README.md#releases)"
               exit 1
             fi
           done
@@ -90,7 +90,16 @@ jobs:
           set -euo pipefail
           pnpm exec expo export --platform web --output-dir dist-web
           test -s dist-web/index.html
-          cp docs/web-hosting.md dist-web/HOSTING.md
+          cat > dist-web/HOSTING.md <<'HOSTING'
+          Serve over HTTPS; resolve extensionless routes to their exported .html files.
+          Serve .wasm files as application/wasm. SQLite requires these response headers:
+
+          Cross-Origin-Opener-Policy: same-origin
+          Cross-Origin-Embedder-Policy: credentialless
+
+          API and Keycloak settings are embedded at build time. For login/sync,
+          allow the web origin in backend CORS and Keycloak redirect URIs.
+          HOSTING
           mkdir -p release-assets
           tar -czf release-assets/sholist-web.tar.gz -C dist-web .
       - name: Generate Android project
