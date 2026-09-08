@@ -41,17 +41,22 @@ export async function executeMigrations(
       if (migration.version <= currentVersion) continue
       const result = await migration.migrate(db)
       if (!result.success) return result
-    }
 
-    const versionResult = await updateDatabaseVersion(DB_VERSION, db)
-    if (!versionResult.success) {
-      return Result.fail(
-        new DbMigrationError(
-          "Failed to update database version",
-          DB_VERSION,
-          versionResult.getError()
+      // Record the version that actually just ran, not the module's
+      // DB_VERSION target - a build tested mid-development (DB_VERSION
+      // already bumped, a later migration not yet wired up) must not stamp
+      // a version higher than what really executed, or that gap is skipped
+      // forever on every later, correct build.
+      const versionResult = await updateDatabaseVersion(migration.version, db)
+      if (!versionResult.success) {
+        return Result.fail(
+          new DbMigrationError(
+            "Failed to update database version",
+            migration.version,
+            versionResult.getError()
+          )
         )
-      )
+      }
     }
 
     return Result.ok(undefined)
