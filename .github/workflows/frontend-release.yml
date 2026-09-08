@@ -128,7 +128,7 @@ jobs:
           cp android/app/build/outputs/bundle/release/app-release.aab release-assets/sholist-android.aab
           APKSIGNER=$(find "$ANDROID_HOME/build-tools" -name apksigner | sort -V | tail -n 1)
           "$APKSIGNER" verify --verbose --print-certs release-assets/sholist-android.apk
-      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: frontend-release-assets
           path: frontend/release-assets/*
