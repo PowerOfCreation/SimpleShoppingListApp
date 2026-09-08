@@ -2,7 +2,7 @@ import { IngredientListRepository } from "@/database/ingredient-list-repository"
 import { EventRepository } from "@/database/event-repository"
 import { OutboxRepository } from "@/database/outbox-repository"
 import { IngredientListProjection } from "@/database/ingredient-list-projection"
-import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
+import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { getDatabase } from "@/database/database"
 import { ShoppingListService } from "@/api/shopping-list-service"
 import * as SQLite from "expo-sqlite"
@@ -27,11 +27,10 @@ jest.mock("@/database/ingredient-list-projection")
 const MockIngredientListProjection =
   IngredientListProjection as jest.MockedClass<typeof IngredientListProjection>
 
-jest.mock("@/database/list-sync-settings-repository")
-const MockListSyncSettingsRepository =
-  ListSyncSettingsRepository as jest.MockedClass<
-    typeof ListSyncSettingsRepository
-  >
+jest.mock("@/database/list-sync-state-repository")
+const MockListSyncStateRepository = ListSyncStateRepository as jest.MockedClass<
+  typeof ListSyncStateRepository
+>
 
 jest.mock("@/database/database", () => ({
   getDatabase: jest.fn(),
@@ -47,7 +46,7 @@ describe("ShoppingListService", () => {
   let mockEventRepository: jest.Mocked<EventRepository>
   let mockOutboxRepository: jest.Mocked<OutboxRepository>
   let mockProjection: jest.Mocked<IngredientListProjection>
-  let mockListSyncSettingsRepository: jest.Mocked<ListSyncSettingsRepository>
+  let mockListSyncStateRepository: jest.Mocked<ListSyncStateRepository>
 
   beforeEach(() => {
     jest.clearAllMocks()
@@ -79,21 +78,21 @@ describe("ShoppingListService", () => {
       rebuild: jest.fn(),
     } as unknown as jest.Mocked<IngredientListProjection>
 
-    mockListSyncSettingsRepository = {
+    mockListSyncStateRepository = {
       setEnabled: jest.fn().mockResolvedValue(Result.ok(undefined)),
       setEnabledWithin: jest.fn().mockResolvedValue(undefined),
       removeWithin: jest.fn().mockResolvedValue(undefined),
       isEnabled: jest.fn(),
       getEnabledIds: jest.fn(),
       remove: jest.fn().mockResolvedValue(Result.ok(undefined)),
-    } as unknown as jest.Mocked<ListSyncSettingsRepository>
+    } as unknown as jest.Mocked<ListSyncStateRepository>
 
     MockIngredientListRepository.mockImplementation(() => mockRepository)
     MockEventRepository.mockImplementation(() => mockEventRepository)
     MockOutboxRepository.mockImplementation(() => mockOutboxRepository)
     MockIngredientListProjection.mockImplementation(() => mockProjection)
-    MockListSyncSettingsRepository.mockImplementation(
-      () => mockListSyncSettingsRepository
+    MockListSyncStateRepository.mockImplementation(
+      () => mockListSyncStateRepository
     )
 
     const mockDb = {} as SQLite.SQLiteDatabase
@@ -138,9 +137,11 @@ describe("ShoppingListService", () => {
         dbStub,
         entries[0].event
       )
-      expect(
-        mockListSyncSettingsRepository.setEnabledWithin
-      ).toHaveBeenCalledWith(dbStub, entries[0].event.aggregate_id, true)
+      expect(mockListSyncStateRepository.setEnabledWithin).toHaveBeenCalledWith(
+        dbStub,
+        entries[0].event.aggregate_id,
+        true
+      )
     })
 
     it("without sync, does not write a sync setting", async () => {
@@ -152,7 +153,7 @@ describe("ShoppingListService", () => {
       await entries[0].project?.(dbStub)
 
       expect(
-        mockListSyncSettingsRepository.setEnabledWithin
+        mockListSyncStateRepository.setEnabledWithin
       ).not.toHaveBeenCalled()
     })
 
@@ -186,7 +187,7 @@ describe("ShoppingListService", () => {
       const result = await service.setSyncEnabled("list-1", true)
 
       expect(result.success).toBe(true)
-      expect(mockListSyncSettingsRepository.setEnabled).toHaveBeenCalledWith(
+      expect(mockListSyncStateRepository.setEnabled).toHaveBeenCalledWith(
         "list-1",
         true
       )
@@ -266,7 +267,7 @@ describe("ShoppingListService", () => {
       const result = await service.setSyncEnabled("list-1", false)
 
       expect(result.success).toBe(true)
-      expect(mockListSyncSettingsRepository.setEnabled).toHaveBeenCalledWith(
+      expect(mockListSyncStateRepository.setEnabled).toHaveBeenCalledWith(
         "list-1",
         false
       )
@@ -279,18 +280,18 @@ describe("ShoppingListService", () => {
 
   describe("disableAllSync", () => {
     it("removes the sync setting for every currently-synced list and cancels its pending outbox rows", async () => {
-      mockListSyncSettingsRepository.getEnabledIds.mockResolvedValue(
+      mockListSyncStateRepository.getEnabledIds.mockResolvedValue(
         Result.ok(["list-1", "list-2"])
       )
 
       const result = await service.disableAllSync()
 
       expect(result.success).toBe(true)
-      expect(mockListSyncSettingsRepository.remove).toHaveBeenNthCalledWith(
+      expect(mockListSyncStateRepository.remove).toHaveBeenNthCalledWith(
         1,
         "list-1"
       )
-      expect(mockListSyncSettingsRepository.remove).toHaveBeenNthCalledWith(
+      expect(mockListSyncStateRepository.remove).toHaveBeenNthCalledWith(
         2,
         "list-2"
       )
@@ -299,19 +300,17 @@ describe("ShoppingListService", () => {
     })
 
     it("does nothing when no list is currently synced", async () => {
-      mockListSyncSettingsRepository.getEnabledIds.mockResolvedValue(
-        Result.ok([])
-      )
+      mockListSyncStateRepository.getEnabledIds.mockResolvedValue(Result.ok([]))
 
       const result = await service.disableAllSync()
 
       expect(result.success).toBe(true)
-      expect(mockListSyncSettingsRepository.remove).not.toHaveBeenCalled()
+      expect(mockListSyncStateRepository.remove).not.toHaveBeenCalled()
       expect(mockOutboxRepository.cancelForList).not.toHaveBeenCalled()
     })
 
     it("reports a failure on one list but still disables sync for the rest", async () => {
-      mockListSyncSettingsRepository.getEnabledIds.mockResolvedValue(
+      mockListSyncStateRepository.getEnabledIds.mockResolvedValue(
         Result.ok(["list-1", "list-2"])
       )
       mockOutboxRepository.cancelForList.mockResolvedValueOnce(
@@ -321,8 +320,8 @@ describe("ShoppingListService", () => {
       const result = await service.disableAllSync()
 
       expect(result.success).toBe(false)
-      expect(mockListSyncSettingsRepository.remove).toHaveBeenCalledTimes(2)
-      expect(mockListSyncSettingsRepository.remove).toHaveBeenNthCalledWith(
+      expect(mockListSyncStateRepository.remove).toHaveBeenCalledTimes(2)
+      expect(mockListSyncStateRepository.remove).toHaveBeenNthCalledWith(
         2,
         "list-2"
       )
@@ -343,7 +342,7 @@ describe("ShoppingListService", () => {
 
       expect(result.success).toBe(true)
       expect(mockProjection.handleDeleted).toHaveBeenCalled()
-      expect(mockListSyncSettingsRepository.removeWithin).toHaveBeenCalledWith(
+      expect(mockListSyncStateRepository.removeWithin).toHaveBeenCalledWith(
         expect.anything(),
         "list-1"
       )

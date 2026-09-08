@@ -3,7 +3,7 @@ import { SyncEngine, MAX_DRAIN_BATCHES } from "../sync-engine"
 import { OutboxRepository } from "@/database/outbox-repository"
 import { EventRepository } from "@/database/event-repository"
 import { SyncCursorRepository } from "@/database/sync-cursor-repository"
-import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
+import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { PushAck, SyncClient } from "@/api/sync/sync-client"
 import { EventApplier } from "@/api/sync/event-applier"
 import { Result } from "@/api/common/result"
@@ -18,7 +18,7 @@ jest.mock("@/database/database", () => {
 jest.mock("@/database/outbox-repository")
 jest.mock("@/database/event-repository")
 jest.mock("@/database/sync-cursor-repository")
-jest.mock("@/database/list-sync-settings-repository")
+jest.mock("@/database/list-sync-state-repository")
 jest.mock("@/api/sync/sync-client")
 jest.mock("@/api/sync/event-applier")
 
@@ -31,10 +31,9 @@ const MockEventRepository = EventRepository as jest.MockedClass<
 const MockSyncCursorRepository = SyncCursorRepository as jest.MockedClass<
   typeof SyncCursorRepository
 >
-const MockListSyncSettingsRepository =
-  ListSyncSettingsRepository as jest.MockedClass<
-    typeof ListSyncSettingsRepository
-  >
+const MockListSyncStateRepository = ListSyncStateRepository as jest.MockedClass<
+  typeof ListSyncStateRepository
+>
 const MockSyncClient = SyncClient as jest.MockedClass<typeof SyncClient>
 const MockEventApplier = EventApplier as jest.MockedClass<typeof EventApplier>
 
@@ -67,7 +66,7 @@ describe("SyncEngine", () => {
   let outbox: jest.Mocked<OutboxRepository>
   let events: jest.Mocked<EventRepository>
   let cursor: jest.Mocked<SyncCursorRepository>
-  let listSyncSettings: jest.Mocked<ListSyncSettingsRepository>
+  let listSyncState: jest.Mocked<ListSyncStateRepository>
   let client: jest.Mocked<SyncClient>
   let applier: jest.Mocked<EventApplier>
   let engine: SyncEngine
@@ -97,11 +96,11 @@ describe("SyncEngine", () => {
       clear: jest.fn().mockResolvedValue(Result.ok(undefined)),
     } as unknown as jest.Mocked<SyncCursorRepository>
 
-    listSyncSettings = {
+    listSyncState = {
       setEnabled: jest.fn().mockResolvedValue(Result.ok(undefined)),
       isPermissionDenied: jest.fn().mockResolvedValue(Result.ok(false)),
       setPermissionDenied: jest.fn().mockResolvedValue(Result.ok(undefined)),
-    } as unknown as jest.Mocked<ListSyncSettingsRepository>
+    } as unknown as jest.Mocked<ListSyncStateRepository>
 
     client = {
       sendEvents: jest.fn().mockResolvedValue(Result.ok([])),
@@ -117,7 +116,7 @@ describe("SyncEngine", () => {
     MockOutboxRepository.mockImplementation(() => outbox)
     MockEventRepository.mockImplementation(() => events)
     MockSyncCursorRepository.mockImplementation(() => cursor)
-    MockListSyncSettingsRepository.mockImplementation(() => listSyncSettings)
+    MockListSyncStateRepository.mockImplementation(() => listSyncState)
     MockSyncClient.mockImplementation(() => client)
     MockEventApplier.mockImplementation(() => applier)
 
@@ -127,7 +126,7 @@ describe("SyncEngine", () => {
       client,
       cursor,
       applier,
-      listSyncSettings
+      listSyncState
     )
   })
 
@@ -251,7 +250,7 @@ describe("SyncEngine", () => {
         client,
         cursor,
         applier,
-        listSyncSettings,
+        listSyncState,
         1
       )
       outbox.getPending
@@ -284,7 +283,7 @@ describe("SyncEngine", () => {
         client,
         cursor,
         applier,
-        listSyncSettings,
+        listSyncState,
         1
       )
       // Every page is exactly at the batch limit, so the "short page"
@@ -310,7 +309,7 @@ describe("SyncEngine", () => {
         client,
         cursor,
         applier,
-        listSyncSettings,
+        listSyncState,
         1
       )
       outbox.getPending
@@ -373,7 +372,7 @@ describe("SyncEngine", () => {
 
       await engine.flush()
 
-      expect(listSyncSettings.setEnabled).toHaveBeenCalledWith("list-1", false)
+      expect(listSyncState.setEnabled).toHaveBeenCalledWith("list-1", false)
       expect(outbox.cancelForList).toHaveBeenCalledWith("list-1")
     })
 
@@ -394,7 +393,7 @@ describe("SyncEngine", () => {
       )
       await engine.flush()
       expect(getListSyncStatus("permission-list")).toBe("forbidden")
-      expect(listSyncSettings.setEnabled).toHaveBeenCalledWith(
+      expect(listSyncState.setEnabled).toHaveBeenCalledWith(
         "permission-list",
         false
       )
@@ -414,11 +413,11 @@ describe("SyncEngine", () => {
       await engine.pull(["denied-head", "allowed-head"])
       expect(getListSyncStatus("denied-head")).toBe("forbidden")
       expect(getListSyncStatus("allowed-head")).toBe("synced")
-      expect(listSyncSettings.setEnabled).toHaveBeenCalledWith(
+      expect(listSyncState.setEnabled).toHaveBeenCalledWith(
         "denied-head",
         false
       )
-      expect(listSyncSettings.setEnabled).not.toHaveBeenCalledWith(
+      expect(listSyncState.setEnabled).not.toHaveBeenCalledWith(
         "allowed-head",
         false
       )
@@ -437,7 +436,7 @@ describe("SyncEngine", () => {
       expect(applier.apply).not.toHaveBeenCalled()
     })
 
-    it("does not touch list_sync_settings for a retryable failure", async () => {
+    it("does not touch list_sync_state for a retryable failure", async () => {
       outbox.getPending.mockResolvedValue(Result.ok([makeOutboxRow("e1")]))
       events.getByEventIds.mockResolvedValue(
         Result.ok([makeEvent({ event_id: "e1", list_id: "list-1" })])
@@ -448,7 +447,7 @@ describe("SyncEngine", () => {
 
       await engine.flush()
 
-      expect(listSyncSettings.setEnabled).not.toHaveBeenCalled()
+      expect(listSyncState.setEnabled).not.toHaveBeenCalled()
       expect(outbox.cancelForList).not.toHaveBeenCalled()
     })
 
@@ -464,7 +463,7 @@ describe("SyncEngine", () => {
       await engine.flush()
 
       expect(outbox.cancelEventIds).toHaveBeenCalledWith(["e1"])
-      expect(listSyncSettings.setEnabled).not.toHaveBeenCalled()
+      expect(listSyncState.setEnabled).not.toHaveBeenCalled()
     })
 
     it("excludes rows already in flight from a concurrent call", async () => {
@@ -586,7 +585,7 @@ describe("SyncEngine", () => {
       await engine.reconcile(["denied-known", "allowed-known"])
 
       expect(getListSyncStatus("denied-known")).toBe("forbidden")
-      expect(listSyncSettings.setEnabled).toHaveBeenCalledWith(
+      expect(listSyncState.setEnabled).toHaveBeenCalledWith(
         "denied-known",
         false
       )

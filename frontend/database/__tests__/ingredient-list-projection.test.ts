@@ -32,8 +32,8 @@ describe("IngredientListProjection", () => {
     projection = new IngredientListProjection(db)
 
     // No sync_enabled column here - that setting moved to
-    // list_sync_settings, a device-local table the projection never
-    // touches (see list-sync-settings-repository.ts).
+    // list_sync_state, a device-local table the projection never
+    // touches (see list-sync-state-repository.ts).
     await db.execAsync(`DROP TABLE IF EXISTS ingredient_lists`)
     await db.execAsync(`
       CREATE TABLE ingredient_lists (

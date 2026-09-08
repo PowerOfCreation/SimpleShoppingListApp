@@ -3,7 +3,7 @@ import { EventApplier } from "../event-applier"
 import { EventRepository } from "@/database/event-repository"
 import { IngredientProjection } from "@/database/ingredient-projection"
 import { IngredientListProjection } from "@/database/ingredient-list-projection"
-import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
+import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { SyncCursorRepository } from "@/database/sync-cursor-repository"
 import { getDatabase } from "@/database/database"
 import { DomainEventRow, EventTypes } from "@/types/DomainEvent"
@@ -57,7 +57,7 @@ describe("EventApplier", () => {
   let eventRepository: EventRepository
   let ingredientProjection: IngredientProjection
   let listProjection: IngredientListProjection
-  let listSyncSettingsRepository: ListSyncSettingsRepository
+  let listSyncStateRepository: ListSyncStateRepository
   let cursorRepository: SyncCursorRepository
   let applier: EventApplier
 
@@ -67,7 +67,7 @@ describe("EventApplier", () => {
     eventRepository = new EventRepository(db)
     ingredientProjection = new IngredientProjection(db)
     listProjection = new IngredientListProjection(db)
-    listSyncSettingsRepository = new ListSyncSettingsRepository(db)
+    listSyncStateRepository = new ListSyncStateRepository(db)
     cursorRepository = new SyncCursorRepository(db)
     applier = new EventApplier(
       db,
@@ -75,7 +75,7 @@ describe("EventApplier", () => {
       ingredientProjection,
       listProjection,
       cursorRepository,
-      listSyncSettingsRepository
+      listSyncStateRepository
     )
 
     await db.execAsync(`
@@ -84,7 +84,7 @@ describe("EventApplier", () => {
       DROP TABLE IF EXISTS ingredients;
       DROP TABLE IF EXISTS ingredient_lists;
       DROP TABLE IF EXISTS sync_cursors;
-      DROP TABLE IF EXISTS list_sync_settings;
+      DROP TABLE IF EXISTS list_sync_state;
       CREATE TABLE domain_events (
         event_id TEXT PRIMARY KEY,
         event_type TEXT NOT NULL,
@@ -127,7 +127,7 @@ describe("EventApplier", () => {
         last_seen_seq INTEGER NOT NULL DEFAULT 0,
         last_pulled_at INTEGER
       );
-      CREATE TABLE list_sync_settings (
+      CREATE TABLE list_sync_state (
         list_id TEXT PRIMARY KEY,
         enabled INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL
@@ -228,7 +228,7 @@ describe("EventApplier", () => {
 
   it("deletes ingredients and skips the ingredient rebuild when the list's history ends in a delete", async () => {
     await db.runAsync(
-      `INSERT INTO list_sync_settings (list_id, enabled, updated_at) VALUES (?, ?, ?)`,
+      `INSERT INTO list_sync_state (list_id, enabled, updated_at) VALUES (?, ?, ?)`,
       "list-1",
       1,
       Date.now()
@@ -263,7 +263,7 @@ describe("EventApplier", () => {
     expect(ingredient).toBeNull()
 
     const syncSetting = await db.getFirstAsync(
-      `SELECT list_id FROM list_sync_settings WHERE list_id = 'list-1'`
+      `SELECT list_id FROM list_sync_state WHERE list_id = 'list-1'`
     )
     expect(syncSetting).toBeNull()
     expect(notifySyncListsChanged).toHaveBeenCalled()
@@ -275,7 +275,7 @@ describe("EventApplier", () => {
     // deletion, but this list is repairable (see #230's repairList) and
     // must not be silently dropped out of getEnabledIds().
     await db.runAsync(
-      `INSERT INTO list_sync_settings (list_id, enabled, updated_at) VALUES (?, ?, ?)`,
+      `INSERT INTO list_sync_state (list_id, enabled, updated_at) VALUES (?, ?, ?)`,
       "list-1",
       1,
       Date.now()
@@ -291,7 +291,7 @@ describe("EventApplier", () => {
     expect(list).toBeNull()
 
     const syncSetting = await db.getFirstAsync(
-      `SELECT list_id FROM list_sync_settings WHERE list_id = 'list-1'`
+      `SELECT list_id FROM list_sync_state WHERE list_id = 'list-1'`
     )
     expect(syncSetting).not.toBeNull()
     expect(notifySyncListsChanged).not.toHaveBeenCalled()

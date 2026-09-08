@@ -19,7 +19,7 @@ Die Leitregel des ganzen Systems. Fast jeder Bug in diesem Bereich war eine Verl
 | **Inhalt** — Listenname, Einträge | dem Event-Log. Beide Seiten *leiten ab*, keine Seite besitzt den Zustand. | events (Server) / domain_events (lokal) |
 | **Zugriff** — Owner, Mitglieder, Einladungen | dem Server, relational, synchron erzwungen. **Nie** im Event-Log. | list_members, list_invites |
 | **Die Position des Logs** — kennt der Server diese Liste, und wo steht sie | dem Server, als *Ref*: Existenz der Zeile plus head_seq, ohne jeden Inhalt. | synced_lists |
-| **Ob dieses Gerät synct** | dem Gerät. **Nie** beim Server, nie in einer Projektion. | list_sync_settings (nur lokal) |
+| **Ob dieses Gerät synct** | dem Gerät. **Nie** beim Server, nie in einer Projektion. | list_sync_state (nur lokal) |
 
 Daraus folgt direkt:
 
@@ -67,7 +67,7 @@ Liste existiert nur in der lokalen SQLite. Kein Server kennt sie. Alle Events li
 
 ### 4.2 Sync einschalten
 
-Geräte-lokale Einstellung (list_sync_settings.enabled = 1) plus einmaliges Einreihen der gesamten syncbaren Historie der Liste in die Outbox. Serverseitig entstehen dadurch beim ersten Push in einem Statement die Registry-Zeile (synced_lists) und der Owner-Eintrag (list_members) — siehe 3.
+Geräte-lokale Einstellung (list_sync_state.enabled = 1) plus einmaliges Einreihen der gesamten syncbaren Historie der Liste in die Outbox. Serverseitig entstehen dadurch beim ersten Push in einem Statement die Registry-Zeile (synced_lists) und der Owner-Eintrag (list_members) — siehe 3.
 
 **Für den Server bedeutet „ist synchronisiert" genau: es existiert eine synced_lists-Zeile.** Der Server kann nicht wissen, ob ein bestimmtes Gerät synct — das ist per Definition geräte-lokal. Die Produktregel „nur eine synchronisierte Liste kann geteilt werden" ist deshalb identisch mit dem requireList-Check im ListSharingService (`SELECT EXISTS ... FROM synced_lists`). Sie braucht keine eigene Prüfung.
 
@@ -79,7 +79,7 @@ Owner erzeugt einen mehrfach nutzbaren Einladungslink mit einer Server-Preset-TT
 
 Einlösen ist idempotent: wer bereits Mitglied ist, bekommt already_member: true statt eines Fehlers, damit ein Client eine verlorene Antwort gefahrlos wiederholen kann. Die Mitgliedschaftsprüfung läuft dabei bewusst **vor** der Gültigkeitsprüfung des Tokens: ein Wiederholungsversuch mit einem inzwischen widerrufenen oder abgelaufenen Link gelingt weiterhin, statt 410 zu liefern. Idempotenz gilt für die Aktion, nicht für den Token — der Beitritt ist längst passiert, und ein Client, dessen Antwort verlorenging, darf nicht davon abhängen, wie lange er für den Retry braucht. 410 (widerrufen bzw. abgelaufen) trifft nur, wer noch **nicht** Mitglied ist.
 
-Nach dem Einlösen legt der Client die Liste lokal an, indem er ganz normal pullt: list_sync_settings.enabled = 1, kein Cursor → Voll-Pull ab seq 0 → der EventApplier baut die Projektion aus der Historie auf. Der Server kann dabei nichts beisteuern: die Redeem-Response ist `{list_id, role, already_member}` und enthält **keinen Listennamen** — sie könnte ihn nach R2 gar nicht kennen. Der Name kommt aus dem ersten `todo_list.created` der gepullten Historie.
+Nach dem Einlösen legt der Client die Liste lokal an, indem er ganz normal pullt: list_sync_state.enabled = 1, kein Cursor → Voll-Pull ab seq 0 → der EventApplier baut die Projektion aus der Historie auf. Der Server kann dabei nichts beisteuern: die Redeem-Response ist `{list_id, role, already_member}` und enthält **keinen Listennamen** — sie könnte ihn nach R2 gar nicht kennen. Der Name kommt aus dem ersten `todo_list.created` der gepullten Historie.
 
 ### 4.4 Entsyncen (Server-Kopie löschen)
 
@@ -94,7 +94,7 @@ Das Entsyncen ist ein **autorisierter REST-Befehl, kein Domain-Event** (siehe di
 
 Kein Soft-Delete — ein Tombstone würde die Liste dauerhaft unsyncbar machen (siehe Invariante 6.2). Die Registry hat entsprechend gar kein `deleted_at`; sie könnte einen Löschzustand nach R2 auch nicht kennen, das wäre Inhalt.
 
-Lokal auf dem auslösenden Gerät danach: list_sync_settings.enabled = 0, sync_cursors-Zeile löschen, domain_events.seq = NULL für alle Events der Liste, ausstehende Outbox-Zeilen der Liste canceln. Die Liste selbst bleibt unangetastet — das ist der Zweck der Aktion.
+Lokal auf dem auslösenden Gerät danach: list_sync_state.enabled = 0, sync_cursors-Zeile löschen, domain_events.seq = NULL für alle Events der Liste, ausstehende Outbox-Zeilen der Liste canceln. Die Liste selbst bleibt unangetastet — das ist der Zweck der Aktion.
 
 Damit ist erneutes Einschalten exakt „Liste zum ersten Mal syncen": der Server kennt weder die ID noch die Event-IDs, der Replay läuft normal durch, die Zeile wird frisch angelegt. Wie ein gelöschter Remote-Branch, der neu gepusht wird.
 
@@ -182,7 +182,7 @@ keine Frontend-Routen". Expo Router matcht den Pfad `/invite` automatisch gegen
 
 `app/(home)/invite.tsx` (`useRedeemInvite`) verlangt zuerst ein Login — die einzige Stelle, die
 das tut, der Rest der App braucht keins —, ruft dann `POST /api/v1/invites/redeem` auf und schaltet
-`list_sync_settings` für die neue Liste ein. Anders als `ShoppingListService.setSyncEnabled` (pusht
+`list_sync_state` für die neue Liste ein. Anders als `ShoppingListService.setSyncEnabled` (pusht
 vorhandene lokale Historie nach außen) gibt es hier noch keine lokale Historie; sie kommt per
 Voll-Pull vom Server. Landet der Pull mangels Verbindung nichts, ist das kein Fehler: der Screen
 zeigt „pending", SyncCoordinators eigene Retries holen es nach.
@@ -196,7 +196,7 @@ Fehlermeldung, statt den Einstieg zu verstecken.
 **„Meine Listen nach Neuinstallation wiederherstellen" ist seitdem gebaut** (`GET
 /api/v1/todo-lists`, siehe Abschnitt 5; frontend `SharingClient.listMyLists`). `SyncCoordinator`
 ruft es einmal pro `start()` (also einmal pro angemeldeter Session) auf, schaltet
-`list_sync_settings` für jede vom Server gemeldete, dem Gerät noch unbekannte Liste ein und stößt
+`list_sync_state` für jede vom Server gemeldete, dem Gerät noch unbekannte Liste ein und stößt
 über `notifySyncListsChanged()` genau denselben Re-Subscribe/Re-Pull-Pfad an, den `useRedeemInvite`
 schon für eine einzelne eingelöste Einladung nutzt — Namen/Inhalt kommen wie dort per Voll-Pull ab
 seq 0, der Server liefert nur `{list_id, role}` je Mitgliedschaft.

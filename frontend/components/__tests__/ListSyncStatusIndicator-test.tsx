@@ -1,16 +1,16 @@
 import { render, fireEvent } from "@testing-library/react-native"
 import { ListSyncStatusIndicator } from "../ListSyncStatusIndicator"
 import { startListSync } from "@/api/sync/list-sync-status"
-import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
+import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { Result } from "@/api/common/result"
 
 jest.mock("@/database/database", () => {
   const originalModule = jest.requireActual("@/database/database")
   return { ...originalModule, DB_NAME: ":memory:" }
 })
-jest.mock("@/database/list-sync-settings-repository")
+jest.mock("@/database/list-sync-state-repository")
 jest
-  .mocked(ListSyncSettingsRepository.prototype.isPermissionDenied)
+  .mocked(ListSyncStateRepository.prototype.isPermissionDenied)
   .mockResolvedValue(Result.ok(false))
 
 it.each([

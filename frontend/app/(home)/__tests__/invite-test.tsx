@@ -82,7 +82,7 @@ describe("<Invite /> Component Tests", () => {
   beforeEach(async () => {
     jest.clearAllMocks()
     await db.execAsync(`DELETE FROM ingredient_lists;`)
-    await db.execAsync(`DELETE FROM list_sync_settings;`)
+    await db.execAsync(`DELETE FROM list_sync_state;`)
     mockAuth("signedIn")
     mockPreviewInvite.mockResolvedValue(Result.ok(defaultPreview))
     mockPullList = jest.fn().mockResolvedValue(undefined)
@@ -242,7 +242,7 @@ describe("<Invite /> Component Tests", () => {
     })
 
     const setting = await db.getFirstAsync<{ enabled: number }>(
-      `SELECT enabled FROM list_sync_settings WHERE list_id = ?`,
+      `SELECT enabled FROM list_sync_state WHERE list_id = ?`,
       "list-1"
     )
     expect(setting?.enabled).toBe(1)
@@ -302,7 +302,7 @@ describe("<Invite /> Component Tests", () => {
     })
 
     const setting = await db.getFirstAsync<{ enabled: number }>(
-      `SELECT enabled FROM list_sync_settings WHERE list_id = ?`,
+      `SELECT enabled FROM list_sync_state WHERE list_id = ?`,
       "list-1"
     )
     expect(setting?.enabled).toBe(1)

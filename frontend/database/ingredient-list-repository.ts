@@ -24,7 +24,7 @@ export class IngredientListRepository extends BaseRepository {
         `SELECT il.id, il.name, il.created_at, il.updated_at,
                 COALESCE(lss.enabled, 0) AS sync_enabled
          FROM ingredient_lists il
-         LEFT JOIN list_sync_settings lss ON lss.list_id = il.id
+         LEFT JOIN list_sync_state lss ON lss.list_id = il.id
          ORDER BY il.created_at DESC`
       )
 
@@ -61,7 +61,7 @@ export class IngredientListRepository extends BaseRepository {
            SUM(CASE WHEN i.completed = 1 THEN 1 ELSE 0 END) as completed_count
          FROM ingredient_lists il
          LEFT JOIN ingredients i ON il.id = i.list_id
-         LEFT JOIN list_sync_settings lss ON lss.list_id = il.id
+         LEFT JOIN list_sync_state lss ON lss.list_id = il.id
          GROUP BY il.id, il.name, il.created_at, il.updated_at, lss.enabled
          ORDER BY il.created_at DESC`
       )
@@ -92,7 +92,7 @@ export class IngredientListRepository extends BaseRepository {
         `SELECT il.id, il.name, il.created_at, il.updated_at,
                 COALESCE(lss.enabled, 0) AS sync_enabled
          FROM ingredient_lists il
-         LEFT JOIN list_sync_settings lss ON lss.list_id = il.id
+         LEFT JOIN list_sync_state lss ON lss.list_id = il.id
          WHERE il.id = ?`,
         id
       )

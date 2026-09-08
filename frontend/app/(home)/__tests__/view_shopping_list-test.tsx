@@ -1,6 +1,6 @@
 import { act, fireEvent, screen, waitFor } from "@testing-library/react-native"
 import { setListPermissionDenied } from "@/api/sync/list-sync-status"
-import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
+import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { renderRouter } from "expo-router/testing-library"
 import ViewShoppingList from "../view_shopping_list"
 import { IngredientRepository } from "@/database/ingredient-repository"
@@ -255,8 +255,8 @@ it("shows the permission explanation above the items of an offline list", async 
   await createTestList(db, { id: "denied-detail", name: "Local groceries" })
   // A permission_denied flag only ever gets set for a list sync has already
   // enabled - real 403s come from push/pull/reconcile, which only touch
-  // sync-enabled lists (see ListSyncSettingsRepository.setPermissionDenied).
-  await new ListSyncSettingsRepository(db).setEnabled("denied-detail", true)
+  // sync-enabled lists (see ListSyncStateRepository.setPermissionDenied).
+  await new ListSyncStateRepository(db).setEnabled("denied-detail", true)
   await setListPermissionDenied("denied-detail", true)
   renderShoppingListView("denied-detail")
   await waitForAppReady()

@@ -37,7 +37,7 @@ produce identical state.
 Two tables deliberately live *outside* the event log:
 
 - `sync_cursors` — pull position per list (projections are `DELETE`d and rebuilt on every pull, so a cursor there would reset itself).
-- `list_sync_settings` — whether *this device* syncs a given list. A device-local decision, never an event, never a projection column.
+- `list_sync_state` — whether *this device* syncs a given list. A device-local decision, never an event, never a projection column.
 
 ### Sync and login (optional)
 

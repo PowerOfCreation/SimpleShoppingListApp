@@ -1,10 +1,10 @@
-import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
+import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { getDatabase } from "@/database/database"
 import { createLogger } from "@/api/common/logger"
 import { SyncStatus } from "./sync-status"
 
 // General diagnostics are session-local; permission denial is persisted in
-// list_sync_settings (see ListSyncSettingsRepository.setPermissionDenied),
+// list_sync_state (see ListSyncStateRepository.setPermissionDenied),
 // so it survives an app restart and is cleaned up automatically when the
 // list itself is deleted. A successful download cannot clear an upload
 // failure (or vice versa), and another list can never clear either.
@@ -20,7 +20,7 @@ export async function loadListSyncPermission(listId: string): Promise<void> {
   const existing = loading.get(listId)
   if (existing) return existing
   const pending = (async () => {
-    const result = await new ListSyncSettingsRepository(
+    const result = await new ListSyncStateRepository(
       getDatabase()
     ).isPermissionDenied(listId)
     if (!result.success) {
@@ -43,7 +43,7 @@ export async function setListPermissionDenied(
   if (permissionDenied.get(listId) === denied) return
   permissionDenied.set(listId, denied)
   listeners.forEach((listener) => listener())
-  const result = await new ListSyncSettingsRepository(
+  const result = await new ListSyncStateRepository(
     getDatabase()
   ).setPermissionDenied(listId, denied)
   if (!result.success) {

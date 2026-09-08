@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react"
 import { getDatabase } from "@/database/database"
-import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
+import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { onSyncListsChanged } from "@/api/sync/sync-events"
 import { createLogger } from "@/api/common/logger"
 
@@ -14,7 +14,7 @@ export function useListSyncEnabled(listId: string) {
       const current = ++version
       if (!listId) return
       try {
-        const result = await new ListSyncSettingsRepository(
+        const result = await new ListSyncStateRepository(
           getDatabase()
         ).isEnabled(listId)
         if (current === version && result.success) {

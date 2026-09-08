@@ -1,7 +1,7 @@
 import { OutboxRepository } from "@/database/outbox-repository"
 import { EventRepository } from "@/database/event-repository"
 import { SyncCursorRepository } from "@/database/sync-cursor-repository"
-import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
+import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { SyncClient } from "@/api/sync/sync-client"
 import { EventApplier } from "@/api/sync/event-applier"
 import { createLogger } from "@/api/common/logger"
@@ -79,7 +79,7 @@ export class SyncEngine {
     private readonly client: SyncClient,
     private readonly cursorRepository: SyncCursorRepository,
     private readonly eventApplier: EventApplier,
-    private readonly listSyncSettingsRepository: ListSyncSettingsRepository,
+    private readonly listSyncStateRepository: ListSyncStateRepository,
     private readonly batchLimit: number = DEFAULT_BATCH_LIMIT,
     private readonly pullPageLimit: number = DEFAULT_PULL_PAGE_LIMIT
   ) {}
@@ -277,7 +277,7 @@ export class SyncEngine {
     logger.warn(
       `List ${listId} was permanently rejected by the server - disabling sync for it locally`
     )
-    const disableResult = await this.listSyncSettingsRepository.setEnabled(
+    const disableResult = await this.listSyncStateRepository.setEnabled(
       listId,
       false
     )
