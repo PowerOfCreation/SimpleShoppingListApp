@@ -34,10 +34,10 @@ describe("preferences-repository", () => {
     expect(await getPreference("foo")).toBe("second")
   })
 
-  // setPreference is now a background-write path (sync flush/pull persist
-  // list permission state through it - see list-sync-status.ts), so its
-  // write has to be serialized through the same connection-wide lock every
-  // other writer uses - see write-lock.ts for what breaks otherwise.
+  // setPreference can be called from a background write path (e.g. the
+  // last-viewed-list update), so its write has to be serialized through the
+  // same connection-wide lock every other writer uses - see write-lock.ts
+  // for what breaks otherwise.
   it("serializes its write through the shared write-lock", async () => {
     const spy = jest.spyOn(writeLock, "runExclusive")
 

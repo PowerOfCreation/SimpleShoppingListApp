@@ -502,58 +502,73 @@ export class SyncEngine {
 
     let result = false
     try {
-      const headsResult = await this.client.getListHeads(listIds)
-      if (!headsResult.success) {
-        if (headsResult.getError().httpStatus === 403) {
-          if (listIds.length > 1) {
-            let allOk = true
-            for (const id of listIds) {
-              if (!(await this.pull([id]))) allOk = false
-            }
-            result = allOk
-            return result
-          }
-          await this.handleForbiddenList(listIds[0])
-        }
-        logger.warn(
-          "Failed to fetch list heads, will retry on the next trigger",
-          headsResult.getError()
-        )
+      const { ok, flush } = await this.pullListIds(listIds)
+      if (!flush) {
         return false
       }
-      const headByListId = new Map(
-        headsResult.getValue()!.map((head) => [head.listId, head])
-      )
-
-      let ok = true
-      for (const listId of listIds) {
-        const head = headByListId.get(listId)
-        if (!head) {
-          // The server answers every requested id (see SyncPullController);
-          // a missing entry would mean a response we can't trust - skip
-          // rather than guess.
-          continue
-        }
-        const finish = startListSync(listId, "pull")
-        let listOk = false
-        try {
-          listOk = await this.pullListToHead(listId, head.seq)
-        } catch (error) {
-          logger.error(`Unexpected download failure for list ${listId}`, error)
-        } finally {
-          finish(listOk)
-        }
-        if (!listOk) {
-          ok = false
-        }
-      }
-
       const flushOk = await this.flush()
       result = ok && flushOk
       return result
     } finally {
       reportSyncFinished(result)
     }
+  }
+
+  /**
+   * flush is false only for a hard (non-403) failure to even fetch heads -
+   * nothing was pulled, so there's nothing new to push either. Every other
+   * outcome, including a 403 isolated down to a permanent per-list denial,
+   * still flushes once at the top of the recursion (see pull).
+   */
+  private async pullListIds(
+    listIds: string[]
+  ): Promise<{ ok: boolean; flush: boolean }> {
+    const headsResult = await this.client.getListHeads(listIds)
+    if (!headsResult.success) {
+      if (headsResult.getError().httpStatus === 403) {
+        // A single forbidden id is a permanent give-up, not a retry - see
+        // handleForbiddenList - so the pessimistic default only flips to
+        // true once isolateForbiddenList actually retries each id.
+        let allOk = listIds.length > 1
+        await this.isolateForbiddenList(listIds, async (id) => {
+          const sub = await this.pullListIds([id])
+          allOk = sub.ok && allOk
+        })
+        return { ok: allOk, flush: true }
+      }
+      logger.warn(
+        "Failed to fetch list heads, will retry on the next trigger",
+        headsResult.getError()
+      )
+      return { ok: false, flush: false }
+    }
+    const headByListId = new Map(
+      headsResult.getValue()!.map((head) => [head.listId, head])
+    )
+
+    let ok = true
+    for (const listId of listIds) {
+      const head = headByListId.get(listId)
+      if (!head) {
+        // The server answers every requested id (see SyncPullController);
+        // a missing entry would mean a response we can't trust - skip
+        // rather than guess.
+        continue
+      }
+      const finish = startListSync(listId, "pull")
+      let listOk = false
+      try {
+        listOk = await this.pullListToHead(listId, head.seq)
+      } catch (error) {
+        logger.error(`Unexpected download failure for list ${listId}`, error)
+      } finally {
+        finish(listOk)
+      }
+      if (!listOk) {
+        ok = false
+      }
+    }
+    return { ok, flush: true }
   }
 
   /** Single-list entry point - e.g. a WebSocket "new event for this list" notification. */

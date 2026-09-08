@@ -19,6 +19,7 @@ import {
 import { getClientId } from "@/api/common/client-id"
 import { notifyOutboxChanged } from "@/api/sync/outbox-events"
 import { notifySyncListsChanged } from "@/api/sync/sync-events"
+import { clearListSyncStatus } from "@/api/sync/list-sync-status"
 
 const logger = createLogger("ShoppingListService")
 
@@ -223,6 +224,7 @@ export class ShoppingListService {
           firstError ??= settingResult.getError()
           continue
         }
+        clearListSyncStatus(listId)
         const cancelResult = await this.outboxRepository.cancelForList(listId)
         if (!cancelResult.success) {
           firstError ??= cancelResult.getError()
@@ -347,6 +349,7 @@ export class ShoppingListService {
         return Result.fail(result.getError())
       }
 
+      clearListSyncStatus(listId)
       notifySyncListsChanged()
 
       return Result.ok(undefined)

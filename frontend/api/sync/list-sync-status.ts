@@ -36,6 +36,14 @@ export async function loadListSyncPermission(listId: string): Promise<void> {
   return pending
 }
 
+/** Drops cached status for a list whose list_sync_state row was just removed (logout, list deletion). */
+export function clearListSyncStatus(listId: string): void {
+  lists.delete(listId)
+  permissionDenied.delete(listId)
+  loading.delete(listId)
+  listeners.forEach((listener) => listener())
+}
+
 export async function setListPermissionDenied(
   listId: string,
   denied: boolean
