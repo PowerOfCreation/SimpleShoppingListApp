@@ -85,6 +85,19 @@ export default function Index() {
     }
   }
 
+  const handleDuplicateList = async (id: string, newName: string) => {
+    try {
+      const result = await getShoppingListService().duplicateList(id, newName)
+      if (result.success) {
+        await refetch()
+      } else {
+        logger.error("Error duplicating list", result.getError())
+      }
+    } catch (err) {
+      logger.error("Error duplicating list", err)
+    }
+  }
+
   const handleDeleteList = async (id: string) => {
     const list = lists.find((l) => l.id === id)
     if (!list) return
@@ -184,6 +197,7 @@ export default function Index() {
         completedCount={item.completedCount}
         onPress={() => handleSelectList(item.id)}
         onRename={(newName) => handleChangeName(item.id, newName)}
+        onDuplicate={(newName) => handleDuplicateList(item.id, newName)}
         onDelete={() => handleDeleteList(item.id)}
         syncEnabled={item.syncEnabled}
         onToggleSync={(enabled) => handleToggleSync(item.id, enabled)}

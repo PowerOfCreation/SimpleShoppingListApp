@@ -12,15 +12,16 @@ import { ThemedTextInput } from "./ThemedTextInput"
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { Palette } from "@/constants/Colors"
 
-export type RenameSheetProps = {
+export type TextInputSheetProps = {
   visible: boolean
   initialValue: string
   onClose: () => void
   onSave: (name: string) => void
   testID?: string
+  title?: string
 }
 
-export function RenameSheet(props: RenameSheetProps) {
+export function TextInputSheet(props: TextInputSheetProps) {
   const [text, setText] = React.useState(props.initialValue)
   const inputRef = React.useRef<TextInput>(null)
 
@@ -35,7 +36,7 @@ export function RenameSheet(props: RenameSheetProps) {
   const accentColor = useThemeColor({}, "accent")
   const onAccentColor = useThemeColor({}, "onAccent")
 
-  const testIDPrefix = props.testID ?? "rename-sheet"
+  const testIDPrefix = props.testID ?? "text-input-sheet"
 
   const handleSave = () => {
     const trimmed = text.trim()
@@ -71,7 +72,7 @@ export function RenameSheet(props: RenameSheetProps) {
             style={[styles.handle, { backgroundColor: textSecondaryColor }]}
           />
           <ThemedText style={styles.title} type="defaultSemiBold">
-            Rename
+            {props.title ?? "Rename"}
           </ThemedText>
           <View style={styles.inputContainer}>
             <ThemedTextInput

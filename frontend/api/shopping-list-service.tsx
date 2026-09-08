@@ -6,6 +6,9 @@ import { EventRepository, AppendEntry } from "@/database/event-repository"
 import { OutboxRepository } from "@/database/outbox-repository"
 import { IngredientListProjection } from "@/database/ingredient-list-projection"
 import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
+import { IngredientRepository } from "@/database/ingredient-repository"
+import { IngredientProjection } from "@/database/ingredient-projection"
+import { compactListToEvents } from "@/database/list-compaction"
 import { getDatabase } from "@/database/database"
 import { createLogger } from "@/api/common/logger"
 import { Result } from "@/api/common/result"
@@ -29,13 +32,17 @@ export class ShoppingListService {
   private outboxRepository: OutboxRepository
   private projection: IngredientListProjection
   private listSyncStateRepository: ListSyncStateRepository
+  private ingredientRepository: IngredientRepository
+  private ingredientProjection: IngredientProjection
 
   constructor(
     repository?: IngredientListRepository,
     eventRepository?: EventRepository,
     projection?: IngredientListProjection,
     outboxRepository?: OutboxRepository,
-    listSyncStateRepository?: ListSyncStateRepository
+    listSyncStateRepository?: ListSyncStateRepository,
+    ingredientRepository?: IngredientRepository,
+    ingredientProjection?: IngredientProjection
   ) {
     const db = getDatabase()
     this.repository = repository || new IngredientListRepository(db)
@@ -44,6 +51,10 @@ export class ShoppingListService {
     this.outboxRepository = outboxRepository || new OutboxRepository(db)
     this.listSyncStateRepository =
       listSyncStateRepository || new ListSyncStateRepository(db)
+    this.ingredientRepository =
+      ingredientRepository || new IngredientRepository(db)
+    this.ingredientProjection =
+      ingredientProjection || new IngredientProjection(db)
   }
 
   async createList(
@@ -115,6 +126,94 @@ export class ShoppingListService {
         new DbQueryError(
           "Failed to create shopping list",
           "createList",
+          "IngredientList",
+          error
+        )
+      )
+    }
+  }
+
+  /**
+   * Duplicates a list client-side: reads the *current projection* (name +
+   * ingredients) of sourceListId and writes it out as a fresh, history-free
+   * event sequence for a brand-new list id - see list-compaction.ts. The
+   * source's own history (past renames, deletions, completions-then-undos)
+   * is never read, so none of it carries over.
+   *
+   * The copy is always local (no list_sync_state row, nothing enqueued) -
+   * pushing it is the user's separate decision via setSyncEnabled, which
+   * already replays a list's full (here: minimal) syncable history.
+   */
+  async duplicateList(
+    sourceListId: string,
+    newName: string
+  ): Promise<Result<string, ValidationError | DbQueryError>> {
+    if (!newName.trim()) {
+      return Result.fail(
+        new ValidationError("Shopping list name can't be empty", "name")
+      )
+    }
+
+    try {
+      const sourceResult = await this.repository.getById(sourceListId)
+      if (!sourceResult.success) {
+        return Result.fail(sourceResult.getError())
+      }
+      const source = sourceResult.getValue()
+      if (!source) {
+        return Result.fail(
+          new DbQueryError(
+            `Shopping list ${sourceListId} not found`,
+            "duplicateList",
+            "IngredientList"
+          )
+        )
+      }
+
+      const ingredientsResult =
+        await this.ingredientRepository.getAll(sourceListId)
+      if (!ingredientsResult.success) {
+        return Result.fail(ingredientsResult.getError())
+      }
+
+      const newListId = uuidv4()
+      const events = compactListToEvents(
+        {
+          listId: newListId,
+          name: newName,
+          ingredients: ingredientsResult.getValue()!,
+        },
+        {
+          newId: uuidv4,
+          ingredientIdFor: () => uuidv4(),
+          occurredAt: Date.now(),
+          clientId: getClientId(),
+        }
+      )
+
+      const entries: AppendEntry[] = events.map((event) => ({
+        event,
+        project: async (db) => {
+          const projection =
+            event.aggregate_type === AggregateTypes.TODO_LIST
+              ? this.projection
+              : this.ingredientProjection
+          await projection.applyEvent(db, event)
+        },
+      }))
+
+      const result = await this.eventRepository.appendAll(entries)
+      if (!result.success) {
+        return Result.fail(result.getError())
+      }
+
+      return Result.ok(newListId)
+    } catch (error) {
+      logger.error(`Error duplicating shopping list ${sourceListId}`, error)
+      return Result.fail(
+        new DbQueryError(
+          `Failed to duplicate shopping list ${sourceListId}`,
+          "duplicateList",
           "IngredientList",
           error
         )

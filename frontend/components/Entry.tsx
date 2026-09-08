@@ -8,7 +8,7 @@ import { ThemedText } from "./ThemedText"
 import React from "react"
 import { ContextMenu } from "./ContextMenu"
 import { PriorityPicker } from "./PriorityPicker"
-import { RenameSheet } from "./RenameSheet"
+import { TextInputSheet } from "./TextInputSheet"
 import { ConfirmDialog } from "./ConfirmDialog"
 import { MaterialIcons } from "@expo/vector-icons"
 import { useThemeColor } from "@/hooks/useThemeColor"
@@ -122,7 +122,7 @@ export function Entry(props: EntryProps) {
           }
         }}
       />
-      <RenameSheet
+      <TextInputSheet
         testID={`entry-rename-sheet-${props.id}`}
         visible={showRenameSheet}
         initialValue={props.ingredientName}

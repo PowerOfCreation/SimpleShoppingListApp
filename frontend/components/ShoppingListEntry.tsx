@@ -7,7 +7,7 @@ import {
 import { ThemedText } from "./ThemedText"
 import React from "react"
 import { ContextMenu } from "./ContextMenu"
-import { RenameSheet } from "./RenameSheet"
+import { TextInputSheet } from "./TextInputSheet"
 import { ConfirmDialog } from "./ConfirmDialog"
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { useListSyncStatus } from "@/hooks/useListSyncStatus"
@@ -23,6 +23,7 @@ export type ShoppingListEntryProps = {
   completedCount?: number
   onPress: (event: GestureResponderEvent) => void
   onRename: (newName: string) => void
+  onDuplicate?: (newName: string) => void
   onPressOut?: (event: GestureResponderEvent) => void
   onDelete?: () => void
   syncEnabled?: boolean
@@ -35,6 +36,7 @@ export type ShoppingListEntryProps = {
 export function ShoppingListEntry(props: ShoppingListEntryProps) {
   const [showContextMenu, setShowContextMenu] = React.useState(false)
   const [showRenameSheet, setShowRenameSheet] = React.useState(false)
+  const [showDuplicateSheet, setShowDuplicateSheet] = React.useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
 
   const dividerColor = useThemeColor({}, "divider")
@@ -114,6 +116,11 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
             onPress: () => setShowRenameSheet(true),
           },
           {
+            label: "Duplicate",
+            testID: `shopping-list-context-duplicate-${props.id}`,
+            onPress: () => setShowDuplicateSheet(true),
+          },
+          {
             type: "toggle",
             label: "Sync with account",
             testID: `shopping-list-context-sync-${props.id}`,
@@ -150,12 +157,20 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
           },
         ]}
       />
-      <RenameSheet
+      <TextInputSheet
         testID={`shopping-list-rename-sheet-${props.id}`}
         visible={showRenameSheet}
         initialValue={props.listName}
         onClose={() => setShowRenameSheet(false)}
         onSave={props.onRename}
+      />
+      <TextInputSheet
+        testID={`shopping-list-duplicate-sheet-${props.id}`}
+        title="Duplicate list"
+        visible={showDuplicateSheet}
+        initialValue={`${props.listName} (Copy)`}
+        onClose={() => setShowDuplicateSheet(false)}
+        onSave={(newName) => props.onDuplicate?.(newName)}
       />
       <ConfirmDialog
         testID={`shopping-list-delete-confirm-${props.id}`}

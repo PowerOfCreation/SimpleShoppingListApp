@@ -146,8 +146,23 @@ describe("ShoppingListEntry", () => {
     fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
 
     expect(getByTestId("shopping-list-context-rename-1")).toBeTruthy()
+    expect(getByTestId("shopping-list-context-duplicate-1")).toBeTruthy()
     expect(getByTestId("shopping-list-context-sync-1")).toBeTruthy()
     expect(getByTestId("shopping-list-context-delete-1")).toBeTruthy()
+  })
+
+  it("shows Duplicate even when sync is off and interactions are disabled", () => {
+    const { getByTestId } = render(
+      <ShoppingListEntry
+        {...defaultProps}
+        syncEnabled={false}
+        syncToggleDisabled
+      />
+    )
+
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+
+    expect(getByTestId("shopping-list-context-duplicate-1")).toBeTruthy()
   })
 
   it("reflects syncEnabled as the sync toggle value", () => {
@@ -318,6 +333,52 @@ describe("ShoppingListEntry", () => {
 
     expect(onRename).not.toHaveBeenCalled()
     expect(queryByTestId("shopping-list-rename-sheet-1-input")).toBeFalsy()
+  })
+
+  it("opens the duplicate sheet pre-filled with '<name> (Copy)' when Duplicate is pressed", () => {
+    const { getByTestId, queryByTestId } = render(
+      <ShoppingListEntry {...defaultProps} />
+    )
+
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+    fireEvent.press(getByTestId("shopping-list-context-duplicate-1"))
+
+    expect(
+      getByTestId("shopping-list-duplicate-sheet-1-input").props.value
+    ).toBe("Default Shopping List (Copy)")
+    expect(queryByTestId("shopping-list-context-duplicate-1")).toBeFalsy()
+  })
+
+  it("calls onDuplicate with the (possibly edited) name when Save is pressed", () => {
+    const onDuplicate = jest.fn()
+    const { getByTestId, queryByTestId } = render(
+      <ShoppingListEntry {...defaultProps} onDuplicate={onDuplicate} />
+    )
+
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+    fireEvent.press(getByTestId("shopping-list-context-duplicate-1"))
+    fireEvent.changeText(
+      getByTestId("shopping-list-duplicate-sheet-1-input"),
+      "Weekend trip"
+    )
+    fireEvent.press(getByTestId("shopping-list-duplicate-sheet-1-save"))
+
+    expect(onDuplicate).toHaveBeenCalledWith("Weekend trip")
+    expect(queryByTestId("shopping-list-duplicate-sheet-1-input")).toBeFalsy()
+  })
+
+  it("does not call onDuplicate when the duplicate sheet is cancelled", () => {
+    const onDuplicate = jest.fn()
+    const { getByTestId, queryByTestId } = render(
+      <ShoppingListEntry {...defaultProps} onDuplicate={onDuplicate} />
+    )
+
+    fireEvent(getByTestId("shopping-list-entry-1"), "longPress")
+    fireEvent.press(getByTestId("shopping-list-context-duplicate-1"))
+    fireEvent.press(getByTestId("shopping-list-duplicate-sheet-1-cancel"))
+
+    expect(onDuplicate).not.toHaveBeenCalled()
+    expect(queryByTestId("shopping-list-duplicate-sheet-1-input")).toBeFalsy()
   })
 
   it("opens the delete confirmation when Delete is pressed in the context menu", () => {
