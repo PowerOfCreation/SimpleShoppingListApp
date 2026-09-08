@@ -298,6 +298,35 @@ export class SyncEngine {
   }
 
   /**
+   * The server can't say *which* id in a batch request it's rejecting (see
+   * ListAccessService.FilterAccessible - no enumeration oracle), only that
+   * the whole request 403'd. Marks the denial and gives up rather than
+   * retrying - a request already isolated to one id that still 403s is the
+   * real denial (removed as a member, account switch on a device with a
+   * stale local list), and resending it can never succeed.
+   */
+  private async handleForbiddenList(listId: string): Promise<void> {
+    await setListPermissionDenied(listId, true)
+    await this.giveUpOnGroup(listId, [])
+  }
+
+  /**
+   * Isolates which id in a rejected batch is actually forbidden by
+   * retrying one id at a time via `retryOne` - see handleForbiddenList for
+   * what happens once a request is down to the one id that's really denied.
+   */
+  private async isolateForbiddenList(
+    listIds: string[],
+    retryOne: (listId: string) => Promise<void>
+  ): Promise<void> {
+    if (listIds.length > 1) {
+      for (const id of listIds) await retryOne(id)
+      return
+    }
+    await this.handleForbiddenList(listIds[0])
+  }
+
+  /**
    * Self-heal, both directions: compares the syncable events we hold
    * locally for these (sync-enabled) lists against what the server durably
    * holds. Server missing something we have → re-queue it (recovers from an
@@ -336,15 +365,12 @@ export class SyncEngine {
     const knownResult = await this.client.getKnownEventIds(listIds)
     if (!knownResult.success) {
       if (knownResult.getError().httpStatus === 403) {
-        if (listIds.length > 1) {
-          // Each recursive call already reconciles (or isolates) its own
-          // list and logs its own outcome - a blanket "failed" below would
-          // misreport a batch that mostly just succeeded.
-          for (const id of listIds) await this.reconcileBatch([id])
-        } else {
-          await setListPermissionDenied(listIds[0], true)
-          await this.giveUpOnGroup(listIds[0], [])
-        }
+        // Each recursive call already reconciles (or isolates) its own
+        // list and logs its own outcome - a blanket "failed" below would
+        // misreport a batch that mostly just succeeded.
+        await this.isolateForbiddenList(listIds, (id) =>
+          this.reconcileBatch([id])
+        )
         return
       }
       logger.warn(
@@ -360,12 +386,9 @@ export class SyncEngine {
     const headsResult = await this.client.getListHeads(listIds)
     if (!headsResult.success) {
       if (headsResult.getError().httpStatus === 403) {
-        if (listIds.length > 1) {
-          for (const id of listIds) await this.reconcileBatch([id])
-        } else {
-          await setListPermissionDenied(listIds[0], true)
-          await this.giveUpOnGroup(listIds[0], [])
-        }
+        await this.isolateForbiddenList(listIds, (id) =>
+          this.reconcileBatch([id])
+        )
         return
       }
       logger.warn(
@@ -490,8 +513,7 @@ export class SyncEngine {
             result = allOk
             return result
           }
-          await setListPermissionDenied(listIds[0], true)
-          await this.giveUpOnGroup(listIds[0], [])
+          await this.handleForbiddenList(listIds[0])
         }
         logger.warn(
           "Failed to fetch list heads, will retry on the next trigger",
@@ -594,8 +616,7 @@ export class SyncEngine {
       )
       if (!pageResult.success) {
         if (pageResult.getError().httpStatus === 403) {
-          await setListPermissionDenied(listId, true)
-          await this.giveUpOnGroup(listId, [])
+          await this.handleForbiddenList(listId)
         }
         logger.warn(
           `Failed to pull events for list ${listId}, will retry on the next trigger`,
