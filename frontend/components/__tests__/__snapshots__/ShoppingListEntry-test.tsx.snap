@@ -147,11 +147,53 @@ exports[`ShoppingListEntry renders consistent dark list rows 1`] = `
          
         items
       </Text>
-      <Text
-        testID="shopping-list-sync-icon-1"
+      <View
+        accessibilityLabel="Private"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "justifyContent": "center",
+            "minHeight": 44,
+            "minWidth": 44,
+          }
+        }
       >
-        cloud-off
-      </Text>
+        <Text
+          testID="shopping-list-sync-icon-1"
+        >
+          cloud-off
+        </Text>
+      </View>
     </View>
   </View>
 </View>
@@ -304,11 +346,53 @@ exports[`ShoppingListEntry renders consistent dark list rows 2`] = `
          
         items
       </Text>
-      <Text
-        testID="shopping-list-sync-icon-1"
+      <View
+        accessibilityLabel="Private"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "justifyContent": "center",
+            "minHeight": 44,
+            "minWidth": 44,
+          }
+        }
       >
-        cloud-off
-      </Text>
+        <Text
+          testID="shopping-list-sync-icon-1"
+        >
+          cloud-off
+        </Text>
+      </View>
     </View>
   </View>
 </View>
@@ -461,11 +545,53 @@ exports[`ShoppingListEntry renders correctly 1`] = `
          
         items
       </Text>
-      <Text
-        testID="shopping-list-sync-icon-1"
+      <View
+        accessibilityLabel="Private"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "justifyContent": "center",
+            "minHeight": 44,
+            "minWidth": 44,
+          }
+        }
       >
-        cloud-off
-      </Text>
+        <Text
+          testID="shopping-list-sync-icon-1"
+        >
+          cloud-off
+        </Text>
+      </View>
     </View>
   </View>
 </View>
@@ -598,11 +724,53 @@ exports[`ShoppingListEntry renders correctly without counts 1`] = `
          
         items
       </Text>
-      <Text
-        testID="shopping-list-sync-icon-1"
+      <View
+        accessibilityLabel="Private"
+        accessibilityRole="button"
+        accessibilityState={
+          {
+            "busy": undefined,
+            "checked": undefined,
+            "disabled": undefined,
+            "expanded": undefined,
+            "selected": undefined,
+          }
+        }
+        accessibilityValue={
+          {
+            "max": undefined,
+            "min": undefined,
+            "now": undefined,
+            "text": undefined,
+          }
+        }
+        accessible={true}
+        collapsable={false}
+        focusable={true}
+        onBlur={[Function]}
+        onClick={[Function]}
+        onFocus={[Function]}
+        onResponderGrant={[Function]}
+        onResponderMove={[Function]}
+        onResponderRelease={[Function]}
+        onResponderTerminate={[Function]}
+        onResponderTerminationRequest={[Function]}
+        onStartShouldSetResponder={[Function]}
+        style={
+          {
+            "alignItems": "center",
+            "justifyContent": "center",
+            "minHeight": 44,
+            "minWidth": 44,
+          }
+        }
       >
-        cloud-off
-      </Text>
+        <Text
+          testID="shopping-list-sync-icon-1"
+        >
+          cloud-off
+        </Text>
+      </View>
     </View>
   </View>
 </View>

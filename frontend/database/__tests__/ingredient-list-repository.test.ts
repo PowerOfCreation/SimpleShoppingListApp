@@ -22,11 +22,11 @@ describe("IngredientListRepository", () => {
     // Clear the tables before each test
     await db.execAsync(`DROP TABLE IF EXISTS ingredient_lists;`)
     await db.execAsync(`DROP TABLE IF EXISTS ingredients;`)
-    await db.execAsync(`DROP TABLE IF EXISTS list_sync_settings;`)
+    await db.execAsync(`DROP TABLE IF EXISTS list_sync_state;`)
 
     // Set up database schema for each test. sync_enabled lives on
-    // list_sync_settings, not on ingredient_lists - see
-    // list-sync-settings-repository.ts.
+    // list_sync_state, not on ingredient_lists - see
+    // list-sync-state-repository.ts.
     await db.execAsync(`
       CREATE TABLE IF NOT EXISTS ingredient_lists (
         id TEXT PRIMARY KEY,
@@ -48,7 +48,7 @@ describe("IngredientListRepository", () => {
     `)
 
     await db.execAsync(`
-      CREATE TABLE IF NOT EXISTS list_sync_settings (
+      CREATE TABLE IF NOT EXISTS list_sync_state (
         list_id    TEXT PRIMARY KEY,
         enabled    INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL
@@ -78,12 +78,12 @@ describe("IngredientListRepository", () => {
       expect(lists[2].id).toBe("3") // Party Supplies (oldest)
     })
 
-    it("should join list_sync_settings for syncEnabled, defaulting to false when absent", async () => {
+    it("should join list_sync_state for syncEnabled, defaulting to false when absent", async () => {
       await db.execAsync(`
         INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES
         ('1', 'Synced', 1000, 1000),
         ('2', 'Not synced', 2000, 2000);
-        INSERT INTO list_sync_settings (list_id, enabled, updated_at) VALUES
+        INSERT INTO list_sync_state (list_id, enabled, updated_at) VALUES
         ('1', 1, 1000);
       `)
 
@@ -219,11 +219,11 @@ describe("IngredientListRepository", () => {
       })
     })
 
-    it("should surface a list_sync_settings row with enabled = 1 as syncEnabled: true", async () => {
+    it("should surface a list_sync_state row with enabled = 1 as syncEnabled: true", async () => {
       await db.execAsync(`
         INSERT INTO ingredient_lists (id, name, created_at, updated_at) VALUES
         ('1', 'Synced List', 1000, 1000);
-        INSERT INTO list_sync_settings (list_id, enabled, updated_at) VALUES
+        INSERT INTO list_sync_state (list_id, enabled, updated_at) VALUES
         ('1', 1, 1000);
       `)
 

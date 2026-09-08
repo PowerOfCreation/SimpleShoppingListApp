@@ -1,5 +1,5 @@
 import * as SQLite from "expo-sqlite"
-import { ListSyncSettingsRepository } from "../list-sync-settings-repository"
+import { ListSyncStateRepository } from "../list-sync-state-repository"
 import { getDatabase } from "../database"
 
 jest.mock("../database", () => {
@@ -7,17 +7,17 @@ jest.mock("../database", () => {
   return { ...originalModule, DB_NAME: ":memory:" }
 })
 
-describe("ListSyncSettingsRepository", () => {
+describe("ListSyncStateRepository", () => {
   let db: SQLite.SQLiteDatabase
-  let repository: ListSyncSettingsRepository
+  let repository: ListSyncStateRepository
 
   beforeEach(async () => {
     db = getDatabase()
-    repository = new ListSyncSettingsRepository(db)
+    repository = new ListSyncStateRepository(db)
 
-    await db.execAsync(`DROP TABLE IF EXISTS list_sync_settings;`)
+    await db.execAsync(`DROP TABLE IF EXISTS list_sync_state;`)
     await db.execAsync(`
-      CREATE TABLE list_sync_settings (
+      CREATE TABLE list_sync_state (
         list_id    TEXT PRIMARY KEY,
         enabled    INTEGER NOT NULL DEFAULT 0,
         updated_at INTEGER NOT NULL

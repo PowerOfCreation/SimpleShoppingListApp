@@ -1,6 +1,6 @@
 import { AppState, AppStateStatus, NativeEventSubscription } from "react-native"
 
-import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
+import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { SyncEngine } from "@/api/sync/sync-engine"
 import { SyncSocket } from "@/api/sync/sync-socket"
 import { onOutboxChanged } from "@/api/sync/outbox-events"
@@ -49,7 +49,7 @@ export class SyncCoordinator {
 
   constructor(
     private readonly engine: SyncEngine,
-    private readonly listSyncSettingsRepository: ListSyncSettingsRepository,
+    private readonly listSyncStateRepository: ListSyncStateRepository,
     private readonly sharingClient: Pick<SharingClient, "listMyLists">
   ) {
     this.socket = new SyncSocket(
@@ -91,7 +91,7 @@ export class SyncCoordinator {
   }
 
   private async reconcileNow(): Promise<void> {
-    const idsResult = await this.listSyncSettingsRepository.getEnabledIds()
+    const idsResult = await this.listSyncStateRepository.getEnabledIds()
     if (!idsResult.success) {
       logger.error(
         "Reconcile: failed to load sync-enabled list ids",
@@ -103,7 +103,7 @@ export class SyncCoordinator {
   }
 
   private async pullNow(): Promise<void> {
-    const idsResult = await this.listSyncSettingsRepository.getEnabledIds()
+    const idsResult = await this.listSyncStateRepository.getEnabledIds()
     if (!idsResult.success) {
       logger.error(
         "Pull: failed to load sync-enabled list ids",
@@ -148,7 +148,7 @@ export class SyncCoordinator {
       return
     }
 
-    const knownIdsResult = await this.listSyncSettingsRepository.getKnownIds()
+    const knownIdsResult = await this.listSyncStateRepository.getKnownIds()
     if (!knownIdsResult.success) {
       logger.error(
         "Discover: failed to load known list ids",
@@ -163,7 +163,7 @@ export class SyncCoordinator {
       if (knownIds.has(listId)) {
         continue
       }
-      const enableResult = await this.listSyncSettingsRepository.setEnabled(
+      const enableResult = await this.listSyncStateRepository.setEnabled(
         listId,
         true
       )
@@ -183,7 +183,7 @@ export class SyncCoordinator {
   }
 
   private async subscribeNow(): Promise<void> {
-    const idsResult = await this.listSyncSettingsRepository.getEnabledIds()
+    const idsResult = await this.listSyncStateRepository.getEnabledIds()
     if (!idsResult.success) {
       logger.error(
         "Subscribe: failed to load sync-enabled list ids",

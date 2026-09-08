@@ -10,7 +10,8 @@ const logger = createLogger("Migration-7")
 // device* syncs a list is a local decision, not something derivable from
 // the (server-mergeable, rebuild-on-pull) event log - see
 // sync-design-decisions.md ("Genau ein Writer für seq") and
-// list-sync-settings-repository.ts for the fuller rationale. Deliberately
+// list-sync-state-repository.ts (table renamed in migration-8, once it
+// also carried a status flag) for the fuller rationale. Deliberately
 // its own table, not a column on ingredient_lists: that table is a
 // projection whose rebuild does `DELETE FROM ingredient_lists` first, which
 // silently reset sync_enabled to its default on every rebuild - the exact

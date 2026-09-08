@@ -1,13 +1,16 @@
 import { OutboxRepository } from "@/database/outbox-repository"
 import { EventRepository } from "@/database/event-repository"
 import { SyncCursorRepository } from "@/database/sync-cursor-repository"
-import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
+import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { SyncClient } from "@/api/sync/sync-client"
 import { EventApplier } from "@/api/sync/event-applier"
 import { createLogger } from "@/api/common/logger"
 import { notifySyncListsChanged } from "@/api/sync/sync-events"
 import { reportSyncStarted, reportSyncFinished } from "@/api/sync/sync-status"
-import { startListSync } from "@/api/sync/list-sync-status"
+import {
+  startListSync,
+  setListPermissionDenied,
+} from "@/api/sync/list-sync-status"
 import { DomainEventRow, SYNCABLE_EVENT_TYPES } from "@/types/DomainEvent"
 
 const logger = createLogger("SyncEngine")
@@ -76,7 +79,7 @@ export class SyncEngine {
     private readonly client: SyncClient,
     private readonly cursorRepository: SyncCursorRepository,
     private readonly eventApplier: EventApplier,
-    private readonly listSyncSettingsRepository: ListSyncSettingsRepository,
+    private readonly listSyncStateRepository: ListSyncStateRepository,
     private readonly batchLimit: number = DEFAULT_BATCH_LIMIT,
     private readonly pullPageLimit: number = DEFAULT_PULL_PAGE_LIMIT
   ) {}
@@ -210,11 +213,16 @@ export class SyncEngine {
           `Failed to send events for list ${listId ?? "(none)"}`,
           error
         )
+        if (error.httpStatus === 403 && listId !== null) {
+          await setListPermissionDenied(listId, true)
+        }
         if (!error.retryable) {
           await this.giveUpOnGroup(listId, eventIds)
         }
         return false
       }
+
+      if (listId !== null) await setListPermissionDenied(listId, false)
 
       // Confirm only what we actually sent: the server echoes back what it
       // stored, and an id we never put on the wire has no business marking
@@ -269,7 +277,7 @@ export class SyncEngine {
     logger.warn(
       `List ${listId} was permanently rejected by the server - disabling sync for it locally`
     )
-    const disableResult = await this.listSyncSettingsRepository.setEnabled(
+    const disableResult = await this.listSyncStateRepository.setEnabled(
       listId,
       false
     )
@@ -287,6 +295,35 @@ export class SyncEngine {
       )
     }
     notifySyncListsChanged()
+  }
+
+  /**
+   * The server can't say *which* id in a batch request it's rejecting (see
+   * ListAccessService.FilterAccessible - no enumeration oracle), only that
+   * the whole request 403'd. Marks the denial and gives up rather than
+   * retrying - a request already isolated to one id that still 403s is the
+   * real denial (removed as a member, account switch on a device with a
+   * stale local list), and resending it can never succeed.
+   */
+  private async handleForbiddenList(listId: string): Promise<void> {
+    await setListPermissionDenied(listId, true)
+    await this.giveUpOnGroup(listId, [])
+  }
+
+  /**
+   * Isolates which id in a rejected batch is actually forbidden by
+   * retrying one id at a time via `retryOne` - see handleForbiddenList for
+   * what happens once a request is down to the one id that's really denied.
+   */
+  private async isolateForbiddenList(
+    listIds: string[],
+    retryOne: (listId: string) => Promise<void>
+  ): Promise<void> {
+    if (listIds.length > 1) {
+      for (const id of listIds) await retryOne(id)
+      return
+    }
+    await this.handleForbiddenList(listIds[0])
   }
 
   /**
@@ -327,6 +364,15 @@ export class SyncEngine {
   private async reconcileBatch(listIds: string[]): Promise<void> {
     const knownResult = await this.client.getKnownEventIds(listIds)
     if (!knownResult.success) {
+      if (knownResult.getError().httpStatus === 403) {
+        // Each recursive call already reconciles (or isolates) its own
+        // list and logs its own outcome - a blanket "failed" below would
+        // misreport a batch that mostly just succeeded.
+        await this.isolateForbiddenList(listIds, (id) =>
+          this.reconcileBatch([id])
+        )
+        return
+      }
       logger.warn(
         "Reconcile failed, will retry on the next trigger",
         knownResult.getError()
@@ -339,6 +385,12 @@ export class SyncEngine {
     // guard for this batch; the missing-event direction still runs.
     const headsResult = await this.client.getListHeads(listIds)
     if (!headsResult.success) {
+      if (headsResult.getError().httpStatus === 403) {
+        await this.isolateForbiddenList(listIds, (id) =>
+          this.reconcileBatch([id])
+        )
+        return
+      }
       logger.warn(
         "Reconcile: failed to fetch list heads, skipping drift check for this batch",
         headsResult.getError()
@@ -450,47 +502,73 @@ export class SyncEngine {
 
     let result = false
     try {
-      const headsResult = await this.client.getListHeads(listIds)
-      if (!headsResult.success) {
-        logger.warn(
-          "Failed to fetch list heads, will retry on the next trigger",
-          headsResult.getError()
-        )
+      const { ok, flush } = await this.pullListIds(listIds)
+      if (!flush) {
         return false
       }
-      const headByListId = new Map(
-        headsResult.getValue()!.map((head) => [head.listId, head])
-      )
-
-      let ok = true
-      for (const listId of listIds) {
-        const head = headByListId.get(listId)
-        if (!head) {
-          // The server answers every requested id (see SyncPullController);
-          // a missing entry would mean a response we can't trust - skip
-          // rather than guess.
-          continue
-        }
-        const finish = startListSync(listId, "pull")
-        let listOk = false
-        try {
-          listOk = await this.pullListToHead(listId, head.seq)
-        } catch (error) {
-          logger.error(`Unexpected download failure for list ${listId}`, error)
-        } finally {
-          finish(listOk)
-        }
-        if (!listOk) {
-          ok = false
-        }
-      }
-
       const flushOk = await this.flush()
       result = ok && flushOk
       return result
     } finally {
       reportSyncFinished(result)
     }
+  }
+
+  /**
+   * flush is false only for a hard (non-403) failure to even fetch heads -
+   * nothing was pulled, so there's nothing new to push either. Every other
+   * outcome, including a 403 isolated down to a permanent per-list denial,
+   * still flushes once at the top of the recursion (see pull).
+   */
+  private async pullListIds(
+    listIds: string[]
+  ): Promise<{ ok: boolean; flush: boolean }> {
+    const headsResult = await this.client.getListHeads(listIds)
+    if (!headsResult.success) {
+      if (headsResult.getError().httpStatus === 403) {
+        // A single forbidden id is a permanent give-up, not a retry - see
+        // handleForbiddenList - so the pessimistic default only flips to
+        // true once isolateForbiddenList actually retries each id.
+        let allOk = listIds.length > 1
+        await this.isolateForbiddenList(listIds, async (id) => {
+          const sub = await this.pullListIds([id])
+          allOk = sub.ok && allOk
+        })
+        return { ok: allOk, flush: true }
+      }
+      logger.warn(
+        "Failed to fetch list heads, will retry on the next trigger",
+        headsResult.getError()
+      )
+      return { ok: false, flush: false }
+    }
+    const headByListId = new Map(
+      headsResult.getValue()!.map((head) => [head.listId, head])
+    )
+
+    let ok = true
+    for (const listId of listIds) {
+      const head = headByListId.get(listId)
+      if (!head) {
+        // The server answers every requested id (see SyncPullController);
+        // a missing entry would mean a response we can't trust - skip
+        // rather than guess.
+        continue
+      }
+      const finish = startListSync(listId, "pull")
+      let listOk = false
+      try {
+        listOk = await this.pullListToHead(listId, head.seq)
+      } catch (error) {
+        logger.error(`Unexpected download failure for list ${listId}`, error)
+      } finally {
+        finish(listOk)
+      }
+      if (!listOk) {
+        ok = false
+      }
+    }
+    return { ok, flush: true }
   }
 
   /** Single-list entry point - e.g. a WebSocket "new event for this list" notification. */
@@ -552,12 +630,16 @@ export class SyncEngine {
         this.pullPageLimit
       )
       if (!pageResult.success) {
+        if (pageResult.getError().httpStatus === 403) {
+          await this.handleForbiddenList(listId)
+        }
         logger.warn(
           `Failed to pull events for list ${listId}, will retry on the next trigger`,
           pageResult.getError()
         )
         return false
       }
+      await setListPermissionDenied(listId, false)
       const page = pageResult.getValue()!
 
       if (page.events.length > 0) {

@@ -45,7 +45,7 @@ async function cleanupDatabase(db: ReturnType<typeof getDatabase>) {
   await db.execAsync(`DELETE FROM ingredient_lists;`)
   await db.execAsync(`DELETE FROM domain_events;`)
   await db.execAsync(`DELETE FROM event_outbox;`)
-  await db.execAsync(`DELETE FROM list_sync_settings;`)
+  await db.execAsync(`DELETE FROM list_sync_state;`)
 }
 
 describe("<NewShoppingList /> Component Tests", () => {
@@ -136,7 +136,7 @@ describe("<NewShoppingList /> Component Tests", () => {
       expect(list?.name).toBe("Rewe")
 
       const setting = await db.getFirstAsync<{ enabled: number }>(
-        `SELECT enabled FROM list_sync_settings WHERE list_id = ?`,
+        `SELECT enabled FROM list_sync_state WHERE list_id = ?`,
         list!.id
       )
       // Sync was never toggled on, so there's no row at all - not a row
@@ -170,7 +170,7 @@ describe("<NewShoppingList /> Component Tests", () => {
         `SELECT id FROM ingredient_lists WHERE name = 'Ikea'`
       )
       const setting = await db.getFirstAsync<{ enabled: number }>(
-        `SELECT enabled FROM list_sync_settings WHERE list_id = ?`,
+        `SELECT enabled FROM list_sync_state WHERE list_id = ?`,
         list!.id
       )
       expect(setting?.enabled).toBe(1)
@@ -180,7 +180,7 @@ describe("<NewShoppingList /> Component Tests", () => {
       )
       // Only todo_list.created is enqueued - sync on/off is a device-local
       // setting and never sent to the server (see
-      // list-sync-settings-repository.ts).
+      // list-sync-state-repository.ts).
       expect(outboxCount?.c).toBe(1)
     })
 

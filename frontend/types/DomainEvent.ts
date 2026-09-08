@@ -49,11 +49,11 @@ export const EventTypes = {
   TODO_LIST_DELETED: "todo_list.deleted",
   // Historical: sync opt-in/out used to be modeled as its own domain event,
   // enqueued to the backend like any other todo_list.* event. It's been
-  // replaced by a device-local setting (list-sync-settings-repository.ts) -
+  // replaced by a device-local setting (list-sync-state-repository.ts) -
   // whether *this device* syncs a list is not a fact the server should hold
   // or that a projection rebuild should be able to reset (see
   // sync-design-decisions.md). These constants stay only so old rows already
-  // in domain_events (and migration-7, which seeds list_sync_settings from
+  // in domain_events (and migration-7, which seeds list_sync_state from
   // them) can still be named; no code emits them anymore, and they're
   // excluded from SYNCABLE_EVENT_TYPES below.
   TODO_LIST_SYNC_ENABLED: "todo_list.sync_enabled",

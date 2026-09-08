@@ -2,7 +2,7 @@ import { SQLiteDatabase } from "expo-sqlite"
 import { EventRepository } from "@/database/event-repository"
 import { IngredientProjection } from "@/database/ingredient-projection"
 import { IngredientListProjection } from "@/database/ingredient-list-projection"
-import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
+import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { SyncCursorRepository } from "@/database/sync-cursor-repository"
 import { runExclusive } from "@/database/write-lock"
 import { DbQueryError } from "@/api/common/error-types"
@@ -38,7 +38,7 @@ export class EventApplier {
     private readonly ingredientProjection: IngredientProjection,
     private readonly listProjection: IngredientListProjection,
     private readonly cursorRepository: SyncCursorRepository,
-    private readonly listSyncSettingsRepository: ListSyncSettingsRepository
+    private readonly listSyncStateRepository: ListSyncStateRepository
   ) {}
 
   /**
@@ -136,7 +136,7 @@ export class EventApplier {
       (event) => event.event_type === EventTypes.TODO_LIST_DELETED
     )
     if (deleted) {
-      await this.listSyncSettingsRepository.removeWithin(this.db, listId)
+      await this.listSyncStateRepository.removeWithin(this.db, listId)
     }
     return deleted
   }

@@ -5,7 +5,7 @@ import { IngredientListRepository } from "@/database/ingredient-list-repository"
 import { EventRepository, AppendEntry } from "@/database/event-repository"
 import { OutboxRepository } from "@/database/outbox-repository"
 import { IngredientListProjection } from "@/database/ingredient-list-projection"
-import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
+import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { getDatabase } from "@/database/database"
 import { createLogger } from "@/api/common/logger"
 import { Result } from "@/api/common/result"
@@ -19,6 +19,7 @@ import {
 import { getClientId } from "@/api/common/client-id"
 import { notifyOutboxChanged } from "@/api/sync/outbox-events"
 import { notifySyncListsChanged } from "@/api/sync/sync-events"
+import { clearListSyncStatus } from "@/api/sync/list-sync-status"
 
 const logger = createLogger("ShoppingListService")
 
@@ -27,22 +28,22 @@ export class ShoppingListService {
   private eventRepository: EventRepository
   private outboxRepository: OutboxRepository
   private projection: IngredientListProjection
-  private listSyncSettingsRepository: ListSyncSettingsRepository
+  private listSyncStateRepository: ListSyncStateRepository
 
   constructor(
     repository?: IngredientListRepository,
     eventRepository?: EventRepository,
     projection?: IngredientListProjection,
     outboxRepository?: OutboxRepository,
-    listSyncSettingsRepository?: ListSyncSettingsRepository
+    listSyncStateRepository?: ListSyncStateRepository
   ) {
     const db = getDatabase()
     this.repository = repository || new IngredientListRepository(db)
     this.eventRepository = eventRepository || new EventRepository(db)
     this.projection = projection || new IngredientListProjection(db)
     this.outboxRepository = outboxRepository || new OutboxRepository(db)
-    this.listSyncSettingsRepository =
-      listSyncSettingsRepository || new ListSyncSettingsRepository(db)
+    this.listSyncStateRepository =
+      listSyncStateRepository || new ListSyncStateRepository(db)
   }
 
   async createList(
@@ -77,9 +78,9 @@ export class ShoppingListService {
             await this.projection.handleCreated(db, createdEvent)
             // Written in the same transaction as the create, so a crash
             // partway through can't leave the setting out of step with
-            // whether the list even exists - see list-sync-settings-repository.ts.
+            // whether the list even exists - see list-sync-state-repository.ts.
             if (syncEnabled) {
-              await this.listSyncSettingsRepository.setEnabledWithin(
+              await this.listSyncStateRepository.setEnabledWithin(
                 db,
                 listId,
                 true
@@ -124,8 +125,8 @@ export class ShoppingListService {
   /**
    * Turns sync on or off for an existing list.
    *
-   * The toggle itself is a device-local setting (list_sync_settings), not a
-   * domain event - see list-sync-settings-repository.ts. The backend never
+   * The toggle itself is a device-local setting (list_sync_state), not a
+   * domain event - see list-sync-state-repository.ts. The backend never
    * learns "sync was turned on/off" as its own fact; turning sync on simply
    * starts pushing the list's existing content.
    *
@@ -150,7 +151,7 @@ export class ShoppingListService {
     enabled: boolean
   ): Promise<Result<void, DbQueryError>> {
     try {
-      const settingResult = await this.listSyncSettingsRepository.setEnabled(
+      const settingResult = await this.listSyncStateRepository.setEnabled(
         listId,
         enabled
       )
@@ -200,7 +201,7 @@ export class ShoppingListService {
    * Turns sync off for every list this device currently syncs - logout's
    * "stop sharing my further changes" step. Unlike setSyncEnabled(id, false)
    * (a deliberate per-list "leave it off"), this removes the
-   * list_sync_settings row entirely: logging out isn't a decision to stop
+   * list_sync_state row entirely: logging out isn't a decision to stop
    * syncing these lists forever, so the next login's discovery pass
    * (SyncCoordinator.discoverLists, keyed off getKnownIds()) should treat
    * them as unseen again and re-enable whichever ones the server still
@@ -208,7 +209,7 @@ export class ShoppingListService {
    */
   async disableAllSync(): Promise<Result<void, DbQueryError>> {
     try {
-      const idsResult = await this.listSyncSettingsRepository.getEnabledIds()
+      const idsResult = await this.listSyncStateRepository.getEnabledIds()
       if (!idsResult.success) {
         return Result.fail(idsResult.getError())
       }
@@ -218,12 +219,12 @@ export class ShoppingListService {
       // remaining ones still fully sync-enabled after logout completes.
       let firstError: DbQueryError | undefined
       for (const listId of listIds) {
-        const settingResult =
-          await this.listSyncSettingsRepository.remove(listId)
+        const settingResult = await this.listSyncStateRepository.remove(listId)
         if (!settingResult.success) {
           firstError ??= settingResult.getError()
           continue
         }
+        clearListSyncStatus(listId)
         const cancelResult = await this.outboxRepository.cancelForList(listId)
         if (!cancelResult.success) {
           firstError ??= cancelResult.getError()
@@ -340,7 +341,7 @@ export class ShoppingListService {
         event,
         async (db) => {
           await this.projection.handleDeleted(db, event)
-          await this.listSyncSettingsRepository.removeWithin(db, listId)
+          await this.listSyncStateRepository.removeWithin(db, listId)
         }
       )
 
@@ -348,6 +349,7 @@ export class ShoppingListService {
         return Result.fail(result.getError())
       }
 
+      clearListSyncStatus(listId)
       notifySyncListsChanged()
 
       return Result.ok(undefined)

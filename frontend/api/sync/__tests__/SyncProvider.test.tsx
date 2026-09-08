@@ -6,7 +6,7 @@ import { SyncProvider } from "../SyncProvider"
 import { useAuth } from "@/api/auth/AuthProvider"
 import { SyncEngine } from "@/api/sync/sync-engine"
 import { SyncSocket } from "@/api/sync/sync-socket"
-import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
+import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { Result } from "@/api/common/result"
 import { notifyOutboxChanged } from "@/api/sync/outbox-events"
 import * as syncConfigModule from "@/api/sync/config"
@@ -20,16 +20,15 @@ jest.mock("@/database/database", () => ({
 }))
 jest.mock("@/database/outbox-repository")
 jest.mock("@/database/event-repository")
-jest.mock("@/database/list-sync-settings-repository")
+jest.mock("@/database/list-sync-state-repository")
 jest.mock("@/api/sync/sync-client")
 
 const mockedUseAuth = useAuth as jest.Mock
 const MockSyncEngine = SyncEngine as jest.MockedClass<typeof SyncEngine>
 const MockSyncSocket = SyncSocket as jest.MockedClass<typeof SyncSocket>
-const MockListSyncSettingsRepository =
-  ListSyncSettingsRepository as jest.MockedClass<
-    typeof ListSyncSettingsRepository
-  >
+const MockListSyncStateRepository = ListSyncStateRepository as jest.MockedClass<
+  typeof ListSyncStateRepository
+>
 
 function mockAuth(status: "loading" | "signedOut" | "signedIn") {
   mockedUseAuth.mockReturnValue({
@@ -94,13 +93,13 @@ describe("SyncProvider", () => {
       } as unknown as SyncSocket
     })
 
-    MockListSyncSettingsRepository.mockImplementation(
+    MockListSyncStateRepository.mockImplementation(
       () =>
         ({
           getEnabledIds: jest
             .fn()
             .mockResolvedValue(Result.ok(["list-1", "list-2"])),
-        }) as unknown as ListSyncSettingsRepository
+        }) as unknown as ListSyncStateRepository
     )
 
     jest.spyOn(syncConfigModule, "isSyncConfigured").mockReturnValue(true)

@@ -3,7 +3,7 @@ import React from "react"
 import { createLogger } from "@/api/common/logger"
 import { getDatabase } from "@/database/database"
 import { IngredientListRepository } from "@/database/ingredient-list-repository"
-import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
+import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { sharingClient } from "@/api/sharing/sharing-client"
 import { notifySyncListsChanged } from "@/api/sync/sync-events"
 import { useSyncEngine } from "@/api/sync/SyncProvider"
@@ -62,10 +62,10 @@ export function useRedeemInvite() {
 
       try {
         const db = getDatabase()
-        const listSyncSettingsRepository = new ListSyncSettingsRepository(db)
+        const listSyncStateRepository = new ListSyncStateRepository(db)
         const ingredientListRepository = new IngredientListRepository(db)
 
-        const enableResult = await listSyncSettingsRepository.setEnabled(
+        const enableResult = await listSyncStateRepository.setEnabled(
           redeemed.listId,
           true
         )

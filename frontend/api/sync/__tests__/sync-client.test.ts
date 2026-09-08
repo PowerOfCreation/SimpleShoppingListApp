@@ -153,6 +153,7 @@ describe("SyncClient", () => {
 
       expect(result.success).toBe(false)
       expect(result.getError().retryable).toBe(false)
+      expect(result.getError().httpStatus).toBe(403)
     })
 
     it("treats a 5xx response as retryable", async () => {
@@ -256,6 +257,7 @@ describe("SyncClient", () => {
 
       expect(result.success).toBe(false)
       expect(result.getError().retryable).toBe(false)
+      expect(result.getError().httpStatus).toBe(403)
     })
   })
 
@@ -318,6 +320,7 @@ describe("SyncClient", () => {
 
       expect(result.success).toBe(false)
       expect(result.getError().retryable).toBe(false)
+      expect(result.getError().httpStatus).toBe(403)
     })
 
     it("treats being signed out as non-retryable, without fetching", async () => {
@@ -429,6 +432,7 @@ describe("SyncClient", () => {
 
       expect(result.success).toBe(false)
       expect(result.getError().retryable).toBe(false)
+      expect(result.getError().httpStatus).toBe(403)
     })
 
     it("treats being signed out as non-retryable, without fetching", async () => {

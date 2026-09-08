@@ -3,7 +3,7 @@ import { AppState } from "react-native"
 import { SyncCoordinator } from "../sync-coordinator"
 import { SyncEngine } from "@/api/sync/sync-engine"
 import { SyncSocket } from "@/api/sync/sync-socket"
-import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
+import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { Result } from "@/api/common/result"
 import { SharingError } from "@/api/common/error-types"
 import { notifyOutboxChanged } from "@/api/sync/outbox-events"
@@ -12,14 +12,13 @@ import { flushMicrotasks } from "../test-helpers"
 
 jest.mock("@/api/sync/sync-engine")
 jest.mock("@/api/sync/sync-socket")
-jest.mock("@/database/list-sync-settings-repository")
+jest.mock("@/database/list-sync-state-repository")
 
 const MockSyncEngine = SyncEngine as jest.MockedClass<typeof SyncEngine>
 const MockSyncSocket = SyncSocket as jest.MockedClass<typeof SyncSocket>
-const MockListSyncSettingsRepository =
-  ListSyncSettingsRepository as jest.MockedClass<
-    typeof ListSyncSettingsRepository
-  >
+const MockListSyncStateRepository = ListSyncStateRepository as jest.MockedClass<
+  typeof ListSyncStateRepository
+>
 
 describe("SyncCoordinator", () => {
   let flushMock: jest.Mock
@@ -49,7 +48,7 @@ describe("SyncCoordinator", () => {
         {} as never,
         {} as never
       ),
-      new MockListSyncSettingsRepository({} as never),
+      new MockListSyncStateRepository({} as never),
       { listMyLists: listMyListsMock }
     )
     coordinators.push(coordinator)
@@ -110,13 +109,13 @@ describe("SyncCoordinator", () => {
     getKnownIdsMock = jest
       .fn()
       .mockResolvedValue(Result.ok(["list-1", "list-2"]))
-    MockListSyncSettingsRepository.mockImplementation(
+    MockListSyncStateRepository.mockImplementation(
       () =>
         ({
           getEnabledIds: getEnabledIdsMock,
           getKnownIds: getKnownIdsMock,
           setEnabled: setEnabledMock,
-        }) as unknown as ListSyncSettingsRepository
+        }) as unknown as ListSyncStateRepository
     )
   })
 
