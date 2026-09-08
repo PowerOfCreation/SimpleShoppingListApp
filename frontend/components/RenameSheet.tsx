@@ -18,6 +18,7 @@ export type RenameSheetProps = {
   onClose: () => void
   onSave: (name: string) => void
   testID?: string
+  title?: string
 }
 
 export function RenameSheet(props: RenameSheetProps) {
@@ -71,7 +72,7 @@ export function RenameSheet(props: RenameSheetProps) {
             style={[styles.handle, { backgroundColor: textSecondaryColor }]}
           />
           <ThemedText style={styles.title} type="defaultSemiBold">
-            Rename
+            {props.title ?? "Rename"}
           </ThemedText>
           <View style={styles.inputContainer}>
             <ThemedTextInput

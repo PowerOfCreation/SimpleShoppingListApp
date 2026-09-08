@@ -3,11 +3,14 @@ import { EventRepository } from "@/database/event-repository"
 import { OutboxRepository } from "@/database/outbox-repository"
 import { IngredientListProjection } from "@/database/ingredient-list-projection"
 import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
+import { IngredientRepository } from "@/database/ingredient-repository"
+import { IngredientProjection } from "@/database/ingredient-projection"
 import { getDatabase } from "@/database/database"
 import { ShoppingListService } from "@/api/shopping-list-service"
 import * as SQLite from "expo-sqlite"
 import { Result } from "@/api/common/result"
-import { DomainEventRow, EventTypes } from "@/types/DomainEvent"
+import { DomainEventRow, EventTypes, AggregateTypes } from "@/types/DomainEvent"
+import { Ingredient } from "@/types/Ingredient"
 
 jest.mock("@/database/ingredient-list-repository")
 const MockIngredientListRepository =
@@ -32,6 +35,16 @@ const MockListSyncStateRepository = ListSyncStateRepository as jest.MockedClass<
   typeof ListSyncStateRepository
 >
 
+jest.mock("@/database/ingredient-repository")
+const MockIngredientRepository = IngredientRepository as jest.MockedClass<
+  typeof IngredientRepository
+>
+
+jest.mock("@/database/ingredient-projection")
+const MockIngredientProjection = IngredientProjection as jest.MockedClass<
+  typeof IngredientProjection
+>
+
 jest.mock("@/database/database", () => ({
   getDatabase: jest.fn(),
 }))
@@ -47,6 +60,8 @@ describe("ShoppingListService", () => {
   let mockOutboxRepository: jest.Mocked<OutboxRepository>
   let mockProjection: jest.Mocked<IngredientListProjection>
   let mockListSyncStateRepository: jest.Mocked<ListSyncStateRepository>
+  let mockIngredientRepository: jest.Mocked<IngredientRepository>
+  let mockIngredientProjection: jest.Mocked<IngredientProjection>
 
   beforeEach(() => {
     jest.clearAllMocks()
@@ -76,6 +91,7 @@ describe("ShoppingListService", () => {
       handleUpdated: jest.fn(),
       handleDeleted: jest.fn(),
       rebuild: jest.fn(),
+      applyEvent: jest.fn(),
     } as unknown as jest.Mocked<IngredientListProjection>
 
     mockListSyncStateRepository = {
@@ -87,6 +103,14 @@ describe("ShoppingListService", () => {
       remove: jest.fn().mockResolvedValue(Result.ok(undefined)),
     } as unknown as jest.Mocked<ListSyncStateRepository>
 
+    mockIngredientRepository = {
+      getAll: jest.fn().mockResolvedValue(Result.ok([])),
+    } as unknown as jest.Mocked<IngredientRepository>
+
+    mockIngredientProjection = {
+      applyEvent: jest.fn(),
+    } as unknown as jest.Mocked<IngredientProjection>
+
     MockIngredientListRepository.mockImplementation(() => mockRepository)
     MockEventRepository.mockImplementation(() => mockEventRepository)
     MockOutboxRepository.mockImplementation(() => mockOutboxRepository)
@@ -94,6 +118,8 @@ describe("ShoppingListService", () => {
     MockListSyncStateRepository.mockImplementation(
       () => mockListSyncStateRepository
     )
+    MockIngredientRepository.mockImplementation(() => mockIngredientRepository)
+    MockIngredientProjection.mockImplementation(() => mockIngredientProjection)
 
     const mockDb = {} as SQLite.SQLiteDatabase
     ;(getDatabase as jest.Mock).mockReturnValue(mockDb)
@@ -346,6 +372,102 @@ describe("ShoppingListService", () => {
         expect.anything(),
         "list-1"
       )
+    })
+  })
+
+  describe("duplicateList", () => {
+    const sourceIngredients: Ingredient[] = [
+      {
+        id: "ing-1",
+        name: "Milk",
+        completed: true,
+        completed_at: 2000,
+        list_id: "list-1",
+        created_at: 1500,
+        updated_at: 1500,
+        priority: 0,
+      },
+      {
+        id: "ing-2",
+        name: "Bread",
+        completed: false,
+        list_id: "list-1",
+        created_at: 1600,
+        updated_at: 1600,
+      },
+    ]
+
+    beforeEach(() => {
+      mockRepository.getById.mockResolvedValue(
+        Result.ok({ id: "list-1", name: "Rewe" })
+      )
+      mockIngredientRepository.getAll.mockResolvedValue(
+        Result.ok(sourceIngredients)
+      )
+    })
+
+    it("fails on an empty name without touching the repositories", async () => {
+      const result = await service.duplicateList("list-1", "  ")
+
+      expect(result.success).toBe(false)
+      expect(mockRepository.getById).not.toHaveBeenCalled()
+      expect(mockEventRepository.appendAll).not.toHaveBeenCalled()
+    })
+
+    it("fails when the source list doesn't exist", async () => {
+      mockRepository.getById.mockResolvedValue(Result.ok(null))
+
+      const result = await service.duplicateList("missing", "Rewe (Copy)")
+
+      expect(result.success).toBe(false)
+      expect(mockEventRepository.appendAll).not.toHaveBeenCalled()
+    })
+
+    it("fails when reading the source's ingredients fails", async () => {
+      mockIngredientRepository.getAll.mockResolvedValue(
+        Result.fail(new Error("db locked") as never)
+      )
+
+      const result = await service.duplicateList("list-1", "Rewe (Copy)")
+
+      expect(result.success).toBe(false)
+      expect(mockEventRepository.appendAll).not.toHaveBeenCalled()
+    })
+
+    it("appends one todo_list.created, one ingredient.created per ingredient, and priority_set for prioritized ones - none enqueued", async () => {
+      const result = await service.duplicateList("list-1", "Rewe (Copy)")
+
+      expect(result.success).toBe(true)
+      expect(mockEventRepository.appendAll).toHaveBeenCalledTimes(1)
+
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      // todo_list.created + 2x ingredient.created + 1x priority_set (only ing-1 has one)
+      expect(entries).toHaveLength(4)
+      expect(entries.every((e) => !e.enqueueForSync)).toBe(true)
+
+      expect(entries[0].event.event_type).toBe(EventTypes.TODO_LIST_CREATED)
+      expect(JSON.parse(entries[0].event.payload)).toEqual({
+        name: "Rewe (Copy)",
+      })
+      expect(entries[0].event.aggregate_id).toBe(result.getValue())
+      expect(entries[0].event.aggregate_id).not.toBe("list-1")
+    })
+
+    it("dispatches each generated event through the matching projection's applyEvent", async () => {
+      const dbStub = {} as SQLite.SQLiteDatabase
+      await service.duplicateList("list-1", "Rewe (Copy)")
+
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      for (const entry of entries) {
+        await entry.project?.(dbStub)
+      }
+
+      expect(mockProjection.applyEvent).toHaveBeenCalledTimes(1)
+      expect(mockProjection.applyEvent).toHaveBeenCalledWith(
+        dbStub,
+        expect.objectContaining({ aggregate_type: AggregateTypes.TODO_LIST })
+      )
+      expect(mockIngredientProjection.applyEvent).toHaveBeenCalledTimes(3)
     })
   })
 })

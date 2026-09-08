@@ -177,7 +177,11 @@ export class IngredientListProjection {
   // failure (locked/full/aborted/constraint), not a bad payload: it must
   // propagate so EventApplier.apply's transaction rolls back and the cursor
   // doesn't advance past events that never actually applied.
-  private async applyEvent(
+  //
+  // Public (not private): list-compaction.ts's consumers dispatch through
+  // this same switch when projecting generated events, instead of
+  // duplicating it - see ShoppingListService.duplicateList.
+  async applyEvent(
     db: SQLiteDatabase,
     event: DomainEventRow
   ): Promise<boolean> {

@@ -23,6 +23,7 @@ export type ShoppingListEntryProps = {
   completedCount?: number
   onPress: (event: GestureResponderEvent) => void
   onRename: (newName: string) => void
+  onDuplicate?: (newName: string) => void
   onPressOut?: (event: GestureResponderEvent) => void
   onDelete?: () => void
   syncEnabled?: boolean
@@ -35,6 +36,7 @@ export type ShoppingListEntryProps = {
 export function ShoppingListEntry(props: ShoppingListEntryProps) {
   const [showContextMenu, setShowContextMenu] = React.useState(false)
   const [showRenameSheet, setShowRenameSheet] = React.useState(false)
+  const [showDuplicateSheet, setShowDuplicateSheet] = React.useState(false)
   const [showDeleteConfirm, setShowDeleteConfirm] = React.useState(false)
 
   const dividerColor = useThemeColor({}, "divider")
@@ -114,6 +116,11 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
             onPress: () => setShowRenameSheet(true),
           },
           {
+            label: "Duplicate",
+            testID: `shopping-list-context-duplicate-${props.id}`,
+            onPress: () => setShowDuplicateSheet(true),
+          },
+          {
             type: "toggle",
             label: "Sync with account",
             testID: `shopping-list-context-sync-${props.id}`,
@@ -156,6 +163,14 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
         initialValue={props.listName}
         onClose={() => setShowRenameSheet(false)}
         onSave={props.onRename}
+      />
+      <RenameSheet
+        testID={`shopping-list-duplicate-sheet-${props.id}`}
+        title="Duplicate list"
+        visible={showDuplicateSheet}
+        initialValue={`${props.listName} (Copy)`}
+        onClose={() => setShowDuplicateSheet(false)}
+        onSave={(newName) => props.onDuplicate?.(newName)}
       />
       <ConfirmDialog
         testID={`shopping-list-delete-confirm-${props.id}`}
