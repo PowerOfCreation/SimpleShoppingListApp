@@ -46,13 +46,22 @@ export default function Index() {
 
   React.useEffect(() => {
     if (hasNavigatedRef.current || isLoading) return
-    getPreference("last_viewed_list_id").then((lastId) => {
-      hasNavigatedRef.current = true
-      if (lastId && lists.some((l) => l.id === lastId)) {
-        router.push(`/view_shopping_list?listId=${lastId}`)
-      }
-      setIsCheckingPreference(false)
-    })
+    getPreference("last_viewed_list_id")
+      .then((lastId) => {
+        hasNavigatedRef.current = true
+        if (lastId && lists.some((l) => l.id === lastId)) {
+          router.push(`/view_shopping_list?listId=${lastId}`)
+        }
+      })
+      .catch((err) => {
+        // A failed preference read must not leave the list overview stuck
+        // behind isCheckingPreference's spinner forever - falling through
+        // to the plain list view is the same behaviour as "no last-viewed
+        // list stored".
+        hasNavigatedRef.current = true
+        logger.error("Error reading last_viewed_list_id preference", err)
+      })
+      .finally(() => setIsCheckingPreference(false))
   }, [isLoading, lists])
 
   // Refetch shopping lists when screen comes into focus

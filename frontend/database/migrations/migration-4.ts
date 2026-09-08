@@ -10,8 +10,7 @@ const logger = createLogger("Migration-4")
 // so sync state (infrastructure concern) must not be baked into log rows
 // (domain concern). ALTER TABLE ADD COLUMN is not idempotent in SQLite (it
 // throws "duplicate column name" on a second run), so this is guarded
-// explicitly below rather than asserting idempotency the migration doesn't
-// actually have - unlike migration-3, which shares that same latent gap.
+// explicitly below, same pattern as migration-3's priority column.
 const ADD_SYNC_ENABLED_COLUMN = `
 ALTER TABLE ingredient_lists ADD COLUMN sync_enabled INTEGER NOT NULL DEFAULT 0;
 `
