@@ -337,11 +337,15 @@ export class SyncEngine {
     if (!knownResult.success) {
       if (knownResult.getError().httpStatus === 403) {
         if (listIds.length > 1) {
+          // Each recursive call already reconciles (or isolates) its own
+          // list and logs its own outcome - a blanket "failed" below would
+          // misreport a batch that mostly just succeeded.
           for (const id of listIds) await this.reconcileBatch([id])
         } else {
           await setListPermissionDenied(listIds[0], true)
           await this.giveUpOnGroup(listIds[0], [])
         }
+        return
       }
       logger.warn(
         "Reconcile failed, will retry on the next trigger",

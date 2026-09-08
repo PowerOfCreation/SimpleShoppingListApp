@@ -575,6 +575,33 @@ describe("SyncEngine", () => {
       expect(outbox.getPending).toHaveBeenCalledTimes(1)
     })
 
+    it("isolates a forbidden list in a rejected getKnownEventIds batch, without misreporting the whole batch as failed", async () => {
+      client.getKnownEventIds.mockImplementation(async (ids) =>
+        ids.includes("denied-known")
+          ? Result.fail(new SyncError("Forbidden", false, undefined, 403))
+          : Result.ok([])
+      )
+      const warnSpy = jest.spyOn(console, "warn").mockImplementation(() => {})
+
+      await engine.reconcile(["denied-known", "allowed-known"])
+
+      expect(getListSyncStatus("denied-known")).toBe("forbidden")
+      expect(listSyncSettings.setEnabled).toHaveBeenCalledWith(
+        "denied-known",
+        false
+      )
+      // The other list in the batch isolates cleanly and actually
+      // reconciles - the batch is a partial success, not a failure.
+      expect(client.getKnownEventIds).toHaveBeenCalledWith(["allowed-known"])
+      expect(
+        warnSpy.mock.calls.some(([message]) =>
+          String(message).includes("Reconcile failed")
+        )
+      ).toBe(false)
+
+      warnSpy.mockRestore()
+    })
+
     it("ignores non-syncable (local-only) event types when comparing against the server", async () => {
       client.getKnownEventIds.mockResolvedValue(Result.ok([]))
       events.getByListId.mockResolvedValue(
