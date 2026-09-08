@@ -1,11 +1,16 @@
-import { getPreference, setPreference } from "@/database/preferences-repository"
+import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
+import { Result } from "@/api/common/result"
 import {
   getListSyncStatus,
   startListSync,
   loadListSyncPermission,
   setListPermissionDenied,
 } from "../list-sync-status"
-jest.mock("@/database/preferences-repository")
+jest.mock("@/database/database", () => {
+  const originalModule = jest.requireActual("@/database/database")
+  return { ...originalModule, DB_NAME: ":memory:" }
+})
+jest.mock("@/database/list-sync-settings-repository")
 
 it("isolates lists and keeps upload errors until an upload succeeds", () => {
   startListSync("a", "push")(false)
@@ -35,29 +40,37 @@ it("does not clear a download failure with an upload", () => {
 })
 
 it("restores permission denial and keeps it through unrelated sync failures", async () => {
-  jest.mocked(getPreference).mockResolvedValueOnce("true")
+  jest
+    .mocked(ListSyncSettingsRepository.prototype.isPermissionDenied)
+    .mockResolvedValueOnce(Result.ok(true))
+  const setPermissionDenied = jest.mocked(
+    ListSyncSettingsRepository.prototype.setPermissionDenied
+  )
+  setPermissionDenied.mockResolvedValueOnce(Result.ok(undefined))
   await loadListSyncPermission("persisted")
   expect(getListSyncStatus("persisted")).toBe("forbidden")
   startListSync("persisted", "push")(false)
   expect(getListSyncStatus("persisted")).toBe("forbidden")
   await setListPermissionDenied("persisted", false)
-  expect(setPreference).toHaveBeenLastCalledWith(
-    "sync_permission_denied:persisted",
-    "false"
-  )
+  expect(setPermissionDenied).toHaveBeenLastCalledWith("persisted", false)
   expect(getListSyncStatus("persisted")).toBe("error")
 })
 
 it("does not overwrite a new denial with a stale storage read", async () => {
-  let resolveRead!: (value: string | null) => void
-  jest.mocked(getPreference).mockReturnValueOnce(
-    new Promise((resolve) => {
-      resolveRead = resolve
-    })
-  )
+  let resolveRead!: (value: Result<boolean, Error>) => void
+  jest
+    .mocked(ListSyncSettingsRepository.prototype.isPermissionDenied)
+    .mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveRead = resolve
+      })
+    )
+  jest
+    .mocked(ListSyncSettingsRepository.prototype.setPermissionDenied)
+    .mockResolvedValueOnce(Result.ok(undefined))
   const loading = loadListSyncPermission("race")
   await setListPermissionDenied("race", true)
-  resolveRead(null)
+  resolveRead(Result.ok(false))
   await loading
   expect(getListSyncStatus("race")).toBe("forbidden")
 })

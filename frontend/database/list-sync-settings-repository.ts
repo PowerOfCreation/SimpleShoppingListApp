@@ -59,6 +59,37 @@ export class ListSyncSettingsRepository extends BaseRepository {
     }, "isEnabled")
   }
 
+  /**
+   * Device-local diagnostic: whether the server last rejected this list
+   * with 403 (removed as a member, account switch). Only ever set for a
+   * list that's already gone through setEnabled (sync only touches
+   * enabled lists), so this is a plain UPDATE, not an upsert.
+   */
+  async isPermissionDenied(
+    listId: string
+  ): Promise<Result<boolean, DbQueryError>> {
+    return this._executeQuery(async () => {
+      const row = await this.db.getFirstAsync<{ permission_denied: number }>(
+        `SELECT permission_denied FROM list_sync_settings WHERE list_id = ?`,
+        listId
+      )
+      return row?.permission_denied === 1
+    }, "isPermissionDenied")
+  }
+
+  async setPermissionDenied(
+    listId: string,
+    denied: boolean
+  ): Promise<Result<void, DbQueryError>> {
+    return this._executeTransaction(async () => {
+      await this.db.runAsync(
+        `UPDATE list_sync_settings SET permission_denied = ? WHERE list_id = ?`,
+        denied ? 1 : 0,
+        listId
+      )
+    }, "setPermissionDenied")
+  }
+
   async setEnabled(
     listId: string,
     enabled: boolean

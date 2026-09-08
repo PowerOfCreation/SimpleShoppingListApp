@@ -8,7 +8,7 @@ const logger = createLogger("Database")
 /**
  * Database version number - increment this when schema changes
  */
-export const DB_VERSION = 7
+export const DB_VERSION = 8
 
 /**
  * Database file name

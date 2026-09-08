@@ -1,34 +1,36 @@
-import { getPreference, setPreference } from "@/database/preferences-repository"
+import { ListSyncSettingsRepository } from "@/database/list-sync-settings-repository"
+import { getDatabase } from "@/database/database"
 import { createLogger } from "@/api/common/logger"
 import { SyncStatus } from "./sync-status"
 
-// General diagnostics are session-local; permission denial is persisted. A successful download cannot clear an
-// upload failure (or vice versa), and another list can never clear either.
+// General diagnostics are session-local; permission denial is persisted in
+// list_sync_settings (see ListSyncSettingsRepository.setPermissionDenied),
+// so it survives an app restart and is cleaned up automatically when the
+// list itself is deleted. A successful download cannot clear an upload
+// failure (or vice versa), and another list can never clear either.
 type Direction = "push" | "pull" | "reconcile"
 type Pass = { active: number; failed: boolean; status: SyncStatus }
 const lists = new Map<string, Partial<Record<Direction, Pass>>>()
 const permissionDenied = new Map<string, boolean>()
 const loading = new Map<string, Promise<void>>()
-const writes = new Map<string, Promise<void>>()
 const logger = createLogger("ListSyncStatus")
-const permissionKey = (listId: string) => `sync_permission_denied:${listId}`
 
 export async function loadListSyncPermission(listId: string): Promise<void> {
   if (permissionDenied.has(listId)) return
   const existing = loading.get(listId)
   if (existing) return existing
   const pending = (async () => {
-    try {
-      const stored = await getPreference(permissionKey(listId))
-      if (!permissionDenied.has(listId)) {
-        permissionDenied.set(listId, stored === "true")
-        listeners.forEach((listener) => listener())
-      }
-    } catch (error) {
-      logger.warn("Could not load sync permission status", error)
-    } finally {
-      loading.delete(listId)
+    const result = await new ListSyncSettingsRepository(
+      getDatabase()
+    ).isPermissionDenied(listId)
+    if (!result.success) {
+      logger.warn("Could not load sync permission status", result.getError())
     }
+    if (!permissionDenied.has(listId)) {
+      permissionDenied.set(listId, result.success && result.getValue()!)
+      listeners.forEach((listener) => listener())
+    }
+    loading.delete(listId)
   })()
   loading.set(listId, pending)
   return pending
@@ -41,16 +43,12 @@ export async function setListPermissionDenied(
   if (permissionDenied.get(listId) === denied) return
   permissionDenied.set(listId, denied)
   listeners.forEach((listener) => listener())
-  const pending = (writes.get(listId) ?? Promise.resolve()).then(async () => {
-    try {
-      await setPreference(permissionKey(listId), String(denied))
-    } catch (error) {
-      logger.warn("Could not save sync permission status", error)
-    }
-  })
-  writes.set(listId, pending)
-  await pending
-  if (writes.get(listId) === pending) writes.delete(listId)
+  const result = await new ListSyncSettingsRepository(
+    getDatabase()
+  ).setPermissionDenied(listId, denied)
+  if (!result.success) {
+    logger.warn("Could not save sync permission status", result.getError())
+  }
 }
 
 const listeners = new Set<() => void>()

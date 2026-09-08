@@ -11,7 +11,10 @@ import { SyncError, DbQueryError } from "@/api/common/error-types"
 import { DomainEventRow, EventTypes } from "@/types/DomainEvent"
 import { flushMicrotasks } from "../test-helpers"
 
-jest.mock("@/database/preferences-repository")
+jest.mock("@/database/database", () => {
+  const originalModule = jest.requireActual("@/database/database")
+  return { ...originalModule, DB_NAME: ":memory:" }
+})
 jest.mock("@/database/outbox-repository")
 jest.mock("@/database/event-repository")
 jest.mock("@/database/sync-cursor-repository")
@@ -96,6 +99,8 @@ describe("SyncEngine", () => {
 
     listSyncSettings = {
       setEnabled: jest.fn().mockResolvedValue(Result.ok(undefined)),
+      isPermissionDenied: jest.fn().mockResolvedValue(Result.ok(false)),
+      setPermissionDenied: jest.fn().mockResolvedValue(Result.ok(undefined)),
     } as unknown as jest.Mocked<ListSyncSettingsRepository>
 
     client = {
