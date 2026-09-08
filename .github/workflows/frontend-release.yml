@@ -162,9 +162,10 @@ jobs:
           # Both RC and stable notes include all changes since the last stable,
           # even when RC tags occur between that stable tag and this commit.
           PREVIOUS=$(git tag --merged HEAD --sort=-version:refname | { grep -E '^frontend-v[0-9]+\.[0-9]+\.[0-9]+$' || true; } | { grep -Fxv "$TAG" || true; } | head -n 1)
-          RANGE=HEAD
-          if [ -n "$PREVIOUS" ]; then RANGE="$PREVIOUS..HEAD"; fi
-          git-cliff --config frontend/cliff.toml "$RANGE" --tag "$TAG" --strip header > changelog.md
+          # No previous tag (e.g. the first release): process the whole history.
+          RANGE_ARGS=()
+          if [ -n "$PREVIOUS" ]; then RANGE_ARGS=("$PREVIOUS..HEAD"); fi
+          git-cliff --config frontend/cliff.toml "${RANGE_ARGS[@]}" --tag "$TAG" --strip header > changelog.md
           printf '# Frontend %s\n\nSource: `%s`\nBuild number: `%s`\n\n' "$VERSION" "$(git rev-parse HEAD)" "$GITHUB_RUN_NUMBER" > notes.md
           cat >> notes.md <<'NOTES'
           Assets: signed Android APK (direct install), Android AAB (future store use), and static web export.
