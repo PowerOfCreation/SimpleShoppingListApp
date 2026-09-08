@@ -7,7 +7,7 @@ import {
 import { ThemedText } from "./ThemedText"
 import React from "react"
 import { ContextMenu } from "./ContextMenu"
-import { RenameSheet } from "./RenameSheet"
+import { TextInputSheet } from "./TextInputSheet"
 import { ConfirmDialog } from "./ConfirmDialog"
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { useListSyncStatus } from "@/hooks/useListSyncStatus"
@@ -157,14 +157,14 @@ export function ShoppingListEntry(props: ShoppingListEntryProps) {
           },
         ]}
       />
-      <RenameSheet
+      <TextInputSheet
         testID={`shopping-list-rename-sheet-${props.id}`}
         visible={showRenameSheet}
         initialValue={props.listName}
         onClose={() => setShowRenameSheet(false)}
         onSave={props.onRename}
       />
-      <RenameSheet
+      <TextInputSheet
         testID={`shopping-list-duplicate-sheet-${props.id}`}
         title="Duplicate list"
         visible={showDuplicateSheet}
