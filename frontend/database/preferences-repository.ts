@@ -1,4 +1,5 @@
 import { getDatabase } from "./database"
+import { runExclusive } from "./write-lock"
 
 export async function getPreference(key: string): Promise<string | null> {
   const db = getDatabase()
@@ -11,9 +12,11 @@ export async function getPreference(key: string): Promise<string | null> {
 
 export async function setPreference(key: string, value: string): Promise<void> {
   const db = getDatabase()
-  await db.runAsync(
-    "INSERT OR REPLACE INTO app_preferences (key, value) VALUES (?, ?)",
-    key,
-    value
+  await runExclusive(() =>
+    db.runAsync(
+      "INSERT OR REPLACE INTO app_preferences (key, value) VALUES (?, ?)",
+      key,
+      value
+    )
   )
 }
