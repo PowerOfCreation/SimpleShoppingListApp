@@ -1,3 +1,5 @@
+{{- if .Values.ingress.host }}{{ fail "ingress.host was renamed to the top-level host (shared with httpRoute)" }}{{ end }}
+{{- if .Values.backend.ingress }}{{ fail "backend.ingress.path/pathType were renamed to backend.route.path/pathType" }}{{ end }}
 {{- if .Values.ingress.enabled }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
@@ -16,16 +18,16 @@ spec:
   {{- if .Values.ingress.tls.enabled }}
   tls:
     - hosts:
-        - {{ .Values.ingress.host | quote }}
+        - {{ .Values.host | quote }}
       secretName: {{ .Values.ingress.tls.secretName }}
   {{- end }}
   rules:
-    - host: {{ .Values.ingress.host | quote }}
+    - host: {{ .Values.host | quote }}
       http:
         paths:
           {{- if .Values.backend.enabled }}
-          - path: {{ .Values.backend.ingress.path }}
-            pathType: {{ .Values.backend.ingress.pathType }}
+          - path: {{ .Values.backend.route.path }}
+            pathType: {{ .Values.backend.route.pathType }}
             backend:
               service:
                 name: {{ include "imp-list.componentFullname" (dict "root" $ "component" "backend") }}

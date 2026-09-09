@@ -8,17 +8,28 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
-# One Ingress object, one host, path-routing per component (e.g. "/" for the
-# web frontend, "/api" for the backend). Each component's path lives under
-# its own key (backend.ingress.path) — see below.
+# External entry point. Ingress, Gateway API HTTPRoute, or both (both = the
+# migration window while switching from one to the other). Host is shared;
+# each component contributes its own path under its own <component>.route key.
+host: ""
+
 ingress:
   enabled: false
   className: ""
   annotations: {}
-  host: ""
   tls:
     enabled: false
     secretName: ""
+
+# Gateway API HTTPRoute. The chart does not create the Gateway itself —
+# point parentRefs at one that already exists in-cluster.
+httpRoute:
+  enabled: false
+  annotations: {}
+  parentRefs: []
+  #  - name: my-gateway
+  #    namespace: gateway-system
+  #    sectionName: https
 
 backend:
   enabled: true
@@ -41,11 +52,11 @@ backend:
   # Backend routes all live under /api/v1/*; /healthz and /metrics are
   # intentionally not exposed through this path (probes run in-cluster, the
   # ServiceMonitor scrapes the Service directly). For a dedicated API host
-  # instead of path-routing, set ingress.host=api.example.com and
-  # backend.ingress.path=/.
-  ingress:
+  # instead of path-routing, set host=api.example.com and
+  # backend.route.path=/.
+  route:
     path: /api
-    pathType: Prefix
+    pathType: Prefix # Prefix|Exact -> Ingress Prefix|Exact, HTTPRoute PathPrefix|Exact
 
   # GET /healthz is unauthenticated and only starts responding 200 after DB
   # migrations + Keycloak OIDC discovery have both succeeded at boot — a
