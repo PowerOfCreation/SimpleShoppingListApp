@@ -25,16 +25,27 @@ helm install my-imp-list oci://registry-1.docker.io/powerofcreation/imp-list \
   --set backend.keycloak.clientId=shopping-list
 ```
 
-## Ingress and path routing
+## External access: Ingress and/or Gateway API HTTPRoute
 
-`ingress.*` is shared (one Ingress object, one host, optional TLS); each
-component contributes its own path under its own `<component>.ingress.path`
-key. The backend defaults to `backend.ingress.path=/api` — its routes all
-live under `/api/v1/*`, and `/healthz`/`/metrics` are intentionally not
-exposed through the Ingress (probes run in-cluster, the ServiceMonitor
-scrapes the Service directly). For a dedicated API host instead of
-path-routing, set `ingress.host=api.example.com` and
-`backend.ingress.path=/`.
+`host` is shared across both; each component contributes its own path under
+its own `<component>.route.path` key. The backend defaults to
+`backend.route.path=/api` — its routes all live under `/api/v1/*`, and
+`/healthz`/`/metrics` are intentionally not exposed externally (probes run
+in-cluster, the ServiceMonitor scrapes the Service directly). For a
+dedicated API host instead of path-routing, set `host=api.example.com` and
+`backend.route.path=/`.
+
+- **`ingress.enabled=true`** renders a `networking.k8s.io/v1` Ingress
+  (`ingress.className`, `ingress.tls.*`).
+- **`httpRoute.enabled=true`** renders a `gateway.networking.k8s.io/v1`
+  HTTPRoute. The chart does not create the Gateway — set
+  `httpRoute.parentRefs` to point at one that already exists in-cluster.
+- Both can be enabled at once — that's the supported way to migrate from
+  Ingress to Gateway API without a cutover window.
+
+Upgrading from a chart version before this: `ingress.host` was renamed to
+the top-level `host`, and `backend.ingress.path`/`pathType` to
+`backend.route.path`/`pathType`.
 
 ## Credentials
 
