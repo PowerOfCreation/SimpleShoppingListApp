@@ -43,7 +43,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_VERSION: ${{ inputs.version }}
           CHANNEL: ${{ inputs.channel }}
-        run: bash frontend/scripts/release-version.sh
+          TAG_PREFIX: frontend-v
+          CLIFF_CONFIG: frontend/cliff.toml
+        run: bash scripts/release-version.sh
 
   build:
     needs: prepare
