@@ -119,10 +119,15 @@ jobs:
       - name: 🔥 Smoke test (helm install + helm test against the chart)
         run: |
           set -euo pipefail
+          # KEYCLOAK_ISSUER must be reachable: the backend fetches the OIDC
+          # discovery document at startup and treats failure as fatal, unlike
+          # helm lint/template above which never execute the container.
+          # Points at the real, shared, hosted SSO instance (never run
+          # locally, see AGENTS.md), dev realm since this runs at PR time.
           helm install imp-list-smoke charts/imp-list \
             --set backend.secret.databaseUrl="host=postgres user=postgres password=smoke dbname=todos port=5432 sslmode=disable" \
-            --set backend.keycloak.issuer="https://example.invalid/realms/placeholder" \
-            --set backend.keycloak.clientId="placeholder" \
+            --set backend.keycloak.issuer="https://sso.ops.light-dev-solutions.de/realms/user-apps-dev" \
+            --set backend.keycloak.clientId="shopping-list" \
             --wait --timeout 90s
           helm test imp-list-smoke --logs
 
