@@ -37,10 +37,13 @@ Call with (dict "root" $ "component" "backend").
 Labels that don't select anything — safe to put on a Pod that must NOT
 become a Service endpoint (e.g. a test hook), unlike imp-list.selectorLabels.
 Call with (dict "root" $ "component" "backend" "version" $.Values.backend.image.tag).
+"version" may be digest-pinned ("1.2.3@sha256:...") — that's fine for the
+image reference but too long/invalid as a label value, so only the tag
+portion before "@" is used here.
 */}}
 {{- define "imp-list.commonLabels" -}}
 helm.sh/chart: {{ include "imp-list.chart" .root }}
-app.kubernetes.io/version: {{ .version | default .root.Chart.AppVersion | quote }}
+app.kubernetes.io/version: {{ (.version | default .root.Chart.AppVersion | toString | splitList "@" | first) | quote }}
 app.kubernetes.io/managed-by: {{ .root.Release.Service }}
 app.kubernetes.io/part-of: imp-list
 {{- end }}
