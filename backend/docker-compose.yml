@@ -23,7 +23,7 @@ services:
       DATABASE_URL: "host=postgres user=postgres password=postgres dbname=todos port=5432 sslmode=disable"
       # Same hosted Keycloak instance/client the frontend uses (never run
       # locally). Required - the API refuses to start without it.
-      KEYCLOAK_ISSUER: "https://sso.ops.light-dev-solutions.de/realms/user-apps"
+      KEYCLOAK_ISSUER: "https://sso.ops.light-dev-solutions.de/realms/user-apps-dev"
       KEYCLOAK_CLIENT_ID: "shopping-list"
       LOG_LEVEL: "info"
     depends_on:

@@ -53,7 +53,7 @@ refreshes the token when needed and returns `null` when signed out.
 `.env` (gitignored, template in `.env.example`):
 
 ```
-EXPO_PUBLIC_KEYCLOAK_ISSUER=https://sso.ops.light-dev-solutions.de/realms/user-apps
+EXPO_PUBLIC_KEYCLOAK_ISSUER=https://sso.ops.light-dev-solutions.de/realms/user-apps-dev
 EXPO_PUBLIC_KEYCLOAK_CLIENT_ID=shopping-list
 ```
 
@@ -64,7 +64,14 @@ login is not configured instead of failing.
 
 Jest does not load `.env`; defaults are set in `scripts/jestSetupFile.ts`.
 
-### Keycloak client (`shopping-list`, realm `user-apps`)
+### Keycloak client (`shopping-list`)
+
+Separate realms per environment on the same hosted instance: `user-apps-dev`
+for local/dev builds, `user-apps` for production (set via
+`EXPO_PUBLIC_KEYCLOAK_ISSUER` for the app, `KEYCLOAK_ISSUER` for the backend —
+see `.env.example` / `docker-compose.yml` for dev, the release workflows'
+`vars.EXPO_PUBLIC_KEYCLOAK_ISSUER` / hardcoded smoke-test issuer for prod).
+Each realm needs its own `shopping-list` client with the settings below.
 
 - Access type **public**, standard flow on, PKCE method `S256`
 - Client scope `offline_access` assigned (otherwise no long-lived refresh token)
@@ -160,7 +167,7 @@ adb shell am start -a android.intent.action.VIEW \
 
 # Does Keycloak accept the redirect URI? (200 = yes, 400 = not registered)
 curl -s -o /dev/null -w '%{http_code}\n' \
-  'https://sso.ops.light-dev-solutions.de/realms/user-apps/protocol/openid-connect/auth?client_id=shopping-list&response_type=code&scope=openid&redirect_uri=de.lightdevsolutions.sholist.dev%3A%2F%2Foauth2redirect&state=s&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256'
+  'https://sso.ops.light-dev-solutions.de/realms/user-apps-dev/protocol/openid-connect/auth?client_id=shopping-list&response_type=code&scope=openid&redirect_uri=de.lightdevsolutions.sholist.dev%3A%2F%2Foauth2redirect&state=s&code_challenge=E9Melhoa2OwvFrEMTJguCHaoeK1t8URWbuGJSstw-cM&code_challenge_method=S256'
 
 # What did the app actually do?
 adb logcat -d -v time | grep -E "AuthService|oauth2redirect"
