@@ -50,7 +50,9 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           INPUT_VERSION: ${{ inputs.version }}
           CHANNEL: ${{ inputs.channel }}
-        run: bash charts/imp-list/scripts/release-version.sh
+          TAG_PREFIX: imp-list-chart-v
+          CLIFF_CONFIG: charts/imp-list/cliff.toml
+        run: bash scripts/release-version.sh
 
       - name: 📝 Generate changelog (charts/imp-list/** commits only)
         id: changelog
