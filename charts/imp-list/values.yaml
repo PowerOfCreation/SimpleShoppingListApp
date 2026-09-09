@@ -39,7 +39,7 @@ backend:
     repository: docker.io/powerofcreation/imp-list-backend
     # Kept current automatically by Renovate's built-in helm-values manager
     # whenever .github/workflows/backend-release.yml promotes a new tag.
-    tag: "0.1.0"
+    tag: "0.2.0@sha256:dd504d906649d2ced5f7241d7c55476411d4d0fb6a0f84a1418084828a745b8b"
     pullPolicy: IfNotPresent
 
   # The backend listens on a hardcoded :8080 (no PORT env var) — targetPort
