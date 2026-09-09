@@ -5,6 +5,16 @@ on:
     tags:
       - "imp-list-chart-v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        type: choice
+        options: [rc, stable]
+        default: rc
+      version:
+        description: 'Version (e.g. 1.2.0); empty = conventional-commit bump since last stable'
+        type: string
+        required: false
 
 env:
   CHART_OCI_REF: oci://registry-1.docker.io/powerofcreation
@@ -25,48 +35,22 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: 🏷️ Determine trigger tag
-        id: trigger
-        run: |
-          set -euo pipefail
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: 🛠️ Install git-cliff
-        if: steps.trigger.outputs.tag == ''
         uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
         with:
           tool: git-cliff
 
-      # Only runs for workflow_dispatch (no trigger tag). Just computes and
-      # reserves the version string - the tag itself isn't created until
-      # "🚀 Create draft release" (via --target, only if it doesn't already
-      # exist), so a failed run up to and including the OCI push never
-      # leaves a dangling tag with no release behind it.
-      - name: 🔖 Compute next version
-        if: steps.trigger.outputs.tag == ''
-        id: bump
-        run: |
-          set -euo pipefail
-          NEXT_TAG=$(git-cliff --config charts/imp-list/cliff.toml --bumped-version)
-          if [ -n "$(git ls-remote --tags origin "refs/tags/${NEXT_TAG}")" ]; then
-            echo "::error::Refusing to create release for already-existing tag ${NEXT_TAG}"
-            exit 1
-          fi
-          echo "tag=${NEXT_TAG}" >> "$GITHUB_OUTPUT"
-
+      # The tag itself isn't created until "🚀 Create draft release" (via
+      # --target, only if it doesn't already exist), so a failed run up to
+      # and including the OCI push never leaves a dangling tag with no
+      # release behind it.
       - name: 🧮 Resolve release tag/version
         id: release
-        run: |
-          set -euo pipefail
-          TAG="${{ steps.trigger.outputs.tag }}${{ steps.bump.outputs.tag }}"
-          if [ -z "$TAG" ]; then
-            echo "::error::Could not resolve a release tag"
-            exit 1
-          fi
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "version=${TAG#imp-list-chart-v}" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+        run: bash charts/imp-list/scripts/release-version.sh
 
       - name: 📝 Generate changelog (charts/imp-list/** commits only)
         id: changelog
@@ -196,6 +180,7 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
           CHANGELOG: ${{ steps.changelog.outputs.content }}
           CHART_DIGEST: ${{ steps.push.outputs.digest }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
         run: |
           set -euo pipefail
           {
@@ -219,6 +204,7 @@ jobs:
             --draft \
             --title "imp-list chart ${TAG}" \
             --notes-file notes.md \
+            --prerelease="$PRERELEASE" \
             --target "${{ github.sha }}"; do
             [ "$n" -ge "$max" ] && { echo "::error::release create failed after $max attempts"; exit 1; }
             echo "::warning::release create failed (attempt $n/$max), retrying in $((n * 5))s"
