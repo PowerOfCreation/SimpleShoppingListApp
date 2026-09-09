@@ -66,3 +66,74 @@ jobs:
             --set httpRoute.parentRefs[0].sectionName=https \
             --api-versions gateway.networking.k8s.io/v1 \
             > /dev/null
+
+      # helm template/lint only check the chart against the OpenAPI *schema*
+      # - they never caught the Renovate-driven backend.image.tag digest pin
+      # (e.g. "0.2.0@sha256:...") that broke the app.kubernetes.io/version
+      # label at install time (label value rules are API-server admission
+      # checks, not part of the schema). A real install against a real API
+      # server is the only thing that actually validates that, so run the
+      # same install this repo's release smoke test does, here, at PR time.
+      - name: 🛠️ Create kind cluster
+        uses: helm/kind-action@06c1ae10762d3b9c1644e7fe69596ae519e015a2 # v1.15.0
+
+      - name: 🐘 Deploy ephemeral Postgres into kind
+        run: |
+          set -euo pipefail
+          kubectl apply -f - <<'EOF'
+          apiVersion: v1
+          kind: Pod
+          metadata:
+            name: postgres
+            labels:
+              app: postgres
+          spec:
+            containers:
+              - name: postgres
+                image: postgres:18-alpine@sha256:9a8afca54e7861fd90fab5fdf4c42477a6b1cb7d293595148e674e0a3181de15
+                env:
+                  - name: POSTGRES_USER
+                    value: postgres
+                  - name: POSTGRES_PASSWORD
+                    value: smoke
+                  - name: POSTGRES_DB
+                    value: todos
+                readinessProbe:
+                  exec:
+                    command: ["pg_isready", "-U", "postgres"]
+                  initialDelaySeconds: 2
+                  periodSeconds: 2
+          ---
+          apiVersion: v1
+          kind: Service
+          metadata:
+            name: postgres
+          spec:
+            selector:
+              app: postgres
+            ports:
+              - port: 5432
+          EOF
+          kubectl wait --for=condition=Ready pod/postgres --timeout=60s
+
+      - name: 🔥 Smoke test (helm install + helm test against the chart)
+        run: |
+          set -euo pipefail
+          helm install imp-list-smoke charts/imp-list \
+            --set backend.secret.databaseUrl="host=postgres user=postgres password=smoke dbname=todos port=5432 sslmode=disable" \
+            --set backend.keycloak.issuer="https://example.invalid/realms/placeholder" \
+            --set backend.keycloak.clientId="placeholder" \
+            --wait --timeout 90s
+          helm test imp-list-smoke --logs
+
+      - name: Smoke test debug info on failure
+        if: failure()
+        run: |
+          kubectl get pods -o wide || true
+          kubectl describe pod -l app.kubernetes.io/instance=imp-list-smoke || true
+          kubectl logs -l app.kubernetes.io/instance=imp-list-smoke --all-containers --tail=200 || true
+          kubectl logs pod/postgres --tail=100 || true
+
+      - name: 🧹 Tear down smoke test release
+        if: always()
+        run: helm uninstall imp-list-smoke || true
