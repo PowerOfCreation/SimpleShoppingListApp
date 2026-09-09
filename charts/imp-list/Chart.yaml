@@ -13,7 +13,7 @@ version: 0.0.0-unreleased
 # exists, this becomes an orientation value only — the authoritative
 # per-component version is the app.kubernetes.io/version label, set per
 # Deployment from that component's own image.tag (see _helpers.tpl).
-appVersion: "0.1.0"
+appVersion: "0.2.0"
 home: https://github.com/PowerOfCreation/SimpleShoppingListApp
 sources:
   - https://github.com/PowerOfCreation/SimpleShoppingListApp
