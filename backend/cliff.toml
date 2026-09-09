@@ -15,7 +15,7 @@ trim = true
 conventional_commits = true
 filter_unconventional = false
 protect_breaking_commits = true
-tag_pattern = "backend-v[0-9]*"
+tag_pattern = "^backend-v[0-9]+\\.[0-9]+\\.[0-9]+$"
 include_paths = ["backend/**"]
 commit_parsers = [
   { message = "^feat", group = "Features" },

@@ -5,6 +5,16 @@ on:
     tags:
       - "backend-v[0-9]+.[0-9]+.[0-9]+"
   workflow_dispatch:
+    inputs:
+      channel:
+        description: Release channel
+        type: choice
+        options: [rc, stable]
+        default: rc
+      version:
+        description: 'Version (e.g. 1.2.0); empty = conventional-commit bump since last stable'
+        type: string
+        required: false
 
 env:
   IMAGE: docker.io/powerofcreation/imp-list-backend
@@ -27,47 +37,23 @@ jobs:
           fetch-depth: 0
           fetch-tags: true
 
-      - name: 🏷️ Determine trigger tag
-        id: trigger
-        run: |
-          set -euo pipefail
-          if [ "${{ github.ref_type }}" = "tag" ]; then
-            echo "tag=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
-          fi
-
       - name: 🛠️ Install git-cliff
-        if: steps.trigger.outputs.tag == ''
         uses: taiki-e/install-action@e67fa11c4b9316fa714ddf0abed07a0c3143b95b # v2.87.4
         with:
           tool: git-cliff
 
-      # Only runs for workflow_dispatch (no trigger tag). Just computes and
-      # reserves the version string - the tag itself is created later, only
-      # after the smoke test passes (see "🏷️ Create and push release tag"),
-      # so a failed run never leaves a dangling tag with no release behind it.
-      - name: 🔖 Compute next version
-        if: steps.trigger.outputs.tag == ''
-        id: bump
-        run: |
-          set -euo pipefail
-          NEXT_TAG=$(git-cliff --config backend/cliff.toml --bumped-version)
-          if [ -n "$(git ls-remote --tags origin "refs/tags/${NEXT_TAG}")" ]; then
-            echo "::error::Refusing to create release for already-existing tag ${NEXT_TAG}"
-            exit 1
-          fi
-          echo "tag=${NEXT_TAG}" >> "$GITHUB_OUTPUT"
-
+      # The tag itself is created later, only after the smoke test passes
+      # (see "🏷️ Create and push release tag"), so a failed run never
+      # leaves a dangling tag with no release behind it.
       - name: 🧮 Resolve release tag/version
         id: release
-        run: |
-          set -euo pipefail
-          TAG="${{ steps.trigger.outputs.tag }}${{ steps.bump.outputs.tag }}"
-          if [ -z "$TAG" ]; then
-            echo "::error::Could not resolve a release tag"
-            exit 1
-          fi
-          echo "tag=${TAG}" >> "$GITHUB_OUTPUT"
-          echo "version=${TAG#backend-v}" >> "$GITHUB_OUTPUT"
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          INPUT_VERSION: ${{ inputs.version }}
+          CHANNEL: ${{ inputs.channel }}
+          TAG_PREFIX: backend-v
+          CLIFF_CONFIG: backend/cliff.toml
+        run: bash scripts/release-version.sh
 
       - name: 📝 Generate changelog (backend/** commits only)
         id: changelog
@@ -164,13 +150,13 @@ jobs:
         if: failure()
         run: docker logs api 2>&1 | tail -100 || true
 
-      # Only runs for workflow_dispatch (no trigger tag) - and only once the
-      # smoke test above has passed (this step is skipped like any other
-      # step here if a prior step failed). Pushed with GITHUB_TOKEN, which by
-      # GitHub's own loop-prevention design does NOT trigger a second run of
-      # this workflow.
+      # Only runs for workflow_dispatch (a tag push already has the tag) -
+      # and only once the smoke test above has passed (this step is skipped
+      # like any other step here if a prior step failed). Pushed with
+      # GITHUB_TOKEN, which by GitHub's own loop-prevention design does NOT
+      # trigger a second run of this workflow.
       - name: 🏷️ Create and push release tag (only after a passing smoke test)
-        if: steps.trigger.outputs.tag == ''
+        if: github.ref_type != 'tag'
         env:
           TAG: ${{ steps.release.outputs.tag }}
         run: |
@@ -180,24 +166,26 @@ jobs:
           git tag -a "$TAG" -m "$TAG"
           git push origin "$TAG"
 
+      # Floating MAJOR/MINOR tags are only moved for stable releases - an RC
+      # must never become what "docker pull imp-list-backend:1" resolves to.
       - name: 🎯 Promote tags (no rebuild - same manifest as the smoke test)
         env:
           DIGEST: ${{ steps.build.outputs.digest }}
           TAG: ${{ steps.release.outputs.tag }}
           VERSION: ${{ steps.release.outputs.version }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
         run: |
           set -euo pipefail
-          MAJOR="${VERSION%%.*}"
-          MINOR="${VERSION%.*}"
+          TAGS=("$VERSION" "sha-${{ github.sha }}")
+          if [ "$PRERELEASE" != true ]; then
+            TAGS+=("${VERSION%.*}" "${VERSION%%.*}")
+          fi
 
-          docker buildx imagetools create \
-            --tag "${IMAGE}:${VERSION}" \
-            --tag "${IMAGE}:${MINOR}" \
-            --tag "${IMAGE}:${MAJOR}" \
-            --tag "${IMAGE}:sha-${{ github.sha }}" \
-            "${IMAGE}@${DIGEST}"
+          ARGS=()
+          for t in "${TAGS[@]}"; do ARGS+=(--tag "${IMAGE}:${t}"); done
+          docker buildx imagetools create "${ARGS[@]}" "${IMAGE}@${DIGEST}"
 
-          for t in "${VERSION}" "${MINOR}" "${MAJOR}" "sha-${{ github.sha }}"; do
+          for t in "${TAGS[@]}"; do
             got=$(docker buildx imagetools inspect "${IMAGE}:${t}" --format '{{.Manifest.Digest}}')
             if [ "$got" != "$DIGEST" ]; then
               echo "::error::${t} points to ${got}, expected ${DIGEST}"
@@ -233,6 +221,7 @@ jobs:
           VERSION: ${{ steps.release.outputs.version }}
           DIGEST: ${{ steps.build.outputs.digest }}
           CHANGELOG: ${{ steps.changelog.outputs.content }}
+          PRERELEASE: ${{ steps.release.outputs.prerelease }}
         run: |
           set -euo pipefail
           {
@@ -263,6 +252,7 @@ jobs:
           until gh release create "$TAG" \
             --title "Backend ${TAG}" \
             --notes-file notes.md \
+            --prerelease="$PRERELEASE" \
             --target "${{ github.sha }}"; do
             [ "$n" -ge "$max" ] && { echo "::error::gh release create failed after $max attempts"; exit 1; }
             echo "::warning::gh release create failed (attempt $n/$max), retrying in $((n * 5))s"
