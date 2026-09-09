@@ -15,6 +15,18 @@
       minimumReleaseAge: null,
     },
     {
+      // Our own backend image - we control the release, no need to wait
+      // out the usual third-party stability window.
+      matchDatasources: [
+        'docker',
+      ],
+      matchDepNames: [
+        'docker.io/powerofcreation/imp-list-backend',
+        'powerofcreation/imp-list-backend',
+      ],
+      minimumReleaseAge: null,
+    },
+    {
       matchFileNames: [
         'frontend/**',
       ],
