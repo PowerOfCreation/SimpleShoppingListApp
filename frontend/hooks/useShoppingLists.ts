@@ -2,7 +2,7 @@ import { useState, useCallback, useEffect } from "react"
 import { ShoppingListOverview } from "@/types/ShoppingListOverview"
 import { getShoppingListService } from "@/api/shopping-list-service"
 import { createLogger } from "@/api/common/logger"
-import { onListDataChanged } from "@/api/sync/sync-events"
+import { onListDataChanged, onSyncListsChanged } from "@/api/sync/sync-events"
 
 const logger = createLogger("useShoppingLists")
 
@@ -44,11 +44,16 @@ export function useShoppingLists() {
 
   // A pull can create/rename/delete a list, or change its ingredient
   // counts, in the background - refetch the overview whenever any list's
-  // data changed rather than tracking exactly what changed.
+  // data changed rather than tracking exactly what changed. Sync-enabled
+  // can also flip outside this screen's own toggle (giveUpOnGroup, a pulled
+  // event, discoverLists) - see useListSyncEnabled for the same pattern.
   useEffect(() => {
-    return onListDataChanged(() => {
-      refetch()
-    })
+    const unsubData = onListDataChanged(() => refetch())
+    const unsubSync = onSyncListsChanged(() => refetch())
+    return () => {
+      unsubData()
+      unsubSync()
+    }
   }, [refetch])
 
   return { lists, isLoading, error, refetch, updateList }
