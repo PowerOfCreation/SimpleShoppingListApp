@@ -1,5 +1,6 @@
 import { getListSyncStatus } from "../list-sync-status"
-import { SyncEngine, MAX_DRAIN_BATCHES } from "../sync-engine"
+import { getSyncStatus, onSyncStatusChanged } from "../sync-status"
+import { SyncEngine, MAX_DRAIN_BATCHES, MAX_PULL_PAGES } from "../sync-engine"
 import { OutboxRepository } from "@/database/outbox-repository"
 import { EventRepository } from "@/database/event-repository"
 import { SyncCursorRepository } from "@/database/sync-cursor-repository"
@@ -20,6 +21,12 @@ jest.mock("@/database/event-repository")
 jest.mock("@/database/sync-cursor-repository")
 jest.mock("@/database/list-sync-state-repository")
 jest.mock("@/api/sync/sync-client")
+jest.mock("@/api/auth/auth-service", () => ({
+  getValidAccessToken: jest.fn(async () => ({
+    success: true,
+    getValue: () => "valid-token",
+  })),
+}))
 jest.mock("@/api/sync/event-applier")
 
 const MockOutboxRepository = OutboxRepository as jest.MockedClass<
@@ -300,6 +307,56 @@ describe("SyncEngine", () => {
       expect(client.sendEvents).toHaveBeenCalledTimes(MAX_DRAIN_BATCHES)
     })
 
+    it('does not falsely mark a list "error" whose only batch already succeeded, just because the rest of a long flush() is still going', async () => {
+      jest.useFakeTimers()
+      try {
+        const engineWithSmallBatch = new SyncEngine(
+          outbox,
+          events,
+          client,
+          cursor,
+          applier,
+          listSyncState,
+          1
+        )
+        // list-A appears (and succeeds) in the very first batch only; every
+        // batch after that belongs to list-B, and list-A never comes back.
+        // Each batch "takes" 5s - under list-A's own stale-guard budget for
+        // a single batch, but the 19 list-B batches after it total well
+        // past it. Only touching every already-open list pass on every
+        // batch (not just the ones whose own group shows up in it) can
+        // keep list-A's pass, whose actual push already succeeded, from
+        // being falsely declared stale while the rest of the drain runs.
+        const listIdByEvent = new Map<string, string>()
+        let batchCount = 0
+        outbox.getPending.mockImplementation(async () => {
+          jest.advanceTimersByTime(5_000)
+          const eventId = `e${batchCount}`
+          const listId = batchCount === 0 ? "list-A" : "list-B"
+          listIdByEvent.set(eventId, listId)
+          batchCount++
+          return Result.ok([makeOutboxRow(eventId)])
+        })
+        events.getByEventIds.mockImplementation(async (ids: string[]) =>
+          Result.ok(
+            ids.map((id) =>
+              makeEvent({ event_id: id, list_id: listIdByEvent.get(id)! })
+            )
+          )
+        )
+        client.sendEvents.mockImplementation(async (sent) =>
+          Result.ok(sent.map((event) => ({ eventId: event.event_id, seq: 1 })))
+        )
+
+        await engineWithSmallBatch.flush()
+
+        expect(outbox.getPending).toHaveBeenCalledTimes(MAX_DRAIN_BATCHES)
+        expect(getListSyncStatus("list-A")).toBe("synced")
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+
     it("keeps draining subsequent pages after a send fails, rather than stopping the whole flush", async () => {
       // A dead batch/list must not block everything queued behind it - see
       // the PR #249 review on the original all-or-nothing flush().
@@ -487,6 +544,87 @@ describe("SyncEngine", () => {
       await first
       expect(client.sendEvents).toHaveBeenCalledTimes(1)
     })
+
+    it('does not falsely mark a list "error" while sendGroup\'s per-event bumpAttempt loop runs long', async () => {
+      jest.useFakeTimers()
+      try {
+        const rows = [
+          makeOutboxRow("e1"),
+          makeOutboxRow("e2"),
+          makeOutboxRow("e3"),
+        ]
+        outbox.getPending.mockResolvedValue(Result.ok(rows))
+        events.getByEventIds.mockResolvedValue(
+          Result.ok(rows.map((row) => makeEvent({ event_id: row.event_id })))
+        )
+        client.sendEvents.mockResolvedValue(
+          Result.ok(rows.map((row, i) => ({ eventId: row.event_id, seq: i })))
+        )
+        // Each write alone is comfortably under the stale budget, but the
+        // three together aren't - only possible without a false "error"
+        // because bumpAttempt's own loop touches after every write, not
+        // just once when the whole group is done.
+        outbox.bumpAttempt.mockImplementation(async () => {
+          jest.advanceTimersByTime(12_000)
+          return Result.ok(undefined)
+        })
+
+        await engine.flush()
+
+        expect(getListSyncStatus("list-1")).toBe("synced")
+      } finally {
+        jest.useRealTimers()
+      }
+    })
+  })
+
+  it("releases flush and in-flight rows after a real client body timeout, ignoring late acknowledgements", async () => {
+    jest.useFakeTimers()
+    try {
+      const { SyncClient: RealSyncClient } =
+        jest.requireActual<typeof import("../sync-client")>("../sync-client")
+      let resolveBody!: (body: unknown) => void
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          status: 200,
+          json: () =>
+            new Promise((resolve) => {
+              resolveBody = resolve
+            }),
+        })
+        .mockResolvedValue({
+          ok: true,
+          status: 200,
+          json: async () => ({ acked: [{ event_id: "evt-1", seq: 1 }] }),
+        })
+      const realEngine = new SyncEngine(
+        outbox,
+        events,
+        new RealSyncClient(fetchMock),
+        cursor,
+        applier,
+        listSyncState
+      )
+      outbox.getPending.mockResolvedValue(Result.ok([makeOutboxRow("evt-1")]))
+      events.getByEventIds.mockResolvedValue(Result.ok([makeEvent()]))
+      const first = realEngine.flush()
+      await jest.advanceTimersByTimeAsync(10_000)
+      expect(await first).toBe(false)
+      expect(getListSyncStatus("list-1")).toBe("error")
+      expect(outbox.markSynced).not.toHaveBeenCalled()
+      resolveBody({ acked: [{ event_id: "evt-1", seq: 1 }] })
+      await jest.advanceTimersByTimeAsync(0)
+      expect(outbox.markSynced).not.toHaveBeenCalled()
+      expect(await realEngine.flush()).toBe(true)
+      expect(fetchMock).toHaveBeenCalledTimes(2)
+      expect(outbox.markSynced).toHaveBeenCalledWith(["evt-1"])
+      expect(getListSyncStatus("list-1")).toBe("synced")
+      expect(jest.getTimerCount()).toBe(0)
+    } finally {
+      jest.useRealTimers()
+    }
   })
 
   describe("push confirmations", () => {
@@ -548,9 +686,10 @@ describe("SyncEngine", () => {
 
       expect(client.getKnownEventIds).toHaveBeenCalledWith(["list-1"])
       expect(events.getByListId).toHaveBeenCalledWith("list-1")
-      expect(events.enqueueExistingForSync).toHaveBeenCalledWith([
-        expect.objectContaining({ event_id: "missing-evt" }),
-      ])
+      expect(events.enqueueExistingForSync).toHaveBeenCalledWith(
+        [expect.objectContaining({ event_id: "missing-evt" })],
+        expect.any(Function)
+      )
       expect(outbox.resetToPending).toHaveBeenCalledWith(["missing-evt"])
       // Self-heal should flush right away rather than waiting for the next
       // unrelated trigger.
@@ -695,9 +834,10 @@ describe("SyncEngine", () => {
       await engine.reconcile(["list-1"])
 
       expect(cursor.clear).not.toHaveBeenCalled()
-      expect(events.enqueueExistingForSync).toHaveBeenCalledWith([
-        expect.objectContaining({ event_id: "missing-evt" }),
-      ])
+      expect(events.enqueueExistingForSync).toHaveBeenCalledWith(
+        [expect.objectContaining({ event_id: "missing-evt" })],
+        expect.any(Function)
+      )
     })
 
     it("does not repair a list that's merely missing from the server (handled by re-enqueue instead)", async () => {
@@ -710,6 +850,56 @@ describe("SyncEngine", () => {
 
       expect(cursor.clear).not.toHaveBeenCalled()
       expect(events.enqueueExistingForSync).toHaveBeenCalled()
+    })
+
+    it('does not falsely mark a list "error" from reconcile\'s own pass while the repair it triggered runs a slow multi-page pull', async () => {
+      jest.useFakeTimers()
+      try {
+        client.getKnownEventIds.mockResolvedValue(Result.ok(["e1"]))
+        events.getByListId.mockResolvedValue(
+          Result.ok([makeEvent({ event_id: "e1", seq: null })])
+        )
+        client.getListHeads.mockResolvedValue(
+          Result.ok([{ listId: "list-1", seq: 5, eventId: "e1" }])
+        )
+        // Caught up to the head on the first read (before repair clears the
+        // cursor), then back to 0 on every read after (what a real clear()
+        // would produce).
+        cursor.get
+          .mockResolvedValueOnce(
+            Result.ok({
+              list_id: "list-1",
+              last_seen_seq: 5,
+              last_pulled_at: null,
+            })
+          )
+          .mockResolvedValue(
+            Result.ok({
+              list_id: "list-1",
+              last_seen_seq: 0,
+              last_pulled_at: null,
+            })
+          )
+        // Five slow pages - comfortably past reconcile's own stale budget in
+        // total, even though reconcile's pass never touches itself. Only the
+        // nested pull's explicit parent progress callback keeps it alive.
+        client.getEventsSince.mockImplementation(async (_listId, since) => {
+          jest.advanceTimersByTime(25_000)
+          const nextSeq = (since as number) + 1
+          return Result.ok({
+            events: [makeEvent({ seq: nextSeq })],
+            nextSeq,
+            hasMore: nextSeq < 5,
+          })
+        })
+
+        await engine.reconcile(["list-1"])
+
+        expect(cursor.clear).toHaveBeenCalledWith("list-1")
+        expect(getListSyncStatus("list-1")).toBe("synced")
+      } finally {
+        jest.useRealTimers()
+      }
     })
   })
 
@@ -771,7 +961,8 @@ describe("SyncEngine", () => {
       expect(applier.apply).toHaveBeenCalledWith(
         "list-1",
         [makeEvent({ event_id: "e1" })],
-        5
+        5,
+        expect.any(Function)
       )
       // Pull always ends with a flush - local state should reflect remote
       // before anything new goes out, but pending pushes still go out.
@@ -814,6 +1005,129 @@ describe("SyncEngine", () => {
         expect.any(Number)
       )
       expect(applier.apply).toHaveBeenCalledTimes(2)
+    })
+
+    it.each(["complete", "concurrent advance", "failure"])(
+      "continues after the page budget with %s, keeping unfinished lists syncing",
+      async (outcome) => {
+        jest.useFakeTimers()
+        try {
+          const saved = new Map<string, number>()
+          cursor.get.mockImplementation(async (id) =>
+            Result.ok({
+              list_id: id,
+              last_seen_seq: saved.get(id) ?? 0,
+              last_pulled_at: null,
+            })
+          )
+          applier.apply.mockImplementation(async (id, _events, seq) => {
+            saved.set(id, seq)
+            return Result.ok({ applied: 1 })
+          })
+          client.getListHeads.mockResolvedValue(
+            Result.ok([
+              { listId: "list-1", seq: MAX_PULL_PAGES + 1, eventId: "e" },
+              { listId: "list-2", seq: 1, eventId: "e" },
+            ])
+          )
+          client.getEventsSince.mockImplementation(async (_id, since) =>
+            Result.ok({
+              events: [makeEvent({ seq: since + 1 })],
+              nextSeq: since + 1,
+              // Ongoing writes must not move this operation's captured target.
+              hasMore: true,
+            })
+          )
+          const pending = engine.pull(["list-1", "list-2"])
+          // Drain promise work without executing the continuation timer.
+          for (let i = 0; i < 100; i++) await flushMicrotasks()
+          expect(saved.get("list-1")).toBe(MAX_PULL_PAGES)
+          expect(saved.get("list-2")).toBe(1)
+          expect(getListSyncStatus("list-1")).toBe("syncing")
+          expect(getSyncStatus()).toBe("syncing")
+          expect(client.getEventsSince).toHaveBeenNthCalledWith(
+            MAX_PULL_PAGES + 1,
+            "list-2",
+            0,
+            expect.any(Number)
+          )
+          if (outcome === "concurrent advance")
+            saved.set("list-1", MAX_PULL_PAGES + 10)
+          if (outcome === "failure")
+            client.getEventsSince.mockResolvedValueOnce(
+              Result.fail(new SyncError("offline", true))
+            )
+          await jest.advanceTimersByTimeAsync(1)
+          expect(await pending).toBe(outcome !== "failure")
+          expect(saved.get("list-1")).toBe(
+            outcome === "concurrent advance"
+              ? MAX_PULL_PAGES + 10
+              : outcome === "failure"
+                ? MAX_PULL_PAGES
+                : MAX_PULL_PAGES + 1
+          )
+          expect(cursor.set).not.toHaveBeenCalled()
+          expect(getListSyncStatus("list-1")).toBe(
+            outcome === "failure" ? "error" : "synced"
+          )
+          expect(getSyncStatus()).toBe(
+            outcome === "failure" ? "error" : "synced"
+          )
+          expect(jest.getTimerCount()).toBe(0)
+        } finally {
+          jest.useRealTimers()
+        }
+      }
+    )
+
+    it("fails a non-advancing page instead of scheduling endless continuations", async () => {
+      client.getListHeads.mockResolvedValue(
+        Result.ok([{ listId: "list-1", seq: 5, eventId: "e" }])
+      )
+      client.getEventsSince.mockResolvedValue(
+        Result.ok({ events: [], nextSeq: 0, hasMore: true })
+      )
+      expect(await engine.pull(["list-1"])).toBe(false)
+      expect(client.getEventsSince).toHaveBeenCalledTimes(1)
+      expect(getListSyncStatus("list-1")).toBe("error")
+    })
+
+    it('never lets the aggregate sync status go "error" through a slow multi-page pull of a single list', async () => {
+      jest.useFakeTimers()
+      try {
+        cursor.get.mockResolvedValue(Result.ok(null))
+        client.getListHeads.mockResolvedValue(
+          Result.ok([{ listId: "list-1", seq: 5, eventId: "e" }])
+        )
+        // Each page "takes" 25s (under the per-request stale-guard budget)
+        // but resolving 5 of them totals well past it - only per-page
+        // touch(), not just the once-per-list touch after pullListToHead
+        // returns, can keep the aggregate watchdog from firing mid-pull.
+        client.getEventsSince.mockImplementation(async (_listId, since) => {
+          jest.advanceTimersByTime(25_000)
+          return Result.ok({
+            events: [makeEvent({ event_id: `e${since}` })],
+            nextSeq: since + 1,
+            hasMore: since < 4,
+          })
+        })
+        // pull() always flushes afterwards, and a quick successful flush
+        // would mask a transient "error" set mid-pull by re-arming a fresh
+        // pass - record every status the aggregate ever took on instead of
+        // just the final one.
+        const statusesSeen: string[] = []
+        const unsubscribe = onSyncStatusChanged(() =>
+          statusesSeen.push(getSyncStatus())
+        )
+
+        await engine.pull(["list-1"])
+        unsubscribe()
+
+        expect(client.getEventsSince).toHaveBeenCalledTimes(5)
+        expect(statusesSeen).not.toContain("error")
+      } finally {
+        jest.useRealTimers()
+      }
     })
 
     it("(b)/(c) skips pulling when already caught up, but still flushes", async () => {
@@ -868,10 +1182,10 @@ describe("SyncEngine", () => {
       expect(outbox.getPending).toHaveBeenCalled()
     })
 
-    it("skips a list id the server's head response omitted, without crashing", async () => {
+    it("fails an omitted head without blocking pending uploads", async () => {
       client.getListHeads.mockResolvedValue(Result.ok([]))
 
-      await expect(engine.pull(["list-1"])).resolves.toBe(true)
+      await expect(engine.pull(["list-1"])).resolves.toBe(false)
 
       expect(client.getEventsSince).not.toHaveBeenCalled()
       // Still flushes - a head lookup gap for one list must not block
@@ -893,7 +1207,11 @@ describe("SyncEngine", () => {
       expect(getListSyncStatus("pull-bad")).toBe("error")
       expect(getListSyncStatus("pull-good")).toBe("synced")
       client.getEventsSince.mockResolvedValue(
-        Result.ok({ events: [], nextSeq: 1, hasMore: false })
+        Result.ok({
+          events: [makeEvent({ seq: 1 })],
+          nextSeq: 1,
+          hasMore: false,
+        })
       )
       await engine.pull(["pull-bad"])
       expect(getListSyncStatus("pull-bad")).toBe("synced")

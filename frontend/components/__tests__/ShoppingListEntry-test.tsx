@@ -448,8 +448,8 @@ it("updates only the failed list and keeps a permanent rejection visible when di
     </>
   )
   act(() => {
-    startListSync("status-bad", "push")(false)
-    startListSync("status-good", "push")(true)
+    startListSync("status-bad", "push").finish(false)
+    startListSync("status-good", "push").finish(true)
   })
   expect(getByTestId("shopping-list-sync-icon-status-bad")).toHaveTextContent(
     /error/

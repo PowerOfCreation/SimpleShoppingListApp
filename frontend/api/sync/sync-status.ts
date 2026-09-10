@@ -1,3 +1,12 @@
+import { createLogger } from "@/api/common/logger"
+import {
+  startGuardedPass,
+  SyncPass,
+  SyncProgress,
+} from "@/api/sync/stale-pass-guard"
+
+const logger = createLogger("SyncStatus")
+
 /** Observational, device-local sync diagnostics for the current app session. */
 export type SyncStatus = "synced" | "syncing" | "error"
 
@@ -36,21 +45,34 @@ function update(next: Partial<SyncDetails>): void {
   for (const listener of listeners) listener()
 }
 
-/** Nested pull/flush passes count as one attempt. */
-export function reportSyncStarted(): void {
+/** Independent operations share their displayed outcome, not their deadline. */
+export function reportSyncStarted(parentProgress?: SyncProgress): SyncPass {
   if (activePasses++ === 0) {
     passFailed = false
     update({ status: "syncing", lastAttemptAt: Date.now(), error: null })
   }
-}
-
-export function reportSyncFinished(ok: boolean): void {
-  passFailed = (activePasses > 0 && passFailed) || !ok
-  activePasses = Math.max(0, activePasses - 1)
-  if (activePasses > 0) return
-  update({
-    status: passFailed ? "error" : "synced",
-    lastSuccessAt: passFailed ? details.lastSuccessAt : Date.now(),
-    error: passFailed ? "Sync failed. Please try again later." : null,
-  })
+  const settle = (ok: boolean) => {
+    passFailed ||= !ok
+    activePasses--
+    if (activePasses > 0 && !passFailed) return
+    update({
+      status: passFailed ? "error" : "synced",
+      lastSuccessAt: passFailed ? details.lastSuccessAt : Date.now(),
+      error: passFailed ? "Sync failed. Please try again later." : null,
+    })
+  }
+  const guard = startGuardedPass(
+    "global",
+    () => {
+      logger.warn("Sync operation stopped making progress")
+      settle(false)
+    },
+    parentProgress
+  )
+  return {
+    progress: guard.progress,
+    finish: (ok: boolean) => {
+      if (guard.finish()) settle(ok)
+    },
+  }
 }

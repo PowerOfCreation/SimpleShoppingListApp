@@ -1,13 +1,11 @@
 import { getValidAccessToken } from "@/api/auth/auth-service"
-import { syncConfig } from "@/api/sync/config"
+import { syncConfig, REQUEST_TIMEOUT_MS } from "@/api/sync/config"
 import { createLogger } from "@/api/common/logger"
 import { Result } from "@/api/common/result"
 import { SyncError } from "@/api/common/error-types"
 import { DomainEventRow } from "@/types/DomainEvent"
 
 const logger = createLogger("SyncClient")
-
-const REQUEST_TIMEOUT_MS = 10000
 
 /**
  * The wire shape the backend's SyncEventRequest expects. Notably:
@@ -185,25 +183,51 @@ export class SyncClient {
     return Result.ok(token)
   }
 
-  /**
-   * Runs one request under REQUEST_TIMEOUT_MS, mapping an abort/network
-   * failure to a retryable SyncError. Does not interpret the response
-   * (status checking and body parsing differ per endpoint) - callers get
-   * the raw Response back on success.
+  /** One deadline covers token acquisition, response headers and body parsing.
+   * Racing the deadline also settles callers if a transport ignores abort.
+   * Late token resolution must never start a request after the deadline.
    */
-  private async fetchWithTimeout(
+  private async request<T>(
     url: string,
     init: RequestInit,
-    networkErrorMessage: string
-  ): Promise<Result<Response, SyncError>> {
+    networkErrorMessage: string,
+    parse: (response: Response) => Promise<T>
+  ): Promise<Result<T, SyncError>> {
     const controller = new AbortController()
-    const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
-    try {
+    let timeout!: ReturnType<typeof setTimeout>
+    const deadline = new Promise<Result<T, SyncError>>((resolve) => {
+      timeout = setTimeout(() => {
+        resolve(Result.fail(new SyncError("Sync request timed out", true)))
+        controller.abort()
+      }, REQUEST_TIMEOUT_MS)
+    })
+    const work = async (): Promise<Result<T, SyncError>> => {
+      const tokenResult = await this.getAuthToken()
+      if (!tokenResult.success) return Result.fail(tokenResult.getError())
+      if (controller.signal.aborted) {
+        return Result.fail(new SyncError("Sync request timed out", true))
+      }
       const response = await this.fetchImpl(url, {
         ...init,
+        headers: {
+          ...init.headers,
+          Authorization: `Bearer ${tokenResult.getValue()}`,
+        },
         signal: controller.signal,
       })
-      return Result.ok(response)
+      if (controller.signal.aborted) {
+        return Result.fail(new SyncError("Sync request timed out", true))
+      }
+      if (!response.ok) {
+        return Result.fail(
+          nonRetryableError(response) ??
+            new SyncError(`Unexpected response status ${response.status}`, true)
+        )
+      }
+      return Result.ok(await parse(response))
+    }
+    try {
+      return await Promise.race([work(), deadline])
     } catch (error) {
       logger.warn(networkErrorMessage, error)
       return Result.fail(new SyncError(networkErrorMessage, true, error))
@@ -226,39 +250,18 @@ export class SyncClient {
       return Result.ok([])
     }
 
-    const tokenResult = await this.getAuthToken()
-    if (!tokenResult.success) {
-      return Result.fail(tokenResult.getError())
-    }
-
-    const responseResult = await this.fetchWithTimeout(
+    return this.request(
       syncConfig.eventsUrl,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${tokenResult.getValue()}`,
         },
         body: JSON.stringify(events.map(toWireEvent)),
       },
-      "Network error while sending events"
+      "Network error while sending events",
+      parseAcked
     )
-    if (!responseResult.success) {
-      return Result.fail(responseResult.getError())
-    }
-    const response = responseResult.getValue()!
-
-    if (!response.ok) {
-      const nonRetryable = nonRetryableError(response)
-      if (nonRetryable) {
-        return Result.fail(nonRetryable)
-      }
-      return Result.fail(
-        new SyncError(`Unexpected response status ${response.status}`, true)
-      )
-    }
-
-    return Result.ok(await parseAcked(response))
   }
 
   /**
@@ -277,40 +280,21 @@ export class SyncClient {
       return Result.ok([])
     }
 
-    const tokenResult = await this.getAuthToken()
-    if (!tokenResult.success) {
-      return Result.fail(tokenResult.getError())
-    }
-
-    const responseResult = await this.fetchWithTimeout(
+    return this.request(
       syncConfig.syncStateUrl,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${tokenResult.getValue()}`,
         },
         body: JSON.stringify({ list_ids: listIds }),
       },
-      "Network error while reconciling"
-    )
-    if (!responseResult.success) {
-      return Result.fail(responseResult.getError())
-    }
-    const response = responseResult.getValue()!
-
-    if (!response.ok) {
-      const nonRetryable = nonRetryableError(response)
-      if (nonRetryable) {
-        return Result.fail(nonRetryable)
+      "Network error while reconciling",
+      async (response) => {
+        const data = (await response.json()) as { known_event_ids?: string[] }
+        return data.known_event_ids ?? []
       }
-      return Result.fail(
-        new SyncError(`Unexpected response status ${response.status}`, true)
-      )
-    }
-
-    const data = (await response.json()) as { known_event_ids?: string[] }
-    return Result.ok(data.known_event_ids ?? [])
+    )
   }
 
   /**
@@ -326,47 +310,28 @@ export class SyncClient {
       return Result.ok([])
     }
 
-    const tokenResult = await this.getAuthToken()
-    if (!tokenResult.success) {
-      return Result.fail(tokenResult.getError())
-    }
-
-    const responseResult = await this.fetchWithTimeout(
+    return this.request(
       syncConfig.syncHeadUrl,
       {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
-          Authorization: `Bearer ${tokenResult.getValue()}`,
         },
         body: JSON.stringify({ list_ids: listIds }),
       },
-      "Network error while fetching list heads"
-    )
-    if (!responseResult.success) {
-      return Result.fail(responseResult.getError())
-    }
-    const response = responseResult.getValue()!
-
-    if (!response.ok) {
-      const nonRetryable = nonRetryableError(response)
-      if (nonRetryable) {
-        return Result.fail(nonRetryable)
+      "Network error while fetching list heads",
+      async (response) => {
+        const data = (await response.json()) as {
+          heads?: { list_id: string; seq: number; event_id: string | null }[]
+        }
+        const heads = (data.heads ?? []).map((h) => ({
+          listId: h.list_id,
+          seq: h.seq,
+          eventId: h.event_id,
+        }))
+        return heads
       }
-      return Result.fail(
-        new SyncError(`Unexpected response status ${response.status}`, true)
-      )
-    }
-
-    const data = (await response.json()) as {
-      heads?: { list_id: string; seq: number; event_id: string | null }[]
-    }
-    const heads = (data.heads ?? []).map((h) => ({
-      listId: h.list_id,
-      seq: h.seq,
-      eventId: h.event_id,
-    }))
-    return Result.ok(heads)
+    )
   }
 
   /**
@@ -380,44 +345,25 @@ export class SyncClient {
     sinceSeq: number,
     limit = 200
   ): Promise<Result<EventsPage, SyncError>> {
-    const tokenResult = await this.getAuthToken()
-    if (!tokenResult.success) {
-      return Result.fail(tokenResult.getError())
-    }
-
     const url = `${syncConfig.syncEventsUrl}?list_id=${encodeURIComponent(listId)}&since_seq=${sinceSeq}&limit=${limit}`
-    const responseResult = await this.fetchWithTimeout(
+    return this.request(
       url,
       {
         method: "GET",
-        headers: { Authorization: `Bearer ${tokenResult.getValue()}` },
       },
-      "Network error while pulling events"
-    )
-    if (!responseResult.success) {
-      return Result.fail(responseResult.getError())
-    }
-    const response = responseResult.getValue()!
-
-    if (!response.ok) {
-      const nonRetryable = nonRetryableError(response)
-      if (nonRetryable) {
-        return Result.fail(nonRetryable)
+      "Network error while pulling events",
+      async (response) => {
+        const data = (await response.json()) as {
+          events?: WireEventFromServer[]
+          next_seq: number
+          has_more: boolean
+        }
+        return {
+          events: (data.events ?? []).map(fromWireEvent),
+          nextSeq: data.next_seq,
+          hasMore: data.has_more,
+        }
       }
-      return Result.fail(
-        new SyncError(`Unexpected response status ${response.status}`, true)
-      )
-    }
-
-    const data = (await response.json()) as {
-      events?: WireEventFromServer[]
-      next_seq: number
-      has_more: boolean
-    }
-    return Result.ok({
-      events: (data.events ?? []).map(fromWireEvent),
-      nextSeq: data.next_seq,
-      hasMore: data.has_more,
-    })
+    )
   }
 }

@@ -32,6 +32,8 @@ function toWebSocketUrl(httpUrl: string): string {
   return httpUrl
 }
 
+export const REQUEST_TIMEOUT_MS = 10000
+
 export const syncConfig = {
   get apiBaseUrl(): string {
     return getApiBaseUrl()

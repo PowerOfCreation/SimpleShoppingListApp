@@ -6,11 +6,12 @@ import { SyncClient } from "@/api/sync/sync-client"
 import { EventApplier } from "@/api/sync/event-applier"
 import { createLogger } from "@/api/common/logger"
 import { notifySyncListsChanged } from "@/api/sync/sync-events"
-import { reportSyncStarted, reportSyncFinished } from "@/api/sync/sync-status"
+import { reportSyncStarted } from "@/api/sync/sync-status"
 import {
   startListSync,
   setListPermissionDenied,
 } from "@/api/sync/list-sync-status"
+import { SyncPass, SyncProgress } from "@/api/sync/stale-pass-guard"
 import { DomainEventRow, SYNCABLE_EVENT_TYPES } from "@/types/DomainEvent"
 
 const logger = createLogger("SyncEngine")
@@ -60,6 +61,10 @@ function groupByListId(
 // and sync-design-decisions.md.
 export const MAX_DRAIN_BATCHES = 20
 
+// Per-list work budget before yielding to other lists and the event loop.
+// The same pull operation resumes automatically until its captured head.
+export const MAX_PULL_PAGES = 20
+
 /**
  * Orchestrates getting outbox rows to the server and reconciling local
  * belief with server reality. The push response is the confirmation: the
@@ -100,20 +105,21 @@ export class SyncEngine {
    * on a short page or after MAX_DRAIN_BATCHES pages. See
    * sync-design-decisions.md.
    */
-  async flush(): Promise<boolean> {
+  async flush(parentProgress?: SyncProgress): Promise<boolean> {
     if (this.flushing) {
       // A flush is already in progress; let it finish rather than
       // overlapping two sends of the same rows.
       return true
     }
     this.flushing = true
-    reportSyncStarted()
+    const syncPass = reportSyncStarted(parentProgress)
     let ok = true
-    const listPasses = new Map<
-      string,
-      { finish: (ok: boolean) => void; ok: boolean }
-    >()
+    const listPasses = new Map<string, SyncPass & { ok: boolean }>()
 
+    const progress = () => {
+      syncPass.progress()
+      for (const pass of listPasses.values()) pass.progress()
+    }
     try {
       let after: string | undefined
       for (let batch = 0; batch < MAX_DRAIN_BATCHES; batch++) {
@@ -121,6 +127,11 @@ export class SyncEngine {
           this.batchLimit,
           after
         )
+        // A list registered in an earlier batch but not due again until a
+        // later one (its rows are thin relative to other lists') isn't
+        // stuck - the drain as a whole is still making progress. Touch
+        // every list already being tracked, not just ones in this batch.
+        progress()
         if (!pendingResult.success) {
           logger.error(
             "Failed to load pending outbox rows",
@@ -143,6 +154,7 @@ export class SyncEngine {
           const eventIds = pending.map((row) => row.event_id)
           const eventsResult =
             await this.eventRepository.getByEventIds(eventIds)
+          progress()
           if (!eventsResult.success) {
             logger.error(
               "Failed to load events for pending outbox rows",
@@ -154,14 +166,12 @@ export class SyncEngine {
           const events = eventsResult.getValue()!
           for (const [listId, group] of groupByListId(events)) {
             if (listId !== null && !listPasses.has(listId)) {
-              listPasses.set(listId, {
-                finish: startListSync(listId, "push"),
-                ok: true,
-              })
+              const pass = startListSync(listId, "push")
+              listPasses.set(listId, { ...pass, ok: true })
             }
             let groupOk = false
             try {
-              groupOk = await this.sendGroup(listId, group)
+              groupOk = await this.sendGroup(listId, group, progress)
             } catch (error) {
               logger.error(
                 `Unexpected upload failure for list ${listId}`,
@@ -169,7 +179,9 @@ export class SyncEngine {
               )
             }
             const pass = listId === null ? undefined : listPasses.get(listId)
-            if (pass) pass.ok &&= groupOk
+            if (pass) {
+              pass.ok &&= groupOk
+            }
             if (!groupOk) {
               ok = false
             }
@@ -188,24 +200,31 @@ export class SyncEngine {
     } finally {
       this.flushing = false
       for (const pass of listPasses.values()) pass.finish(pass.ok)
-      reportSyncFinished(ok)
+      syncPass.finish(ok)
     }
   }
 
   /** Sends one list_id-group of events and bumps their attempt count, regardless of outcome - a non-retryable rejection gives up on the group instead of leaving it pending forever. Returns whether the send succeeded. */
   private async sendGroup(
     listId: string | null,
-    group: DomainEventRow[]
+    group: DomainEventRow[],
+    parentProgress: SyncProgress
   ): Promise<boolean> {
     const eventIds = group.map((event) => event.event_id)
     eventIds.forEach((id) => this.inFlight.add(id))
-    const finish = listId === null ? undefined : startListSync(listId, "push")
+    const pass =
+      listId === null
+        ? undefined
+        : startListSync(listId, "push", parentProgress)
+    const progress = pass?.progress ?? parentProgress
     let confirmedAll = false
     try {
       const sendResult = await this.client.sendEvents(group)
+      progress()
       const now = Date.now()
       for (const id of eventIds) {
         await this.outboxRepository.bumpAttempt(id, now)
+        progress()
       }
       if (!sendResult.success) {
         const error = sendResult.getError()
@@ -233,6 +252,7 @@ export class SyncEngine {
         .map((ack) => ack.eventId)
         .filter((id) => sent.has(id))
       const markResult = await this.outboxRepository.markSynced(confirmed)
+      progress()
       if (!markResult.success) {
         logger.error(
           `Failed to mark ${confirmed.length} confirmed events as synced`,
@@ -243,7 +263,7 @@ export class SyncEngine {
       confirmedAll = new Set(confirmed).size === sent.size
       return true
     } finally {
-      finish?.(confirmedAll)
+      pass?.finish(confirmedAll)
       eventIds.forEach((id) => this.inFlight.delete(id))
     }
   }
@@ -404,10 +424,11 @@ export class SyncEngine {
     )
 
     for (const listId of listIds) {
-      const finish = startListSync(listId, "reconcile")
+      const { finish, progress } = startListSync(listId, "reconcile")
       let ok = false
       try {
         const eventsResult = await this.eventRepository.getByListId(listId)
+        progress()
         if (!eventsResult.success) {
           logger.warn(
             `Reconcile: failed to load history for list ${listId}`,
@@ -427,10 +448,12 @@ export class SyncEngine {
           // even one already marked synced - back to pending. Together they
           // cover both "never sent" and "server lost what it had acked".
           const enqueueResult =
-            await this.eventRepository.enqueueExistingForSync(missing)
+            await this.eventRepository.enqueueExistingForSync(missing, progress)
+          progress()
           const resetResult = await this.outboxRepository.resetToPending(
             missing.map((event) => event.event_id)
           )
+          progress()
           ok = enqueueResult.success && resetResult.success
         }
 
@@ -452,9 +475,10 @@ export class SyncEngine {
           continue
         }
         const cursorSeq = await this.readCursorSeq(listId)
+        progress()
         if (cursorSeq === null) ok = false
         if (cursorSeq !== null && cursorSeq >= headSeq) {
-          await this.repairList(listId)
+          await this.repairList(listId, progress)
         }
       } catch (error) {
         ok = false
@@ -476,17 +500,21 @@ export class SyncEngine {
    * user-triggered "re-sync from server" action - see
    * sync-design-decisions.md ("Reparatur: voller Re-Pull").
    */
-  async repairList(listId: string): Promise<void> {
+  async repairList(
+    listId: string,
+    parentProgress?: SyncProgress
+  ): Promise<void> {
     const clearResult = await this.cursorRepository.clear(listId)
+    parentProgress?.()
     if (!clearResult.success) {
-      startListSync(listId, "pull")(false)
+      startListSync(listId, "pull").finish(false)
       logger.error(
         `Failed to clear pull cursor for list ${listId} before repair`,
         clearResult.getError()
       )
       return
     }
-    await this.pullList(listId)
+    await this.pull([listId], parentProgress)
   }
 
   /**
@@ -494,23 +522,26 @@ export class SyncEngine {
    * local cursor and pulls whatever's missing, then flushes - pull runs
    * first so local state reflects remote before anything new goes out.
    */
-  async pull(listIds: string[]): Promise<boolean> {
+  async pull(
+    listIds: string[],
+    parentProgress?: SyncProgress
+  ): Promise<boolean> {
     if (listIds.length === 0) {
       return true
     }
-    reportSyncStarted()
+    const syncPass = reportSyncStarted(parentProgress)
 
     let result = false
     try {
-      const { ok, flush } = await this.pullListIds(listIds)
+      const { ok, flush } = await this.pullListIds(listIds, syncPass.progress)
       if (!flush) {
         return false
       }
-      const flushOk = await this.flush()
+      const flushOk = await this.flush(syncPass.progress)
       result = ok && flushOk
       return result
     } finally {
-      reportSyncFinished(result)
+      syncPass.finish(result)
     }
   }
 
@@ -521,9 +552,11 @@ export class SyncEngine {
    * still flushes once at the top of the recursion (see pull).
    */
   private async pullListIds(
-    listIds: string[]
+    listIds: string[],
+    parentProgress: SyncProgress
   ): Promise<{ ok: boolean; flush: boolean }> {
     const headsResult = await this.client.getListHeads(listIds)
+    parentProgress()
     if (!headsResult.success) {
       if (headsResult.getError().httpStatus === 403) {
         // A single forbidden id is a permanent give-up, not a retry - see
@@ -531,7 +564,7 @@ export class SyncEngine {
         // true once isolateForbiddenList actually retries each id.
         let allOk = listIds.length > 1
         await this.isolateForbiddenList(listIds, async (id) => {
-          const sub = await this.pullListIds([id])
+          const sub = await this.pullListIds([id], parentProgress)
           allOk = sub.ok && allOk
         })
         return { ok: allOk, flush: true }
@@ -546,27 +579,62 @@ export class SyncEngine {
       headsResult.getValue()!.map((head) => [head.listId, head])
     )
 
-    let ok = true
-    for (const listId of listIds) {
+    // Keep every unfinished list's handle open across rounds. All these
+    // lists belong to this serial operation, so time spent processing one
+    // also keeps the queued work alive. Separate pull/flush calls are not linked.
+    const pending = new Map<
+      string,
+      { head: number; pass: SyncPass; resumed: boolean }
+    >()
+    for (const listId of new Set(listIds)) {
       const head = headByListId.get(listId)
-      if (!head) {
-        // The server answers every requested id (see SyncPullController);
-        // a missing entry would mean a response we can't trust - skip
-        // rather than guess.
-        continue
+      if (head)
+        pending.set(listId, {
+          head: head.seq,
+          resumed: false,
+          pass: startListSync(listId, "pull"),
+        })
+    }
+    const progress = () => {
+      parentProgress()
+      for (const { pass } of pending.values()) pass.progress()
+    }
+    let ok = pending.size === new Set(listIds).size
+    try {
+      while (pending.size > 0) {
+        for (const [listId, work] of pending) {
+          const { head, pass } = work
+          let outcome: boolean | "more" = false
+          try {
+            outcome = await this.pullListToHead(
+              listId,
+              head,
+              progress,
+              work.resumed
+            )
+          } catch (error) {
+            logger.error(
+              `Unexpected download failure for list ${listId}`,
+              error
+            )
+          }
+          progress()
+          if (outcome !== "more") {
+            pass.finish(outcome)
+            pending.delete(listId)
+            ok &&= outcome
+          } else {
+            work.resumed = true
+          }
+        }
+        if (pending.size > 0) {
+          // Yield without reporting success or waiting for another WS event.
+          await new Promise<void>((resolve) => setTimeout(resolve, 0))
+          progress()
+        }
       }
-      const finish = startListSync(listId, "pull")
-      let listOk = false
-      try {
-        listOk = await this.pullListToHead(listId, head.seq)
-      } catch (error) {
-        logger.error(`Unexpected download failure for list ${listId}`, error)
-      } finally {
-        finish(listOk)
-      }
-      if (!listOk) {
-        ok = false
-      }
+    } finally {
+      for (const { pass } of pending.values()) pass.finish(false)
     }
     return { ok, flush: true }
   }
@@ -596,13 +664,20 @@ export class SyncEngine {
 
   private async pullListToHead(
     listId: string,
-    headSeq: number
-  ): Promise<boolean> {
+    headSeq: number,
+    progress: SyncProgress,
+    resumed: boolean
+  ): Promise<boolean | "more"> {
     const cursorSeq = await this.readCursorSeq(listId)
+    progress()
     if (cursorSeq === null) {
       // Already logged; skip this list, the next trigger retries.
       return false
     }
+
+    // Another pull may have advanced the durable cursor while this round
+    // yielded. Our captured head is then stale, not evidence of server loss.
+    if (resumed && cursorSeq >= headSeq) return true
 
     if (headSeq < cursorSeq) {
       // The server's head is behind what we last saw - it lost data (e.g.
@@ -623,12 +698,19 @@ export class SyncEngine {
 
     let since = cursorSeq
     let hasMore = true
-    while (hasMore) {
+    // Stop at the head captured at the start, even if writers keep adding
+    // events. A non-advancing page is an error, not an endless continuation.
+    for (
+      let pageIndex = 0;
+      pageIndex < MAX_PULL_PAGES && hasMore;
+      pageIndex++
+    ) {
       const pageResult = await this.client.getEventsSince(
         listId,
         since,
         this.pullPageLimit
       )
+      progress()
       if (!pageResult.success) {
         if (pageResult.getError().httpStatus === 403) {
           await this.handleForbiddenList(listId)
@@ -640,26 +722,31 @@ export class SyncEngine {
         return false
       }
       await setListPermissionDenied(listId, false)
+      progress()
       const page = pageResult.getValue()!
+      if (page.nextSeq <= since || page.events.length === 0) {
+        logger.warn(`Pull for list ${listId} did not advance its cursor`)
+        return false
+      }
 
-      if (page.events.length > 0) {
-        const applyResult = await this.eventApplier.apply(
-          listId,
-          page.events,
-          page.nextSeq
+      const applyResult = await this.eventApplier.apply(
+        listId,
+        page.events,
+        page.nextSeq,
+        progress
+      )
+      progress()
+      if (!applyResult.success) {
+        logger.error(
+          `Failed to apply pulled events for list ${listId}`,
+          applyResult.getError()
         )
-        if (!applyResult.success) {
-          logger.error(
-            `Failed to apply pulled events for list ${listId}`,
-            applyResult.getError()
-          )
-          return false
-        }
+        return false
       }
 
       since = page.nextSeq
-      hasMore = page.hasMore
+      hasMore = page.hasMore && since < headSeq
     }
-    return true
+    return hasMore ? "more" : since >= headSeq
   }
 }
