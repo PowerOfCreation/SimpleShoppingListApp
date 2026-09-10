@@ -49,7 +49,8 @@ export class EventApplier {
   async apply(
     listId: string,
     events: DomainEventRow[],
-    seq: number
+    seq: number,
+    onProgress?: () => void
   ): Promise<Result<{ applied: number }, DbQueryError>> {
     try {
       let applied = 0
@@ -59,13 +60,14 @@ export class EventApplier {
         this.db.withTransactionAsync(async () => {
           for (const event of events) {
             applied += await this.eventRepository.insertRemote(event)
+            onProgress?.()
           }
 
           // A page where every event was already present is a pure echo
           // (our own push, or a re-delivered page) - nothing to rebuild,
           // just advance the cursor below.
           if (applied > 0) {
-            listDeleted = await this.rebuildListProjections(listId)
+            listDeleted = await this.rebuildListProjections(listId, onProgress)
           }
 
           await this.cursorRepository.setWithin(
@@ -99,14 +101,19 @@ export class EventApplier {
   }
 
   /** Returns whether this list was actually deleted (vs. just missing its `created`). */
-  private async rebuildListProjections(listId: string): Promise<boolean> {
+  private async rebuildListProjections(
+    listId: string,
+    onProgress?: () => void
+  ): Promise<boolean> {
     const historyResult = await this.eventRepository.getByListId(listId)
+    onProgress?.()
     if (!historyResult.success) {
       throw historyResult.getError()
     }
     const history = historyResult.getValue()!
 
     await this.listProjection.rebuildForList(this.db, listId, history)
+    onProgress?.()
 
     // No row in ingredient_lists after a rebuild has two causes, not one:
     // the merged history ends in todo_list.deleted, or it's simply missing

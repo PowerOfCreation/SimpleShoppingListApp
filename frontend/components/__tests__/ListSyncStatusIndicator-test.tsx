@@ -1,6 +1,6 @@
-import { render, fireEvent } from "@testing-library/react-native"
+import { render, fireEvent, act } from "@testing-library/react-native"
 import { ListSyncStatusIndicator } from "../ListSyncStatusIndicator"
-import { startListSync } from "@/api/sync/list-sync-status"
+import { startListSync, clearListSyncStatus } from "@/api/sync/list-sync-status"
 import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { Result } from "@/api/common/result"
 
@@ -12,6 +12,10 @@ jest.mock("@/database/list-sync-state-repository")
 jest
   .mocked(ListSyncStateRepository.prototype.isPermissionDenied)
   .mockResolvedValue(Result.ok(false))
+
+afterEach(() => {
+  act(() => clearListSyncStatus("syncing"))
+})
 
 it.each([
   ["private", false, undefined, "Private", /stored on this device/],

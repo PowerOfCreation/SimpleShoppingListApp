@@ -1,7 +1,12 @@
 import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { getDatabase } from "@/database/database"
 import { createLogger } from "@/api/common/logger"
-import { startGuardedPass, clearGuardScope } from "@/api/sync/stale-pass-guard"
+import {
+  startGuardedPass,
+  clearGuardScope,
+  SyncPass,
+  SyncProgress,
+} from "@/api/sync/stale-pass-guard"
 import { SyncStatus } from "./sync-status"
 
 // General diagnostics are session-local; permission denial is persisted in
@@ -78,17 +83,12 @@ export function getListSyncStatus(
   return passes.length > 0 ? "synced" : undefined
 }
 
-/**
- * Registers one in-progress pass for a list; overlapping operations share
- * their result. Liveness is shared per list (not per direction, see
- * stale-pass-guard.ts) - a nested pass for the same list (e.g. reconcile's
- * repair triggering a pull) keeps this pass alive through its own touches,
- * with nothing to remember at this call site.
- */
+/** Each pass owns its liveness; only explicitly linked child work renews it. */
 export function startListSync(
   listId: string,
-  direction: Direction
-): { finish: (ok: boolean) => void } {
+  direction: Direction,
+  parentProgress?: SyncProgress
+): SyncPass {
   const state = lists.get(listId) ?? {}
   const pass = state[direction] ?? {
     active: 0,
@@ -107,16 +107,22 @@ export function startListSync(
   const settle = (ok: boolean) => {
     pass.failed ||= !ok
     pass.active--
-    if (pass.active === 0) pass.status = pass.failed ? "error" : "synced"
+    if (pass.failed) pass.status = "error"
+    else if (pass.active === 0) pass.status = "synced"
     listeners.forEach((listener) => listener())
   }
-  const guard = startGuardedPass(listId, () => {
-    logger.warn(
-      `Sync pass for list ${listId} (${direction}) never finished - clearing stuck "syncing" state`
-    )
-    settle(false)
-  })
+  const guard = startGuardedPass(
+    listId,
+    () => {
+      logger.warn(
+        `Sync pass for list ${listId} (${direction}) never finished - clearing stuck "syncing" state`
+      )
+      settle(false)
+    },
+    parentProgress
+  )
   return {
+    progress: guard.progress,
     finish: (ok: boolean) => {
       if (guard.finish()) settle(ok)
     },

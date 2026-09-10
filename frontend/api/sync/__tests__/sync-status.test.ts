@@ -1,5 +1,4 @@
 import { getSyncDetails, reportSyncStarted } from "../sync-status"
-import { touchSyncProgress } from "../stale-pass-guard"
 
 it("clears a syncing state whose finish() never arrives", () => {
   jest.useFakeTimers()
@@ -20,10 +19,10 @@ it("clears a syncing state whose finish() never arrives", () => {
 it("does not fire while progress keeps being reported, however long the whole pass runs", () => {
   jest.useFakeTimers()
   try {
-    const { finish } = reportSyncStarted()
+    const { finish, progress } = reportSyncStarted()
     for (let i = 0; i < 5; i++) {
       jest.advanceTimersByTime(25_000)
-      touchSyncProgress([])
+      progress()
     }
     expect(getSyncDetails().status).toBe("syncing")
     finish(true)
@@ -91,4 +90,24 @@ it("keeps the previous success when a nested flush succeeds but the pull fails",
 
   reportSyncStarted().finish(true)
   expect(getSyncDetails().error).toBeNull()
+})
+
+it("expires a stalled operation even while independent operations keep succeeding", () => {
+  jest.useFakeTimers()
+  try {
+    const stalled = reportSyncStarted()
+    for (let i = 0; i < 4; i++) {
+      jest.advanceTimersByTime(9_000)
+      const other = reportSyncStarted()
+      other.progress()
+      // At expiry the old pass must have retired its own count, so a fresh
+      // successful operation can complete instead of staying syncing forever.
+      other.finish(true)
+    }
+    expect(getSyncDetails().status).toBe("synced")
+    stalled.finish(false)
+    expect(getSyncDetails().status).toBe("synced")
+  } finally {
+    jest.useRealTimers()
+  }
 })

@@ -83,7 +83,8 @@ export class EventRepository extends BaseRepository {
    * outbox needs new rows.
    */
   async enqueueExistingForSync(
-    events: DomainEventRow[]
+    events: DomainEventRow[],
+    onProgress?: () => void
   ): Promise<Result<void, DbQueryError>> {
     return this._executeTransaction(async () => {
       for (const event of events) {
@@ -93,6 +94,7 @@ export class EventRepository extends BaseRepository {
           event.aggregate_id,
           event.occurred_at
         )
+        onProgress?.()
       }
     }, "enqueueExistingForSync")
   }

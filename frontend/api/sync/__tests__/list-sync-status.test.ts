@@ -7,7 +7,6 @@ import {
   setListPermissionDenied,
   clearListSyncStatus,
 } from "../list-sync-status"
-import { touchSyncProgress } from "../stale-pass-guard"
 jest.mock("@/database/database", () => {
   const originalModule = jest.requireActual("@/database/database")
   return { ...originalModule, DB_NAME: ":memory:" }
@@ -87,19 +86,20 @@ it("clears a pass whose finish() never arrives (e.g. a request frozen by app bac
   }
 })
 
-it("does not fire while touchSyncProgress keeps proving progress, however long the whole pass runs", () => {
+it("does not fire while progress() keeps proving progress, however long the whole pass runs", () => {
   jest.useFakeTimers()
   try {
-    startListSync("progressing", "pull")
+    const pass = startListSync("progressing", "pull")
     // Each step alone is under one request's own stale budget, but the
     // total run is comfortably past it - only possible without a false
-    // "error" because touchSyncProgress (called once per completed
+    // "error" because progress() (called once per completed
     // request/page/batch) keeps pushing the deadline out.
     for (let i = 0; i < 5; i++) {
       jest.advanceTimersByTime(25_000)
-      touchSyncProgress(["progressing"])
+      pass.progress()
     }
     expect(getListSyncStatus("progressing")).toBe("syncing")
+    pass.finish(true)
   } finally {
     jest.useRealTimers()
   }
@@ -108,9 +108,9 @@ it("does not fire while touchSyncProgress keeps proving progress, however long t
 it("still fires once progress stops being reported, even after earlier touches kept the pass alive", () => {
   jest.useFakeTimers()
   try {
-    startListSync("stalls-later", "pull")
-    touchSyncProgress(["stalls-later"])
-    touchSyncProgress(["stalls-later"])
+    const pass = startListSync("stalls-later", "pull")
+    pass.progress()
+    pass.progress()
     jest.runOnlyPendingTimers()
     expect(getListSyncStatus("stalls-later")).toBe("error")
   } finally {
@@ -121,22 +121,24 @@ it("still fires once progress stops being reported, even after earlier touches k
 it("a nested pass on the same list keeps a pass that never touches itself alive (e.g. reconcile wrapping a slow repair)", () => {
   jest.useFakeTimers()
   try {
-    const { finish: finishReconcile } = startListSync(
-      "shared-scope",
-      "reconcile"
+    const { finish: finishReconcile, progress: reconcileProgress } =
+      startListSync("linked-parent", "reconcile")
+    const { finish: finishPull, progress } = startListSync(
+      "linked-parent",
+      "pull",
+      reconcileProgress
     )
-    const { finish: finishPull } = startListSync("shared-scope", "pull")
-    // The reconcile pass above never calls touchSyncProgress itself - only
+    // The reconcile pass above never calls progress() itself - only
     // the nested pull's own progress does. Comfortably past a single
     // pass's stale budget, split across several renewals.
     for (let i = 0; i < 5; i++) {
       jest.advanceTimersByTime(25_000)
-      touchSyncProgress(["shared-scope"])
+      progress()
     }
     finishPull(true)
-    expect(getListSyncStatus("shared-scope")).toBe("syncing")
+    expect(getListSyncStatus("linked-parent")).toBe("syncing")
     finishReconcile(true)
-    expect(getListSyncStatus("shared-scope")).toBe("synced")
+    expect(getListSyncStatus("linked-parent")).toBe("synced")
   } finally {
     jest.useRealTimers()
   }
@@ -175,4 +177,24 @@ it("does not overwrite a new denial with a stale storage read", async () => {
   resolveRead(Result.ok(false))
   await loading
   expect(getListSyncStatus("race")).toBe("forbidden")
+})
+
+it("does not let successful downloads conceal a stalled upload on the same list", () => {
+  jest.useFakeTimers()
+  try {
+    const stalled = startListSync("independent", "push")
+    for (let i = 0; i < 4; i++) {
+      jest.advanceTimersByTime(9_000)
+      const other = startListSync("independent", "pull")
+      other.progress()
+      other.finish(true)
+    }
+    expect(getListSyncStatus("independent")).toBe("error")
+    stalled.finish(true)
+    expect(getListSyncStatus("independent")).toBe("error")
+    startListSync("independent", "push").finish(true)
+    expect(getListSyncStatus("independent")).toBe("synced")
+  } finally {
+    jest.useRealTimers()
+  }
 })
