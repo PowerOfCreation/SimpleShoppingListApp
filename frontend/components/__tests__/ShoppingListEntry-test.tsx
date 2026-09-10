@@ -460,7 +460,7 @@ it("updates only the failed list and keeps a permanent rejection visible when di
   rerender(
     <ShoppingListEntry {...defaultProps} id="status-bad" syncEnabled={false} />
   )
-  expect(getByText(/Sync failed · Sync disabled/)).toBeTruthy()
+  expect(getByText(/Sync disabled after failure/)).toBeTruthy()
 })
 
 it("explains denied sync even when sync is disabled without opening the list", async () => {

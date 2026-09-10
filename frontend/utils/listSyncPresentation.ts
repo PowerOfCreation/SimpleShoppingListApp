@@ -17,7 +17,7 @@ export function listSyncPresentation(
   }
   if (status === "error") {
     return {
-      label: enabled ? "Sync failed" : "Sync failed · Sync disabled",
+      label: enabled ? "Sync failed" : "Sync disabled after failure",
       icon: "error",
       tone: "danger",
       message: enabled
