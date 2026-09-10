@@ -23,7 +23,7 @@ it.each([
   "opens and closes the explanation for %s",
   (id, enabled, status, label, message) => {
     if (status) {
-      const finish = startListSync(id, "push")
+      const { finish } = startListSync(id, "push")
       if (status !== "syncing") finish(status === "synced")
     }
     const screen = render(

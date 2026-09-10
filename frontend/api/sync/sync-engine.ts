@@ -6,11 +6,12 @@ import { SyncClient } from "@/api/sync/sync-client"
 import { EventApplier } from "@/api/sync/event-applier"
 import { createLogger } from "@/api/common/logger"
 import { notifySyncListsChanged } from "@/api/sync/sync-events"
-import { reportSyncStarted, reportSyncFinished } from "@/api/sync/sync-status"
+import { reportSyncStarted } from "@/api/sync/sync-status"
 import {
   startListSync,
   setListPermissionDenied,
 } from "@/api/sync/list-sync-status"
+import { touchSyncProgress } from "@/api/sync/stale-pass-guard"
 import { DomainEventRow, SYNCABLE_EVENT_TYPES } from "@/types/DomainEvent"
 
 const logger = createLogger("SyncEngine")
@@ -60,6 +61,11 @@ function groupByListId(
 // and sync-design-decisions.md.
 export const MAX_DRAIN_BATCHES = 20
 
+// Same safety valve as MAX_DRAIN_BATCHES, for pullListToHead's page loop -
+// without it, one list with a huge backlog could pull forever instead of
+// yielding to the next trigger.
+export const MAX_PULL_PAGES = 20
+
 /**
  * Orchestrates getting outbox rows to the server and reconciling local
  * belief with server reality. The push response is the confirmation: the
@@ -107,7 +113,7 @@ export class SyncEngine {
       return true
     }
     this.flushing = true
-    reportSyncStarted()
+    const syncPass = reportSyncStarted()
     let ok = true
     const listPasses = new Map<
       string,
@@ -121,6 +127,11 @@ export class SyncEngine {
           this.batchLimit,
           after
         )
+        // A list registered in an earlier batch but not due again until a
+        // later one (its rows are thin relative to other lists') isn't
+        // stuck - the drain as a whole is still making progress. Touch
+        // every list already being tracked, not just ones in this batch.
+        touchSyncProgress([...listPasses.keys()])
         if (!pendingResult.success) {
           logger.error(
             "Failed to load pending outbox rows",
@@ -143,6 +154,7 @@ export class SyncEngine {
           const eventIds = pending.map((row) => row.event_id)
           const eventsResult =
             await this.eventRepository.getByEventIds(eventIds)
+          touchSyncProgress([...listPasses.keys()])
           if (!eventsResult.success) {
             logger.error(
               "Failed to load events for pending outbox rows",
@@ -154,10 +166,8 @@ export class SyncEngine {
           const events = eventsResult.getValue()!
           for (const [listId, group] of groupByListId(events)) {
             if (listId !== null && !listPasses.has(listId)) {
-              listPasses.set(listId, {
-                finish: startListSync(listId, "push"),
-                ok: true,
-              })
+              const pass = startListSync(listId, "push")
+              listPasses.set(listId, { ...pass, ok: true })
             }
             let groupOk = false
             try {
@@ -169,7 +179,9 @@ export class SyncEngine {
               )
             }
             const pass = listId === null ? undefined : listPasses.get(listId)
-            if (pass) pass.ok &&= groupOk
+            if (pass) {
+              pass.ok &&= groupOk
+            }
             if (!groupOk) {
               ok = false
             }
@@ -188,7 +200,7 @@ export class SyncEngine {
     } finally {
       this.flushing = false
       for (const pass of listPasses.values()) pass.finish(pass.ok)
-      reportSyncFinished(ok)
+      syncPass.finish(ok)
     }
   }
 
@@ -199,13 +211,15 @@ export class SyncEngine {
   ): Promise<boolean> {
     const eventIds = group.map((event) => event.event_id)
     eventIds.forEach((id) => this.inFlight.add(id))
-    const finish = listId === null ? undefined : startListSync(listId, "push")
+    const pass = listId === null ? undefined : startListSync(listId, "push")
     let confirmedAll = false
     try {
       const sendResult = await this.client.sendEvents(group)
+      touchSyncProgress([listId])
       const now = Date.now()
       for (const id of eventIds) {
         await this.outboxRepository.bumpAttempt(id, now)
+        touchSyncProgress([listId])
       }
       if (!sendResult.success) {
         const error = sendResult.getError()
@@ -243,7 +257,7 @@ export class SyncEngine {
       confirmedAll = new Set(confirmed).size === sent.size
       return true
     } finally {
-      finish?.(confirmedAll)
+      pass?.finish(confirmedAll)
       eventIds.forEach((id) => this.inFlight.delete(id))
     }
   }
@@ -404,7 +418,7 @@ export class SyncEngine {
     )
 
     for (const listId of listIds) {
-      const finish = startListSync(listId, "reconcile")
+      const { finish } = startListSync(listId, "reconcile")
       let ok = false
       try {
         const eventsResult = await this.eventRepository.getByListId(listId)
@@ -479,7 +493,7 @@ export class SyncEngine {
   async repairList(listId: string): Promise<void> {
     const clearResult = await this.cursorRepository.clear(listId)
     if (!clearResult.success) {
-      startListSync(listId, "pull")(false)
+      startListSync(listId, "pull").finish(false)
       logger.error(
         `Failed to clear pull cursor for list ${listId} before repair`,
         clearResult.getError()
@@ -498,7 +512,7 @@ export class SyncEngine {
     if (listIds.length === 0) {
       return true
     }
-    reportSyncStarted()
+    const syncPass = reportSyncStarted()
 
     let result = false
     try {
@@ -510,7 +524,7 @@ export class SyncEngine {
       result = ok && flushOk
       return result
     } finally {
-      reportSyncFinished(result)
+      syncPass.finish(result)
     }
   }
 
@@ -524,6 +538,7 @@ export class SyncEngine {
     listIds: string[]
   ): Promise<{ ok: boolean; flush: boolean }> {
     const headsResult = await this.client.getListHeads(listIds)
+    touchSyncProgress(listIds)
     if (!headsResult.success) {
       if (headsResult.getError().httpStatus === 403) {
         // A single forbidden id is a permanent give-up, not a retry - see
@@ -555,7 +570,7 @@ export class SyncEngine {
         // rather than guess.
         continue
       }
-      const finish = startListSync(listId, "pull")
+      const { finish } = startListSync(listId, "pull")
       let listOk = false
       try {
         listOk = await this.pullListToHead(listId, head.seq)
@@ -563,6 +578,9 @@ export class SyncEngine {
         logger.error(`Unexpected download failure for list ${listId}`, error)
       } finally {
         finish(listOk)
+        // A list that needed no pages (already caught up) still proves the
+        // aggregate pass is making progress - see touchSyncProgress.
+        touchSyncProgress([listId])
       }
       if (!listOk) {
         ok = false
@@ -623,12 +641,22 @@ export class SyncEngine {
 
     let since = cursorSeq
     let hasMore = true
-    while (hasMore) {
+    // Bounded by MAX_PULL_PAGES rather than a plain `while (hasMore)` - a
+    // list catching up on a huge backlog must yield to the next trigger
+    // instead of chaining pages forever (mirrors flush()'s MAX_DRAIN_BATCHES).
+    // Each page's cursor is already persisted durably (see EventApplier.apply),
+    // so stopping early here just resumes cleanly next time.
+    for (
+      let pageIndex = 0;
+      pageIndex < MAX_PULL_PAGES && hasMore;
+      pageIndex++
+    ) {
       const pageResult = await this.client.getEventsSince(
         listId,
         since,
         this.pullPageLimit
       )
+      touchSyncProgress([listId])
       if (!pageResult.success) {
         if (pageResult.getError().httpStatus === 403) {
           await this.handleForbiddenList(listId)

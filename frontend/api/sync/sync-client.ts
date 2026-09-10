@@ -1,13 +1,11 @@
 import { getValidAccessToken } from "@/api/auth/auth-service"
-import { syncConfig } from "@/api/sync/config"
+import { syncConfig, REQUEST_TIMEOUT_MS } from "@/api/sync/config"
 import { createLogger } from "@/api/common/logger"
 import { Result } from "@/api/common/result"
 import { SyncError } from "@/api/common/error-types"
 import { DomainEventRow } from "@/types/DomainEvent"
 
 const logger = createLogger("SyncClient")
-
-const REQUEST_TIMEOUT_MS = 10000
 
 /**
  * The wire shape the backend's SyncEventRequest expects. Notably:
