@@ -7,7 +7,7 @@ import { DomainEventRow } from "@/types/DomainEvent"
 
 const logger = createLogger("SyncClient")
 
-const REQUEST_TIMEOUT_MS = 10000
+export const REQUEST_TIMEOUT_MS = 10000
 
 /**
  * The wire shape the backend's SyncEventRequest expects. Notably:

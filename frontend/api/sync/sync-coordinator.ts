@@ -258,6 +258,13 @@ export class SyncCoordinator {
             logger.error("Pull/reconcile on foreground failed", error)
           })
           this.flush()
+          // connect() no-ops if a socket object still exists, but that
+          // object's liveness can't be trusted here: the ping/pong watchdog
+          // that would normally detect a dead connection doesn't run while
+          // backgrounded (RN timers are paused), so a hop that silently
+          // dropped the idle connection leaves onclose never firing. Force a
+          // fresh connection instead of relying on the stale one's presence.
+          this.socket.disconnect()
           this.socket.connect().catch((error) => {
             logger.error("Failed to reconnect sync socket", error)
           })

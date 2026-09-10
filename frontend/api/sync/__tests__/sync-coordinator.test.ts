@@ -279,6 +279,7 @@ describe("SyncCoordinator", () => {
     flushMock.mockClear()
     pullMock.mockClear()
     socketConnectMock.mockClear()
+    socketDisconnectMock.mockClear()
 
     const emitAppStateChange = (AppState.addEventListener as jest.Mock).mock
       .calls[0][1]
@@ -288,6 +289,12 @@ describe("SyncCoordinator", () => {
     expect(flushMock).toHaveBeenCalledTimes(1)
     expect(reconcileMock).toHaveBeenCalledWith(["list-1", "list-2"])
     expect(pullMock).toHaveBeenCalledWith(["list-1", "list-2"])
+    // A stale socket that looks alive (readyState OPEN) but was silently
+    // dropped by a hop while backgrounded - see sync-socket.ts - would
+    // otherwise never get reconnected, since connect() no-ops on a
+    // non-null socket. Foreground must force a fresh connection instead of
+    // trusting the old one's presence.
+    expect(socketDisconnectMock).toHaveBeenCalledTimes(1)
     expect(socketConnectMock).toHaveBeenCalledTimes(1)
   })
 
