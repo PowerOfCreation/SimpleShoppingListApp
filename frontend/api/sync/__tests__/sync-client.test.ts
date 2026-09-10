@@ -462,3 +462,77 @@ describe("SyncClient", () => {
     })
   })
 })
+
+describe("complete request deadline", () => {
+  beforeEach(() => {
+    jest.useFakeTimers()
+    mockGetValidAccessToken.mockResolvedValue(Result.ok("valid-token"))
+  })
+  afterEach(() => jest.useRealTimers())
+
+  it.each(["push", "heads", "state", "events"])(
+    "settles a stalled %s response body and aborts its transport",
+    async (endpoint) => {
+      const json = jest.fn(() => new Promise(() => {}))
+      const fetchMock = jest
+        .fn()
+        .mockResolvedValue({ ok: true, status: 200, json })
+      const client = new SyncClient(fetchMock)
+      const pending =
+        endpoint === "push"
+          ? client.sendEvents([makeEvent()])
+          : endpoint === "heads"
+            ? client.getListHeads(["list-1"])
+            : endpoint === "state"
+              ? client.getKnownEventIds(["list-1"])
+              : client.getEventsSince("list-1", 0)
+      await jest.advanceTimersByTimeAsync(9_999)
+      expect(json).toHaveBeenCalled()
+      expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(false)
+      await jest.advanceTimersByTimeAsync(1)
+      const result = await pending
+      expect(result.success).toBe(false)
+      expect(result.getError().retryable).toBe(true)
+      expect(fetchMock.mock.calls[0][1].signal.aborted).toBe(true)
+      expect(jest.getTimerCount()).toBe(0)
+    }
+  )
+
+  it("does not start a request when token acquisition finishes after the deadline", async () => {
+    let resolveToken!: (token: Result<string, Error>) => void
+    mockGetValidAccessToken.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveToken = resolve
+      })
+    )
+    const fetchMock = jest.fn()
+    const pending = new SyncClient(fetchMock).getListHeads(["list-1"])
+    await jest.advanceTimersByTimeAsync(10_000)
+    expect((await pending).getError().retryable).toBe(true)
+    resolveToken(Result.ok("late-token"))
+    await jest.advanceTimersByTimeAsync(0)
+    expect(fetchMock).not.toHaveBeenCalled()
+  })
+
+  it("uses one budget for headers and body, and ignores a late successful body", async () => {
+    let resolveBody!: (body: unknown) => void
+    const fetchMock = jest.fn().mockImplementation(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 6_000))
+      return {
+        ok: true,
+        status: 200,
+        json: () =>
+          new Promise((resolve) => {
+            resolveBody = resolve
+          }),
+      }
+    })
+    const pending = new SyncClient(fetchMock).sendEvents([makeEvent()])
+    await jest.advanceTimersByTimeAsync(10_000)
+    expect((await pending).success).toBe(false)
+    resolveBody({ acked: [{ event_id: "evt-1", seq: 1 }] })
+    await jest.advanceTimersByTimeAsync(0)
+    expect((await pending).success).toBe(false)
+    expect(jest.getTimerCount()).toBe(0)
+  })
+})
