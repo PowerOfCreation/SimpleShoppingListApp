@@ -29,7 +29,8 @@ function getScope(key: string): Scope {
   return scope
 }
 
-function arm(scope: Scope): void {
+function rearm(scope: Scope): void {
+  if (scope.timeout) clearTimeout(scope.timeout)
   scope.timeout = setTimeout(() => {
     scope.timeout = null
     const stale = [...scope.passes]
@@ -41,8 +42,7 @@ function arm(scope: Scope): void {
 function touchScope(key: string): void {
   const scope = scopes.get(key)
   if (!scope || scope.passes.size === 0) return
-  if (scope.timeout) clearTimeout(scope.timeout)
-  arm(scope)
+  rearm(scope)
 }
 
 /**
@@ -74,9 +74,10 @@ export function startGuardedPass(
   onStale: () => void
 ): { finish: () => boolean } {
   const scope = getScope(key)
-  if (scope.passes.size === 0) {
-    arm(scope)
-  }
+  // A join is itself proof of life, same as a touch - without this, a pass
+  // joining a scope that's about to go stale from someone else's inactivity
+  // would inherit whatever time is left instead of its own full budget.
+  rearm(scope)
   const pass: PassHandle = { onStale }
   scope.passes.add(pass)
 
@@ -90,4 +91,12 @@ export function startGuardedPass(
       return removed
     },
   }
+}
+
+/** Drops a scope with no bearing on any open pass - call when a key (e.g. a list id) is done being tracked, so a stale leftover timer can't linger or be inherited by a future reuse of the same key. */
+export function clearGuardScope(key: string): void {
+  const scope = scopes.get(key)
+  if (!scope) return
+  if (scope.timeout) clearTimeout(scope.timeout)
+  scopes.delete(key)
 }

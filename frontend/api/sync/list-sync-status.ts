@@ -1,7 +1,7 @@
 import { ListSyncStateRepository } from "@/database/list-sync-state-repository"
 import { getDatabase } from "@/database/database"
 import { createLogger } from "@/api/common/logger"
-import { startGuardedPass } from "@/api/sync/stale-pass-guard"
+import { startGuardedPass, clearGuardScope } from "@/api/sync/stale-pass-guard"
 import { SyncStatus } from "./sync-status"
 
 // General diagnostics are session-local; permission denial is persisted in
@@ -42,6 +42,7 @@ export function clearListSyncStatus(listId: string): void {
   lists.delete(listId)
   permissionDenied.delete(listId)
   loading.delete(listId)
+  clearGuardScope(listId)
   listeners.forEach((listener) => listener())
 }
 

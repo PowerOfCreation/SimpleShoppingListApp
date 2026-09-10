@@ -1,4 +1,8 @@
-import { startGuardedPass, touchSyncProgress } from "../stale-pass-guard"
+import {
+  startGuardedPass,
+  touchSyncProgress,
+  clearGuardScope,
+} from "../stale-pass-guard"
 import { REQUEST_TIMEOUT_MS } from "@/api/sync/config"
 
 const STALE_AFTER_MS = REQUEST_TIMEOUT_MS * 3
@@ -67,4 +71,41 @@ it("finish() reports false for a pass the watchdog already gave up on, and does 
 
 it("touchSyncProgress is a no-op for a scope with no open pass", () => {
   expect(() => touchSyncProgress(["untouched", null])).not.toThrow()
+})
+
+it("a pass joining a near-expiring scope gets its own full budget, not whatever time the scope had left", () => {
+  jest.useFakeTimers()
+  try {
+    const onStaleFirst = jest.fn()
+    startGuardedPass("list-6", onStaleFirst)
+    // Right up against the first pass's own deadline - a naive shared timer
+    // would fire moments after the second pass joins, treating a pass that
+    // just started as already stale.
+    jest.advanceTimersByTime(STALE_AFTER_MS - 1_000)
+    const onStaleSecond = jest.fn()
+    startGuardedPass("list-6", onStaleSecond)
+    jest.advanceTimersByTime(2_000)
+    expect(onStaleFirst).not.toHaveBeenCalled()
+    expect(onStaleSecond).not.toHaveBeenCalled()
+  } finally {
+    jest.useRealTimers()
+  }
+})
+
+it("clearGuardScope drops a leftover timer so a later reuse of the same key starts with a full budget", () => {
+  jest.useFakeTimers()
+  try {
+    const onStaleFirst = jest.fn()
+    startGuardedPass("list-7", onStaleFirst)
+    jest.advanceTimersByTime(STALE_AFTER_MS - 1_000)
+    clearGuardScope("list-7")
+
+    const onStaleSecond = jest.fn()
+    startGuardedPass("list-7", onStaleSecond)
+    jest.advanceTimersByTime(2_000)
+
+    expect(onStaleSecond).not.toHaveBeenCalled()
+  } finally {
+    jest.useRealTimers()
+  }
 })
