@@ -273,22 +273,64 @@ describe("SyncCoordinator", () => {
     expect(setEnabledMock).not.toHaveBeenCalled()
   })
 
-  it("flushes, pulls, reconciles, and reconnects when the app comes to the foreground", async () => {
-    buildCoordinator().start()
-    await flushMicrotasks()
-    flushMock.mockClear()
-    pullMock.mockClear()
-    socketConnectMock.mockClear()
+  it("flushes, pulls, reconciles, and force-reconnects when the app returns from a long enough background stint", async () => {
+    jest.useFakeTimers()
+    try {
+      buildCoordinator().start()
+      await flushMicrotasks()
+      flushMock.mockClear()
+      pullMock.mockClear()
+      socketConnectMock.mockClear()
+      socketDisconnectMock.mockClear()
 
-    const emitAppStateChange = (AppState.addEventListener as jest.Mock).mock
-      .calls[0][1]
-    emitAppStateChange("active")
-    await flushMicrotasks()
+      const emitAppStateChange = (AppState.addEventListener as jest.Mock).mock
+        .calls[0][1]
+      emitAppStateChange("background")
+      // Past PING_INTERVAL_MS+PONG_TIMEOUT_MS (60s) - long enough that the
+      // ping/pong watchdog, paused while backgrounded, could plausibly have
+      // missed a silently dropped connection.
+      jest.advanceTimersByTime(61_000)
+      emitAppStateChange("active")
+      await flushMicrotasks()
 
-    expect(flushMock).toHaveBeenCalledTimes(1)
-    expect(reconcileMock).toHaveBeenCalledWith(["list-1", "list-2"])
-    expect(pullMock).toHaveBeenCalledWith(["list-1", "list-2"])
-    expect(socketConnectMock).toHaveBeenCalledTimes(1)
+      expect(flushMock).toHaveBeenCalledTimes(1)
+      expect(reconcileMock).toHaveBeenCalledWith(["list-1", "list-2"])
+      expect(pullMock).toHaveBeenCalledWith(["list-1", "list-2"])
+      // A stale socket that looks alive (readyState OPEN) but was silently
+      // dropped by a hop while backgrounded - see sync-socket.ts - would
+      // otherwise never get reconnected, since connect() no-ops on a
+      // non-null socket. Foreground must force a fresh connection instead of
+      // trusting the old one's presence.
+      expect(socketDisconnectMock).toHaveBeenCalledTimes(1)
+      expect(socketConnectMock).toHaveBeenCalledTimes(1)
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  it("does not force a socket teardown for a brief background blip (e.g. a permission dialog or the notification shade)", async () => {
+    jest.useFakeTimers()
+    try {
+      buildCoordinator().start()
+      await flushMicrotasks()
+      socketConnectMock.mockClear()
+      socketDisconnectMock.mockClear()
+
+      const emitAppStateChange = (AppState.addEventListener as jest.Mock).mock
+        .calls[0][1]
+      emitAppStateChange("inactive")
+      jest.advanceTimersByTime(1_000)
+      emitAppStateChange("active")
+      await flushMicrotasks()
+
+      // Still reconnects (a no-op if the socket is actually still alive),
+      // but shouldn't pay for a full teardown when nothing suggests the
+      // connection could have gone stale.
+      expect(socketDisconnectMock).not.toHaveBeenCalled()
+      expect(socketConnectMock).toHaveBeenCalledTimes(1)
+    } finally {
+      jest.useRealTimers()
+    }
   })
 
   it("pulls and reconciles again on the periodic safety interval", async () => {
@@ -360,7 +402,7 @@ describe("SyncCoordinator", () => {
     expect(() => buildCoordinator().stop()).not.toThrow()
   })
 
-  it("re-arms on start() after stop()", async () => {
+  it("re-arms on start() after stop(), with a freshly constructed socket (no memory of the previous session's subscriptions/backoff/token)", async () => {
     const coordinator = buildCoordinator()
     coordinator.start()
     coordinator.stop()
@@ -370,5 +412,37 @@ describe("SyncCoordinator", () => {
     await flushMicrotasks()
 
     expect(socketConnectMock).toHaveBeenCalledTimes(1)
+    expect(MockSyncSocket).toHaveBeenCalledTimes(2)
+  })
+
+  it("does not force a socket teardown on foreground if the app was backgrounded before a stop()/start() cycle (e.g. sign-out/sign-in while backgrounded)", async () => {
+    jest.useFakeTimers()
+    try {
+      const coordinator = buildCoordinator()
+      coordinator.start()
+      await flushMicrotasks()
+
+      const emitOnFirstSession = (AppState.addEventListener as jest.Mock).mock
+        .calls[0][1]
+      emitOnFirstSession("background")
+      jest.advanceTimersByTime(61_000)
+
+      // The session ends and restarts while still backgrounded - a stale
+      // backgroundedAt surviving this would corrupt the new session's next
+      // foreground check.
+      coordinator.stop()
+      coordinator.start()
+      await flushMicrotasks()
+      socketDisconnectMock.mockClear()
+
+      const emitOnSecondSession = (AppState.addEventListener as jest.Mock).mock
+        .calls[1][1]
+      emitOnSecondSession("active")
+      await flushMicrotasks()
+
+      expect(socketDisconnectMock).not.toHaveBeenCalled()
+    } finally {
+      jest.useRealTimers()
+    }
   })
 })
