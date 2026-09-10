@@ -295,6 +295,34 @@ describe("SyncSocket", () => {
     expect(createSocket).toHaveBeenCalledTimes(1)
   })
 
+  it("ignores a stale onclose from a socket already superseded by a later connect() (disconnect()+connect() on foreground)", async () => {
+    const socket = makeSocket()
+    await socket.connect()
+    const first = createdSockets[0]
+    first.triggerOpen()
+
+    socket.disconnect()
+    await socket.connect()
+    const second = createdSockets[1]
+    second.triggerOpen()
+    expect(onConnected).toHaveBeenCalledTimes(2)
+
+    // A real WebSocket's close event is asynchronous and can arrive at any
+    // time relative to our own reconnect - simulate it landing late, after
+    // the second connection already replaced this one. It must not wipe
+    // out the second connection's timers/reference or schedule a redundant
+    // reconnect on top of it.
+    first.onclose?.()
+
+    expect(second.closeCalls).toBe(0)
+    // Comfortably past the reconnect backoff a stale close would have
+    // scheduled, but well under the 50s ping interval - this must not be
+    // confused with a legitimate pong-timeout reconnect on the new socket.
+    jest.advanceTimersByTime(5_000)
+    await flushMicrotasks()
+    expect(createSocket).toHaveBeenCalledTimes(2)
+  })
+
   it("does not create a socket if disconnect() is called while awaiting the token", async () => {
     let resolveToken!: (value: Result<string | null, Error>) => void
     mockGetValidAccessToken.mockReturnValue(
@@ -310,6 +338,63 @@ describe("SyncSocket", () => {
     await connectPromise
 
     expect(createSocket).not.toHaveBeenCalled()
+  })
+
+  it("ignores a stale connect() call that resumes after a newer connect() already established the live socket (disconnect()+connect() racing an in-flight reconnect)", async () => {
+    let resolveFirstToken!: (value: Result<string | null, Error>) => void
+    mockGetValidAccessToken.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFirstToken = resolve
+      })
+    )
+
+    const socket = makeSocket()
+    // An earlier connect() (e.g. a scheduled reconnect) is still awaiting
+    // its token when disconnect()+connect() (e.g. SyncCoordinator's
+    // foreground handler) runs.
+    const firstConnect = socket.connect()
+    socket.disconnect()
+    mockGetValidAccessToken.mockResolvedValueOnce(Result.ok("token-2"))
+    await socket.connect()
+    expect(createSocket).toHaveBeenCalledTimes(1)
+    const live = createdSockets[0]
+    live.triggerOpen()
+
+    // The first connect() finally resumes, now stale - it must not create
+    // a second socket and overwrite the live one.
+    resolveFirstToken(Result.ok("token-1"))
+    await firstConnect
+
+    expect(createSocket).toHaveBeenCalledTimes(1)
+    socket.disconnect()
+    expect(live.closeCalls).toBe(1)
+  })
+
+  it("keeps connectedWithToken pointing at the live socket's token, not a stale connect() call's", async () => {
+    let resolveFirstToken!: (value: Result<string | null, Error>) => void
+    mockGetValidAccessToken.mockReturnValueOnce(
+      new Promise((resolve) => {
+        resolveFirstToken = resolve
+      })
+    )
+
+    const socket = makeSocket()
+    const firstConnect = socket.connect()
+    socket.disconnect()
+    mockGetValidAccessToken.mockResolvedValueOnce(Result.ok("token-2"))
+    await socket.connect()
+    const live = createdSockets[0]
+    live.triggerOpen()
+
+    // The stale connect() resumes after the live one already won - it must
+    // not overwrite connectedWithToken with its own (now-irrelevant) token.
+    resolveFirstToken(Result.ok("token-1"))
+    await firstConnect
+
+    mockGetValidAccessToken.mockResolvedValueOnce(Result.ok("token-2"))
+    await socket.reconnectIfTokenChanged()
+
+    expect(live.closeCalls).toBe(0)
   })
 
   describe("reconnectIfTokenChanged", () => {

@@ -6,8 +6,8 @@ const logger = createLogger("SyncSocket")
 
 // The client pings every 50s (per the sync design) so no firewall/NAT
 // along the way decides the connection is idle and drops it.
-const PING_INTERVAL_MS = 50_000
-const PONG_TIMEOUT_MS = 10_000
+export const PING_INTERVAL_MS = 50_000
+export const PONG_TIMEOUT_MS = 10_000
 const INITIAL_BACKOFF_MS = 1_000
 const MAX_BACKOFF_MS = 60_000
 
@@ -58,6 +58,12 @@ export class SyncSocket {
   private reconnectTimeout: ReturnType<typeof setTimeout> | null = null
   private backoffMs = INITIAL_BACKOFF_MS
   private stopped = true
+  // Bumped by every connect() call and checked after its token await - a
+  // connect() call whose await outlives a newer one (e.g. disconnect()
+  // immediately followed by connect(), racing an earlier reconnect that was
+  // still awaiting its token) must not resume and overwrite the newer
+  // connection once it's already live.
+  private connectGeneration = 0
   private connectedWithToken: string | null = null
   // The most recent list ids passed to subscribe(), resent on every
   // (re)connect from onopen - see sendSubscribe.
@@ -107,15 +113,18 @@ export class SyncSocket {
       return
     }
     this.stopped = false
+    const myGeneration = ++this.connectGeneration
 
     const tokenResult = await getValidAccessToken()
     const token = tokenResult.success ? tokenResult.getValue() : null
-    this.connectedWithToken = token
 
-    if (this.stopped) {
-      // disconnect() was called while we were awaiting the token.
+    if (this.stopped || myGeneration !== this.connectGeneration) {
+      // disconnect() was called, or a newer connect() call already took
+      // over, while we were awaiting the token - don't clobber
+      // connectedWithToken with a token that was never actually used.
       return
     }
+    this.connectedWithToken = token
 
     const url = syncConfig.webSocketUrl
     const headers = token ? { Authorization: `Bearer ${token}` } : undefined
@@ -146,6 +155,13 @@ export class SyncSocket {
     }
 
     socket.onclose = () => {
+      if (this.socket !== socket) {
+        // This socket was already superseded by a later connect() (e.g.
+        // disconnect()+connect() on foreground - see SyncCoordinator) before
+        // its close event arrived. Acting on it now would wipe out the
+        // timers/reference of the connection that replaced it.
+        return
+      }
       this.cleanupTimers()
       this.socket = null
       if (!this.stopped) {
