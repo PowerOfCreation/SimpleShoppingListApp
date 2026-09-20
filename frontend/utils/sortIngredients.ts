@@ -16,23 +16,41 @@ function compareByPriority(a: Ingredient, b: Ingredient): number {
   return compareByDate(a, b)
 }
 
-function compareByCategory(a: Ingredient, b: Ingredient): number {
-  const aOrder = categoryOrder(categorizeIngredient(a.name))
-  const bOrder = categoryOrder(categorizeIngredient(b.name))
-  if (aOrder !== bOrder) {
-    return aOrder - bOrder
+// Categorizing is a keyword scan (~8.8k entries); precomputed once per
+// pass instead of per comparison, so an O(n log n) sort makes O(n) calls,
+// not O(n log n) - independent of whether categoryCache still holds them.
+function categorizeAll(ingredients: Ingredient[]): Map<string, Category> {
+  const categories = new Map<string, Category>()
+  for (const item of ingredients) {
+    if (!categories.has(item.id)) {
+      categories.set(item.id, categorizeIngredient(item.name))
+    }
   }
-  return compareByDate(a, b)
+  return categories
+}
+
+function compareByCategory(
+  categories: Map<string, Category>
+): (a: Ingredient, b: Ingredient) => number {
+  return (a, b) => {
+    const aOrder = categoryOrder(categories.get(a.id) ?? Category.OTHER)
+    const bOrder = categoryOrder(categories.get(b.id) ?? Category.OTHER)
+    if (aOrder !== bOrder) {
+      return aOrder - bOrder
+    }
+    return compareByDate(a, b)
+  }
 }
 
 function compareByMode(
-  mode: SortMode
+  mode: SortMode,
+  ingredients: Ingredient[]
 ): (a: Ingredient, b: Ingredient) => number {
   switch (mode) {
     case SortMode.PRIORITY:
       return compareByPriority
     case SortMode.CATEGORY:
-      return compareByCategory
+      return compareByCategory(categorizeAll(ingredients))
     case SortMode.DATE:
       return compareByDate
   }
@@ -47,7 +65,7 @@ export function sortIngredientsByMode(
   ingredients: Ingredient[],
   mode: SortMode
 ): Ingredient[] {
-  const compare = compareByMode(mode)
+  const compare = compareByMode(mode, ingredients)
   return [...ingredients].sort((a, b) => {
     if (a.completed !== b.completed) {
       return a.completed ? 1 : -1
@@ -57,20 +75,15 @@ export function sortIngredientsByMode(
 }
 
 /**
- * Whether the given order already matches the sort order for a mode.
- * Used to decide whether pressing the sort button should just sort
- * the (now out of order) list, or switch to the other sort mode.
- *
- * O(n) neighbor scan instead of sorting a copy just to compare - equivalent
- * because Array.prototype.sort is stable, so a run already satisfying the
- * comparator between every adjacent pair is exactly what sortIngredientsByMode
- * would produce.
+ * Whether the list already matches the sort order for a mode - an O(n)
+ * neighbor scan, equivalent to sorting a copy and comparing since a stable
+ * sort is a no-op once every adjacent pair already satisfies the comparator.
  */
 export function isSortedByMode(
   ingredients: Ingredient[],
   mode: SortMode
 ): boolean {
-  const compare = compareByMode(mode)
+  const compare = compareByMode(mode, ingredients)
   for (let i = 1; i < ingredients.length; i++) {
     const prev = ingredients[i - 1]
     const item = ingredients[i]
@@ -92,7 +105,7 @@ function insertionIndex(
   item: Ingredient,
   mode: SortMode
 ): number {
-  const compare = compareByMode(mode)
+  const compare = compareByMode(mode, [item, ...list])
   const index = list.findIndex((other) =>
     other.completed !== item.completed
       ? other.completed

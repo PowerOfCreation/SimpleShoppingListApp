@@ -39,9 +39,11 @@ function findLongestMatch(
   return undefined
 }
 
-// ponytail: unbounded cache, keyed by normalized name - fine for a shopping
-// list's distinct item names within a session. Upgrade to a token index if
-// the cold scan over ~8.8k keywords is ever the bottleneck.
+// Capped FIFO cache, keyed by normalized name. Cap must stay well above a
+// session's total distinct item names - eviction forces a re-scan on the
+// next sort/section render, not just extra memory. 5000 covers realistic
+// usage while still bounding runaway growth over very long sessions.
+const CATEGORY_CACHE_CAPACITY = 5000
 const categoryCache = new Map<string, Category>()
 
 /**
@@ -65,5 +67,8 @@ export function categorizeIngredient(name: string): Category {
     findLongestMatch(normalized, GENERATED) ??
     Category.OTHER
   categoryCache.set(normalized, category)
+  if (categoryCache.size > CATEGORY_CACHE_CAPACITY) {
+    categoryCache.delete(categoryCache.keys().next().value as string)
+  }
   return category
 }
