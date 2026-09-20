@@ -2,6 +2,7 @@ import React from "react"
 import { Animated, StyleSheet } from "react-native"
 import { ThemedText } from "./ThemedText"
 import { useThemeColor } from "@/hooks/useThemeColor"
+import { useLatestRef } from "@/hooks/useLatestRef"
 
 export type SystemMessageProps = {
   message: string | null
@@ -17,6 +18,9 @@ export function SystemMessage({
   const [opacity] = React.useState(() => new Animated.Value(0))
   const backgroundColor = useThemeColor({}, "text")
   const textColor = useThemeColor({}, "background")
+  // Read via ref instead of an effect dep, so an unrelated parent re-render
+  // (recreating the inline onHide) doesn't restart the fade mid-flight.
+  const onHideRef = useLatestRef(onHide)
 
   React.useEffect(() => {
     if (!message) return
@@ -33,11 +37,11 @@ export function SystemMessage({
         toValue: 0,
         duration: 250,
         useNativeDriver: true,
-      }).start(onHide)
+      }).start(() => onHideRef.current())
     }, duration)
 
     return () => clearTimeout(timer)
-  }, [message, duration, opacity, onHide])
+  }, [message, duration, opacity, onHideRef])
 
   if (!message) return null
 

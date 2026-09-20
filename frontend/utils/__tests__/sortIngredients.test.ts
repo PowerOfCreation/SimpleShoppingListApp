@@ -123,6 +123,36 @@ describe("sortIngredientsByMode", () => {
 
     expect(sorted.map((i) => i.id)).toEqual(["2", "1"])
   })
+
+  it("sorts 2000 items by category well under a second (categorizeIngredient is memoized)", () => {
+    // Regression guard: categorizeIngredient scans ~8.8k keywords per
+    // uncached call and compareByCategory calls it twice per comparison -
+    // without the cache this was seconds, not milliseconds, on a real list.
+    const names = [
+      "Milch",
+      "Brot",
+      "Apfel",
+      "Zahnpasta",
+      "Kaffee",
+      "Nudeln",
+      "Käse",
+      "Bananen",
+      "Klopapier",
+      "Reis",
+    ]
+    const items = Array.from({ length: 2000 }, (_, i) =>
+      makeIngredient({
+        id: String(i),
+        name: `${names[i % names.length]} ${i}`,
+        created_at: Math.random(),
+        completed: Math.random() < 0.4,
+      })
+    )
+
+    const start = Date.now()
+    sortIngredientsByMode(items, SortMode.CATEGORY)
+    expect(Date.now() - start).toBeLessThan(1000)
+  })
 })
 
 describe("isSortedByMode", () => {

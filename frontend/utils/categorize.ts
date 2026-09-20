@@ -39,19 +39,36 @@ function findLongestMatch(
   return undefined
 }
 
+// Capped FIFO cache, keyed by normalized name. Cap must stay well above a
+// session's total distinct item names - eviction forces a re-scan on the
+// next sort/section render, not just extra memory. 5000 covers realistic
+// usage while still bounding runaway growth over very long sessions.
+const CATEGORY_CACHE_CAPACITY = 5000
+const categoryCache = new Map<string, Category>()
+
 /**
  * Classifies a shopping list item name into a category by longest matching
  * keyword, curated table first, generated table as fallback. Pure and
- * synchronous - no model, no I/O, safe to call on every render.
+ * synchronous, and memoized - the keyword scan is expensive (~8.8k entries),
+ * so repeated calls for the same name (e.g. sorting/sectioning a list) are
+ * cheap after the first.
  */
 export function categorizeIngredient(name: string): Category {
   const normalized = name.trim().toLowerCase()
   if (!normalized) {
     return Category.OTHER
   }
-  return (
+  const cached = categoryCache.get(normalized)
+  if (cached !== undefined) {
+    return cached
+  }
+  const category =
     findLongestMatch(normalized, CURATED) ??
     findLongestMatch(normalized, GENERATED) ??
     Category.OTHER
-  )
+  categoryCache.set(normalized, category)
+  if (categoryCache.size > CATEGORY_CACHE_CAPACITY) {
+    categoryCache.delete(categoryCache.keys().next().value as string)
+  }
+  return category
 }

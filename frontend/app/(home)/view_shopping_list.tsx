@@ -58,6 +58,10 @@ export default function ViewShoppingList() {
   const textColor = useThemeColor({}, "text")
   const secondaryColor = useThemeColor({}, "textSecondary")
   const completedCount = ingredients.filter((item) => item.completed).length
+  const sections = React.useMemo(
+    () => sectionIngredientsByMode(ingredients, sortMode),
+    [ingredients, sortMode]
+  )
 
   React.useEffect(() => {
     if (listId) {
@@ -186,7 +190,7 @@ export default function ViewShoppingList() {
     return (
       <SectionList
         contentContainerStyle={styles.listContent}
-        sections={sectionIngredientsByMode(ingredients, sortMode)}
+        sections={sections}
         renderItem={renderEntry}
         renderSectionHeader={renderSectionHeader}
         keyExtractor={(item) => item.id}
