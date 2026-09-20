@@ -39,19 +39,31 @@ function findLongestMatch(
   return undefined
 }
 
+// ponytail: unbounded cache, keyed by normalized name - fine for a shopping
+// list's distinct item names within a session. Upgrade to a token index if
+// the cold scan over ~8.8k keywords is ever the bottleneck.
+const categoryCache = new Map<string, Category>()
+
 /**
  * Classifies a shopping list item name into a category by longest matching
  * keyword, curated table first, generated table as fallback. Pure and
- * synchronous - no model, no I/O, safe to call on every render.
+ * synchronous, and memoized - the keyword scan is expensive (~8.8k entries),
+ * so repeated calls for the same name (e.g. sorting/sectioning a list) are
+ * cheap after the first.
  */
 export function categorizeIngredient(name: string): Category {
   const normalized = name.trim().toLowerCase()
   if (!normalized) {
     return Category.OTHER
   }
-  return (
+  const cached = categoryCache.get(normalized)
+  if (cached !== undefined) {
+    return cached
+  }
+  const category =
     findLongestMatch(normalized, CURATED) ??
     findLongestMatch(normalized, GENERATED) ??
     Category.OTHER
-  )
+  categoryCache.set(normalized, category)
+  return category
 }

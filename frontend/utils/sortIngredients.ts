@@ -60,13 +60,29 @@ export function sortIngredientsByMode(
  * Whether the given order already matches the sort order for a mode.
  * Used to decide whether pressing the sort button should just sort
  * the (now out of order) list, or switch to the other sort mode.
+ *
+ * O(n) neighbor scan instead of sorting a copy just to compare - equivalent
+ * because Array.prototype.sort is stable, so a run already satisfying the
+ * comparator between every adjacent pair is exactly what sortIngredientsByMode
+ * would produce.
  */
 export function isSortedByMode(
   ingredients: Ingredient[],
   mode: SortMode
 ): boolean {
-  const sorted = sortIngredientsByMode(ingredients, mode)
-  return ingredients.every((item, index) => item.id === sorted[index].id)
+  const compare = compareByMode(mode)
+  for (let i = 1; i < ingredients.length; i++) {
+    const prev = ingredients[i - 1]
+    const item = ingredients[i]
+    const inOrder =
+      prev.completed !== item.completed
+        ? !prev.completed
+        : compare(prev, item) <= 0
+    if (!inOrder) {
+      return false
+    }
+  }
+  return true
 }
 
 // First index in `list` where `item` belongs: before the completed block if

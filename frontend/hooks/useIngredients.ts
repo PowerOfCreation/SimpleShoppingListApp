@@ -44,6 +44,15 @@ export function useIngredients() {
   // regaining focus, a delete - merges into the existing order instead of
   // resorting from scratch. Only the very first load for a list sorts.
   const lastLoadedListIdRef = React.useRef<string | undefined>(undefined)
+  // Read inside loadIngredients instead of a dependency, so switching sort
+  // mode doesn't change the callback's identity and re-trigger the mount
+  // effect below - a mode switch resorts in memory, it never needs a
+  // full SQLite re-read. Synced via effect (not written during render) so
+  // it's current before any effect further down that can call loadIngredients.
+  const sortModeRef = React.useRef(sortMode)
+  React.useEffect(() => {
+    sortModeRef.current = sortMode
+  }, [sortMode])
 
   const loadIngredients = React.useCallback(async () => {
     const isInitialLoadForList = lastLoadedListIdRef.current !== listId
@@ -65,8 +74,8 @@ export function useIngredients() {
       lastLoadedListIdRef.current = listId
       setIngredients((prev) =>
         isInitialLoadForList
-          ? sortIngredientsByMode(fresh, sortMode)
-          : mergeIngredientsPreservingOrder(prev, fresh, sortMode)
+          ? sortIngredientsByMode(fresh, sortModeRef.current)
+          : mergeIngredientsPreservingOrder(prev, fresh, sortModeRef.current)
       )
     } catch (err) {
       setError("Failed to load ingredients")
@@ -76,7 +85,7 @@ export function useIngredients() {
         setIsLoading(false)
       }
     }
-  }, [listId, sortMode])
+  }, [listId])
 
   // Load list name when listId changes
   React.useEffect(() => {
