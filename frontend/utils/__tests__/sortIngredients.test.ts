@@ -173,22 +173,92 @@ describe("mergeIngredientsPreservingOrder", () => {
       makeIngredient({ id: "1", name: "Milk", completed: true }), // toggled
     ]
 
-    const merged = mergeIngredientsPreservingOrder(existing, fresh)
+    const merged = mergeIngredientsPreservingOrder(
+      existing,
+      fresh,
+      SortMode.DATE
+    )
 
     expect(merged.map((i) => i.id)).toEqual(["1", "2"])
     expect(merged[0].completed).toBe(true)
   })
 
-  it("appends a brand-new item at the end", () => {
-    const existing = [makeIngredient({ id: "1", name: "Milk" })]
+  it("inserts a brand-new open item before the completed block, not at the end", () => {
+    const existing = [
+      makeIngredient({ id: "1", name: "Milk", completed: false }),
+      makeIngredient({ id: "2", name: "Eggs", completed: true }),
+    ]
     const fresh = [
-      makeIngredient({ id: "1", name: "Milk" }),
-      makeIngredient({ id: "2", name: "Bread" }),
+      makeIngredient({ id: "1", name: "Milk", completed: false }),
+      makeIngredient({ id: "2", name: "Eggs", completed: true }),
+      makeIngredient({
+        id: "3",
+        name: "Bread",
+        completed: false,
+        created_at: 1,
+      }), // new
     ]
 
-    const merged = mergeIngredientsPreservingOrder(existing, fresh)
+    const merged = mergeIngredientsPreservingOrder(
+      existing,
+      fresh,
+      SortMode.DATE
+    )
 
-    expect(merged.map((i) => i.id)).toEqual(["1", "2"])
+    expect(merged.map((i) => i.id)).toEqual(["3", "1", "2"])
+  })
+
+  it("inserts a brand-new item at its position within the priority mode grouping", () => {
+    const existing = [
+      makeIngredient({
+        id: "1",
+        name: "Milk",
+        completed: false,
+        priority: Priority.NOW,
+      }),
+      makeIngredient({
+        id: "2",
+        name: "Bread",
+        completed: false,
+        priority: Priority.DAYS_4_PLUS,
+      }),
+    ]
+    const fresh = [
+      ...existing,
+      makeIngredient({
+        id: "3",
+        name: "Eggs",
+        completed: false,
+        priority: Priority.DAYS_1_TO_3,
+      }), // new, belongs between the two existing items
+    ]
+
+    const merged = mergeIngredientsPreservingOrder(
+      existing,
+      fresh,
+      SortMode.PRIORITY
+    )
+
+    expect(merged.map((i) => i.id)).toEqual(["1", "3", "2"])
+  })
+
+  it("inserts a brand-new completed item into the completed block, not before the open items", () => {
+    const existing = [
+      makeIngredient({ id: "1", name: "Milk", completed: false }),
+      makeIngredient({ id: "2", name: "Eggs", completed: true }),
+    ]
+    const fresh = [
+      ...existing,
+      makeIngredient({ id: "3", name: "Bread", completed: true }), // new, already completed
+    ]
+
+    const merged = mergeIngredientsPreservingOrder(
+      existing,
+      fresh,
+      SortMode.DATE
+    )
+
+    expect(merged.map((i) => i.id)).toEqual(["1", "2", "3"])
   })
 
   it("drops an item no longer present", () => {
@@ -198,12 +268,16 @@ describe("mergeIngredientsPreservingOrder", () => {
     ]
     const fresh = [makeIngredient({ id: "2", name: "Bread" })]
 
-    const merged = mergeIngredientsPreservingOrder(existing, fresh)
+    const merged = mergeIngredientsPreservingOrder(
+      existing,
+      fresh,
+      SortMode.DATE
+    )
 
     expect(merged.map((i) => i.id)).toEqual(["2"])
   })
 
-  it("handles patch, append, and drop together", () => {
+  it("handles patch, insert, and drop together", () => {
     const existing = [
       makeIngredient({ id: "1", name: "Milk", completed: false }),
       makeIngredient({ id: "2", name: "Bread", completed: false }), // will be dropped
@@ -215,9 +289,13 @@ describe("mergeIngredientsPreservingOrder", () => {
       makeIngredient({ id: "4", name: "Cheese", completed: false }), // new
     ]
 
-    const merged = mergeIngredientsPreservingOrder(existing, fresh)
+    const merged = mergeIngredientsPreservingOrder(
+      existing,
+      fresh,
+      SortMode.DATE
+    )
 
-    expect(merged.map((i) => i.id)).toEqual(["1", "3", "4"])
+    expect(merged.map((i) => i.id)).toEqual(["1", "4", "3"])
     expect(merged.find((i) => i.id === "3")?.completed).toBe(true)
   })
 })
