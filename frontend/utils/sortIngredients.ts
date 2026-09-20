@@ -69,16 +69,34 @@ export function isSortedByMode(
   return ingredients.every((item, index) => item.id === sorted[index].id)
 }
 
+// First index in `list` where `item` belongs: before the completed block if
+// `item` is open, otherwise by the mode comparator within its own block.
+function insertionIndex(
+  list: Ingredient[],
+  item: Ingredient,
+  mode: SortMode
+): number {
+  const compare = compareByMode(mode)
+  const index = list.findIndex((other) =>
+    other.completed !== item.completed
+      ? other.completed
+      : compare(item, other) < 0
+  )
+  return index === -1 ? list.length : index
+}
+
 /**
  * Merges freshly-fetched ingredients into the existing display order: known
  * items are patched in place (content updates, same position), brand-new
- * items are appended, removed items drop out. Used for any background
- * refresh (sync pull, screen refocus, post-delete) so that data changing
- * under the user never itself repositions a row - only pressing "Sort" does.
+ * items are inserted at their sort position for `mode`, removed items drop
+ * out. Used for any background refresh (sync pull, screen refocus,
+ * post-delete) so that data changing under the user never repositions a
+ * known row - only pressing "Sort" does.
  */
 export function mergeIngredientsPreservingOrder(
   existing: Ingredient[],
-  fresh: Ingredient[]
+  fresh: Ingredient[],
+  mode: SortMode
 ): Ingredient[] {
   const freshById = new Map(fresh.map((item) => [item.id, item]))
   const seen = new Set<string>()
@@ -93,7 +111,7 @@ export function mergeIngredientsPreservingOrder(
   }
   for (const item of fresh) {
     if (!seen.has(item.id)) {
-      merged.push(item)
+      merged.splice(insertionIndex(merged, item, mode), 0, item)
     }
   }
   return merged

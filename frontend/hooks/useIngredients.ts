@@ -66,7 +66,7 @@ export function useIngredients() {
       setIngredients((prev) =>
         isInitialLoadForList
           ? sortIngredientsByMode(fresh, sortMode)
-          : mergeIngredientsPreservingOrder(prev, fresh)
+          : mergeIngredientsPreservingOrder(prev, fresh, sortMode)
       )
     } catch (err) {
       setError("Failed to load ingredients")

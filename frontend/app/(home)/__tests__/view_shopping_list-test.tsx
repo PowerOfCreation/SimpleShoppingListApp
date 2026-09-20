@@ -217,6 +217,61 @@ describe("<ViewShoppingList /> Component Tests", () => {
     expect(screen.queryByAccessibilityHint("loading data")).toBeNull()
   })
 
+  it("places a newly-added item above the completed ones on refetch, without moving existing rows", async () => {
+    // Regression test: a background reload used to append brand-new items
+    // at the very end via mergeIngredientsPreservingOrder, landing them
+    // below already-completed items until the user pressed "Sort".
+    await createTestList(db, {
+      id: "add-list",
+      name: "Add List",
+    })
+    const now = Date.now()
+    await createTestIngredient(db, {
+      id: "a",
+      name: "Apple",
+      completed: false,
+      list_id: "add-list",
+      created_at: now,
+    })
+    await createTestIngredient(db, {
+      id: "b",
+      name: "Banana",
+      completed: true,
+      list_id: "add-list",
+      created_at: now + 1000,
+    })
+
+    renderShoppingListView("add-list")
+    await waitForAppReady()
+
+    // New item added while the screen is already open (e.g. from the "new
+    // ingredient" screen), then a refetch picks it up - same as refocusing.
+    await createTestIngredient(db, {
+      id: "c",
+      name: "Carrot",
+      completed: false,
+      list_id: "add-list",
+      created_at: now + 2000,
+    })
+    await act(async () => {
+      notifyListDataChanged("add-list")
+    })
+
+    await waitFor(() => {
+      expect(screen.getByTestId("entry-component-c")).toBeTruthy()
+    })
+
+    const order = screen
+      .getAllByTestId(/^entry-component-/)
+      .map((e) => e.props.testID)
+
+    expect(order).toEqual([
+      "entry-component-c",
+      "entry-component-a",
+      "entry-component-b",
+    ])
+  })
+
   it("shows no category headers in the default (date) sort mode", async () => {
     // The sort button lives in navigation.setOptions({ headerRight }),
     // which the native stack header doesn't render in this test
