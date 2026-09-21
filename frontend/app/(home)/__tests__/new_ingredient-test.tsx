@@ -6,6 +6,7 @@ import { getDatabase } from "@/database/database"
 import { initializeAndMigrateDatabase } from "@/database/data-migration"
 import type { Ingredient } from "@/types/Ingredient"
 import type { IngredientList } from "@/types/IngredientList"
+import { Priority } from "@/types/Priority"
 import { router } from "expo-router"
 
 // Mock router.back() to prevent navigation errors in tests
@@ -58,6 +59,14 @@ async function createTestIngredient(
     updated_at: now,
     ...ingredientData,
   })
+  // repo.add() doesn't write priority; set it separately if given.
+  if (ingredientData.priority !== undefined) {
+    await db.runAsync(
+      `UPDATE ingredients SET priority = ? WHERE id = ?`,
+      ingredientData.priority,
+      ingredientData.id
+    )
+  }
 }
 
 /**
@@ -388,6 +397,41 @@ describe("<NewIngredient /> Component Tests", () => {
 
       // Verify router.back() was called
       expect(router.back).toHaveBeenCalled()
+    })
+
+    it("reactivates a completed ingredient with a priority when re-added via the suggestion tap", async () => {
+      await createTestList(db, {
+        id: "list-1",
+        name: "Test List",
+      })
+      await createTestIngredient(db, {
+        id: "existing-1",
+        name: "Milk",
+        completed: true,
+        list_id: "list-1",
+        priority: Priority.NOW,
+      })
+
+      renderNewIngredient("list-1")
+
+      // Tapping the suggestion must also prefill priority, or the
+      // name+priority match on Add falls through to a duplicate create.
+      const suggestion = await screen.findByText("Milk")
+      fireEvent.press(suggestion)
+
+      const addButton = screen.getByText("Add")
+      fireEvent.press(addButton)
+
+      await waitFor(async () => {
+        const repo = new IngredientRepository(db)
+        const result = await repo.getAll("list-1")
+        expect(result.success).toBe(true)
+        const ingredients = result.getValue()!
+        expect(ingredients.length).toBe(1)
+        expect(ingredients[0].id).toBe("existing-1")
+        expect(ingredients[0].completed).toBe(false)
+        expect(ingredients[0].priority).toBe(Priority.NOW)
+      })
     })
 
     it("reactivates a completed ingredient with the same name instead of creating a duplicate", async () => {

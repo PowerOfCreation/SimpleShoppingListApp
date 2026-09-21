@@ -110,10 +110,8 @@ export class IngredientService {
 
     try {
       // Re-adding a completed item (same name + priority) reactivates it
-      // instead of creating a duplicate. Decided here, not in the
-      // projection: forward-apply must equal rebuild (sync-sharing-target.md
-      // §6.1), so the choice has to be baked into the emitted event, never
-      // re-derived from replay position.
+      // instead of duplicating it. Decided here, not in the projection, so
+      // forward-apply matches rebuild (sync-sharing-target.md §6.1).
       const completedResult =
         await this.repository.getCompletedIngredients(listId)
       if (completedResult.success) {
@@ -129,6 +127,12 @@ export class IngredientService {
           const result = await this.updateCompletion(match.id, listId, false)
           if (!result.success) {
             return Result.fail(result.getError())
+          }
+          // Re-fetch rather than patching `match` in memory: updateCompletion
+          // wrote its own `now` as updated_at, which `match` doesn't have.
+          const reactivated = await this.repository.getById(match.id)
+          if (reactivated.success && reactivated.getValue()) {
+            return Result.ok(reactivated.getValue()!)
           }
           return Result.ok({
             ...match,

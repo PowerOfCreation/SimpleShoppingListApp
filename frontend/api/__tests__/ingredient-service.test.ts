@@ -234,6 +234,13 @@ describe("IngredientService", () => {
       mockRepository.getCompletedIngredients.mockResolvedValue(
         Result.ok([completedIngredient])
       )
+      const reactivatedRow: Ingredient = {
+        ...completedIngredient,
+        completed: false,
+        completed_at: undefined,
+        updated_at: 12345,
+      }
+      mockRepository.getById.mockResolvedValue(Result.ok(reactivatedRow))
 
       const result = await service.AddIngredients(
         " milk ",
@@ -250,9 +257,11 @@ describe("IngredientService", () => {
       expect(payload.completed).toBe(false)
       expect(payload.completedAt).toBeNull()
 
+      // Returned value comes from the freshly re-fetched row, not a
+      // patched copy of the stale pre-reactivation snapshot.
+      expect(mockRepository.getById).toHaveBeenCalledWith("existing-1")
       expect(result.success).toBe(true)
-      expect(result.getValue()!.id).toBe("existing-1")
-      expect(result.getValue()!.completed).toBe(false)
+      expect(result.getValue()).toEqual(reactivatedRow)
     })
 
     it("creates a new ingredient when a completed one has the same name but a different priority", async () => {
