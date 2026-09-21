@@ -90,10 +90,6 @@ export default function NewIngredient() {
       ]}
       onPress={() => {
         onChangeText(item.name)
-        // Prefill its priority too: reactivation matches on name AND
-        // priority, so leaving this unset would create a duplicate instead.
-        setPriority(item.priority)
-        setShowPriorityPicker(item.priority !== undefined)
         inputRef.current?.focus()
       }}
     >
