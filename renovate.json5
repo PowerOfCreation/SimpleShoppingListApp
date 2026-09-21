@@ -96,9 +96,8 @@
       rangeStrategy: 'bump',
     },
     {
-      // Ohne gomodTidy lässt Renovate go.sum nach einem Bump stehen wie es ist
-      // (z.B. alten Versions-Hash zusätzlich zum neuen) - das lässt den
-      // "Check go.mod/go.sum are tidy" CI-Step in backend-lint.yml fehlschlagen.
+      // Ohne gomodTidy bleibt go.sum nach einem Bump stale (z.B. alter
+      // Versions-Hash neben dem neuen stehen).
       matchManagers: [
         'gomod',
       ],
