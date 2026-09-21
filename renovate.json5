@@ -96,6 +96,16 @@
       rangeStrategy: 'bump',
     },
     {
+      // Ohne gomodTidy bleibt go.sum nach einem Bump stale (z.B. alter
+      // Versions-Hash neben dem neuen stehen).
+      matchManagers: [
+        'gomod',
+      ],
+      postUpdateOptions: [
+        'gomodTidy',
+      ],
+    },
+    {
       // Go-Version in backend/go.mod und im golang-Image in backend/Dockerfile gemeinsam anheben
       matchDatasources: [
         'golang-version',
