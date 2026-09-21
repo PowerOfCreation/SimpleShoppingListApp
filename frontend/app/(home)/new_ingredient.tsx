@@ -62,21 +62,14 @@ export default function NewIngredient() {
     }
     const result = await getIngredientService().AddIngredients(
       ingredientName,
-      listId
+      listId,
+      priority
     )
 
     if (!result.success) {
       const error = result.getError()
       setInvalidInputExplanation(error.message)
       return
-    }
-
-    if (priority !== undefined) {
-      await getIngredientService().setPriority(
-        result.getValue()!.id,
-        listId,
-        priority
-      )
     }
 
     onChangeText("")

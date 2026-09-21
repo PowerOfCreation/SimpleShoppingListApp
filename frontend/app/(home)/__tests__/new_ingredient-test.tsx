@@ -390,6 +390,38 @@ describe("<NewIngredient /> Component Tests", () => {
       expect(router.back).toHaveBeenCalled()
     })
 
+    it("reactivates a completed ingredient with the same name instead of creating a duplicate", async () => {
+      await createTestList(db, {
+        id: "list-1",
+        name: "Test List",
+      })
+      await createTestIngredient(db, {
+        id: "existing-1",
+        name: "Milk",
+        completed: true,
+        list_id: "list-1",
+      })
+
+      renderNewIngredient("list-1")
+
+      const input = await screen.findByPlaceholderText("Ingredient name")
+      const addButton = screen.getByText("Add")
+
+      // Different case/whitespace than the stored "Milk"
+      fireEvent.changeText(input, " milk ")
+      fireEvent.press(addButton)
+
+      await waitFor(async () => {
+        const repo = new IngredientRepository(db)
+        const result = await repo.getAll("list-1")
+        expect(result.success).toBe(true)
+        const ingredients = result.getValue()!
+        expect(ingredients.length).toBe(1)
+        expect(ingredients[0].id).toBe("existing-1")
+        expect(ingredients[0].completed).toBe(false)
+      })
+    })
+
     it("shows error when adding empty ingredient name", async () => {
       await createTestList(db, {
         id: "list-1",
