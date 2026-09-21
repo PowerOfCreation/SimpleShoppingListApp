@@ -97,7 +97,8 @@ export class IngredientService {
 
   async AddIngredients(
     ingredientName: string,
-    listId: string
+    listId: string,
+    priority?: Priority
   ): Promise<Result<Ingredient, ValidationError | DbQueryError>> {
     if (!ingredientName.trim()) {
       const error = new ValidationError(
@@ -108,6 +109,35 @@ export class IngredientService {
     }
 
     try {
+      // Re-adding a completed item (same name + priority) reactivates it
+      // instead of creating a duplicate. Decided here, not in the
+      // projection: forward-apply must equal rebuild (sync-sharing-target.md
+      // §6.1), so the choice has to be baked into the emitted event, never
+      // re-derived from replay position.
+      const completedResult =
+        await this.repository.getCompletedIngredients(listId)
+      if (completedResult.success) {
+        const normalizedName = ingredientName.trim().toLowerCase()
+        const match = completedResult
+          .getValue()!
+          .find(
+            (ing) =>
+              ing.name.trim().toLowerCase() === normalizedName &&
+              ing.priority === priority
+          )
+        if (match) {
+          const result = await this.updateCompletion(match.id, listId, false)
+          if (!result.success) {
+            return Result.fail(result.getError())
+          }
+          return Result.ok({
+            ...match,
+            completed: false,
+            completed_at: undefined,
+          })
+        }
+      }
+
       const now = Date.now()
       const ingredientId = uuidv4()
       const event: DomainEventRow = {
@@ -131,6 +161,10 @@ export class IngredientService {
         return Result.fail(result.getError())
       }
 
+      if (priority !== undefined) {
+        await this.setPriority(ingredientId, listId, priority)
+      }
+
       const newIngredient: Ingredient = {
         name: ingredientName,
         completed: false,
@@ -138,6 +172,7 @@ export class IngredientService {
         id: ingredientId,
         created_at: now,
         updated_at: now,
+        priority,
       }
       this.ingredients.unshift(newIngredient)
 

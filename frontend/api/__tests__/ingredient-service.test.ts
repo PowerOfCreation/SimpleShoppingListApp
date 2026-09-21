@@ -62,7 +62,7 @@ describe("IngredientService", () => {
       updateName: jest.fn(),
       remove: jest.fn(),
       reorderIngredients: jest.fn(),
-      getCompletedIngredients: jest.fn(),
+      getCompletedIngredients: jest.fn().mockResolvedValue(Result.ok([])),
     } as unknown as jest.Mocked<IngredientRepository>
 
     mockEventRepository = {
@@ -218,6 +218,103 @@ describe("IngredientService", () => {
       const [entries] = mockEventRepository.appendAll.mock.calls[0]
       expect(entries[0].enqueueForSync).toBe(true)
       expect(notifyOutboxChanged).toHaveBeenCalledTimes(1)
+    })
+
+    it("reactivates a completed ingredient with the same (trimmed, case-insensitive) name and priority instead of creating a new one", async () => {
+      const completedIngredient: Ingredient = {
+        id: "existing-1",
+        name: "Milk",
+        completed: true,
+        list_id: "list-1",
+        created_at: 500,
+        updated_at: 500,
+        completed_at: 900,
+        priority: Priority.NOW,
+      }
+      mockRepository.getCompletedIngredients.mockResolvedValue(
+        Result.ok([completedIngredient])
+      )
+
+      const result = await service.AddIngredients(
+        " milk ",
+        "list-1",
+        Priority.NOW
+      )
+
+      expect(mockEventRepository.appendAll).toHaveBeenCalledTimes(1)
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      const event = entries[0].event
+      expect(event.event_type).toBe(EventTypes.INGREDIENT_UPDATED)
+      expect(event.aggregate_id).toBe("existing-1")
+      const payload = JSON.parse(event.payload)
+      expect(payload.completed).toBe(false)
+      expect(payload.completedAt).toBeNull()
+
+      expect(result.success).toBe(true)
+      expect(result.getValue()!.id).toBe("existing-1")
+      expect(result.getValue()!.completed).toBe(false)
+    })
+
+    it("creates a new ingredient when a completed one has the same name but a different priority", async () => {
+      const completedIngredient: Ingredient = {
+        id: "existing-1",
+        name: "Milk",
+        completed: true,
+        list_id: "list-1",
+        created_at: 500,
+        updated_at: 500,
+        completed_at: 900,
+        priority: Priority.NOW,
+      }
+      mockRepository.getCompletedIngredients.mockResolvedValue(
+        Result.ok([completedIngredient])
+      )
+
+      const result = await service.AddIngredients(
+        "Milk",
+        "list-1",
+        Priority.DAYS_1_TO_3
+      )
+
+      // 2 calls: ingredient.created, then the priority_set follow-up for
+      // the chosen priority (same as new_ingredient.tsx used to do itself).
+      expect(mockEventRepository.appendAll).toHaveBeenCalledTimes(2)
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      expect(entries[0].event.event_type).toBe(EventTypes.INGREDIENT_CREATED)
+      expect(result.success).toBe(true)
+      expect(result.getValue()!.id).not.toBe("existing-1")
+    })
+
+    it("creates a new ingredient when a not-completed ingredient has the same name and priority", async () => {
+      mockRepository.getCompletedIngredients.mockResolvedValue(Result.ok([]))
+
+      const result = await service.AddIngredients("Milk", "list-1")
+
+      expect(mockRepository.getCompletedIngredients).toHaveBeenCalledWith(
+        "list-1"
+      )
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      expect(entries[0].event.event_type).toBe(EventTypes.INGREDIENT_CREATED)
+      expect(result.success).toBe(true)
+    })
+
+    it("still creates a new ingredient when the completed-ingredients lookup fails", async () => {
+      mockRepository.getCompletedIngredients.mockResolvedValue(
+        Result.fail(
+          new DbQueryError(
+            "boom",
+            "getCompletedIngredients",
+            "Ingredient",
+            new Error("boom")
+          )
+        )
+      )
+
+      const result = await service.AddIngredients("Milk", "list-1")
+
+      const [entries] = mockEventRepository.appendAll.mock.calls[0]
+      expect(entries[0].event.event_type).toBe(EventTypes.INGREDIENT_CREATED)
+      expect(result.success).toBe(true)
     })
   })
 
