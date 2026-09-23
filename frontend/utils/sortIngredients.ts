@@ -128,18 +128,21 @@ export function mergeIngredientsPreservingOrder(
   mode: SortMode
 ): Ingredient[] {
   const freshById = new Map(fresh.map((item) => [item.id, item]))
-  const seen = new Set<string>()
+  const keptInPlace = new Set<string>()
   const merged: Ingredient[] = []
 
   for (const item of existing) {
     const updated = freshById.get(item.id)
-    if (updated) {
+    // A reactivated item (completed -> not completed, e.g. re-adding a
+    // completed item) is re-inserted at its sort position like a new item,
+    // instead of staying stuck in the completed block until Sort is pressed.
+    if (updated && !(item.completed && !updated.completed)) {
       merged.push(updated)
-      seen.add(item.id)
+      keptInPlace.add(item.id)
     }
   }
   for (const item of fresh) {
-    if (!seen.has(item.id)) {
+    if (!keptInPlace.has(item.id)) {
       merged.splice(insertionIndex(merged, item, mode), 0, item)
     }
   }

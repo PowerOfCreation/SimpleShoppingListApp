@@ -291,6 +291,33 @@ describe("mergeIngredientsPreservingOrder", () => {
     expect(merged.map((i) => i.id)).toEqual(["1", "2", "3"])
   })
 
+  it("re-inserts a reactivated item at its sort position instead of leaving it in the completed block", () => {
+    const existing = [
+      makeIngredient({ id: "1", name: "Milk", completed: false }),
+      makeIngredient({ id: "2", name: "Eggs", completed: true }),
+      makeIngredient({ id: "3", name: "Bread", completed: true }),
+    ]
+    const fresh = [
+      makeIngredient({ id: "1", name: "Milk", completed: false }),
+      makeIngredient({
+        id: "2",
+        name: "Eggs",
+        completed: false,
+        created_at: 100,
+      }), // reactivated
+      makeIngredient({ id: "3", name: "Bread", completed: true }),
+    ]
+
+    const merged = mergeIngredientsPreservingOrder(
+      existing,
+      fresh,
+      SortMode.DATE
+    )
+
+    expect(merged.map((i) => i.id)).toEqual(["2", "1", "3"])
+    expect(merged[0].completed).toBe(false)
+  })
+
   it("drops an item no longer present", () => {
     const existing = [
       makeIngredient({ id: "1", name: "Milk" }),
