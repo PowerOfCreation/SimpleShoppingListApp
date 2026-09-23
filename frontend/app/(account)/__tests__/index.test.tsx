@@ -48,28 +48,28 @@ describe("AccountScreen", () => {
     jest.clearAllMocks()
   })
 
-  it("shows a spinner while the session is being restored", () => {
+  it("shows a spinner while the session is being restored", async () => {
     mockAuth({ status: "loading" })
 
-    render(<AccountScreen />)
+    await render(<AccountScreen />)
 
     expect(screen.getByTestId("account-loading")).toBeTruthy()
     expect(screen.queryByTestId("account-login")).toBeNull()
   })
 
-  it("offers login and explains that it is optional when signed out", () => {
+  it("offers login and explains that it is optional when signed out", async () => {
     const auth = mockAuth()
 
-    render(<AccountScreen />)
+    await render(<AccountScreen />)
 
     expect(screen.getByText("Not signed in")).toBeTruthy()
     expect(screen.getByText(/stored on this device/i)).toBeTruthy()
 
-    fireEvent.press(screen.getByTestId("account-login"))
+    await fireEvent.press(screen.getByTestId("account-login"))
     expect(auth.login).toHaveBeenCalled()
   })
 
-  it("shows the profile and a sign out button when signed in", () => {
+  it("shows the profile and a sign out button when signed in", async () => {
     const auth = mockAuth({
       status: "signedIn",
       user: {
@@ -80,7 +80,7 @@ describe("AccountScreen", () => {
       },
     })
 
-    render(<AccountScreen />)
+    await render(<AccountScreen />)
 
     expect(screen.getByTestId("account-user")).toHaveTextContent("Niklas")
     expect(screen.getByText("niklas@example.com")).toBeTruthy()
@@ -91,16 +91,16 @@ describe("AccountScreen", () => {
     const auth = mockAuth({ status: "signedIn" })
     mockSharedSyncedLists([])
 
-    render(<AccountScreen />)
+    await render(<AccountScreen />)
 
-    fireEvent.press(screen.getByTestId("account-logout"))
+    await fireEvent.press(screen.getByTestId("account-logout"))
     await waitFor(() =>
       expect(screen.getByTestId("account-logout-confirm-confirm")).toBeTruthy()
     )
     expect(auth.logout).not.toHaveBeenCalled()
     expect(screen.queryByText(/currently sharing/i)).toBeNull()
 
-    fireEvent.press(screen.getByTestId("account-logout-confirm-confirm"))
+    await fireEvent.press(screen.getByTestId("account-logout-confirm-confirm"))
     expect(auth.logout).toHaveBeenCalled()
   })
 
@@ -108,9 +108,9 @@ describe("AccountScreen", () => {
     mockAuth({ status: "signedIn" })
     mockSharedSyncedLists([{ id: "list-1", name: "Camping trip" }])
 
-    render(<AccountScreen />)
+    await render(<AccountScreen />)
 
-    fireEvent.press(screen.getByTestId("account-logout"))
+    await fireEvent.press(screen.getByTestId("account-logout"))
 
     await waitFor(() =>
       expect(screen.getByText(/currently sharing "Camping trip"/i)).toBeTruthy()
@@ -121,21 +121,21 @@ describe("AccountScreen", () => {
     const auth = mockAuth({ status: "signedIn" })
     mockSharedSyncedLists([])
 
-    render(<AccountScreen />)
+    await render(<AccountScreen />)
 
-    fireEvent.press(screen.getByTestId("account-logout"))
+    await fireEvent.press(screen.getByTestId("account-logout"))
     await waitFor(() =>
       expect(screen.getByTestId("account-logout-confirm-cancel")).toBeTruthy()
     )
 
-    fireEvent.press(screen.getByTestId("account-logout-confirm-cancel"))
+    await fireEvent.press(screen.getByTestId("account-logout-confirm-cancel"))
     expect(auth.logout).not.toHaveBeenCalled()
   })
 
-  it("renders an error message when one is set", () => {
+  it("renders an error message when one is set", async () => {
     mockAuth({ error: "Login failed: boom" })
 
-    render(<AccountScreen />)
+    await render(<AccountScreen />)
 
     expect(screen.getByTestId("account-error")).toHaveTextContent(
       "Login failed: boom"

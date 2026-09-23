@@ -58,14 +58,14 @@ describe("useIngredients - sort mode switching", () => {
       "GetIngredients"
     )
 
-    const { result } = renderHook(() => useIngredients())
+    const { result } = await renderHook(() => useIngredients())
 
     await waitFor(() => expect(result.current.isLoading).toBe(false))
     const callsAfterInitialLoad = getIngredientsSpy.mock.calls.length
 
     // The seeded list is already sorted by DATE, so pressing sort advances
     // the mode instead of just re-sorting.
-    act(() => result.current.sortIngredients())
+    await act(() => result.current.sortIngredients())
     await waitFor(() => expect(result.current.sortMode).toBe(SortMode.PRIORITY))
 
     expect(getIngredientsSpy.mock.calls.length).toBe(callsAfterInitialLoad)

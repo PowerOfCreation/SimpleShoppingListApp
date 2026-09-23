@@ -38,7 +38,7 @@ jest.mock("expo-router", () => ({
 }))
 
 async function renderIndex() {
-  const result = renderRouter({ index: Index }, { initialUrl: "/" })
+  const result = await renderRouter({ index: Index }, { initialUrl: "/" })
   await waitFor(() =>
     expect(screen.queryByAccessibilityHint("loading data")).toBeNull()
   )
@@ -111,12 +111,12 @@ describe("Index - turn off sync confirmation", () => {
 
     await renderIndex()
 
-    fireEvent(
+    await fireEvent(
       screen.getByTestId(`shopping-list-entry-${aList.id}`),
       "longPress"
     )
 
-    fireEvent(
+    await fireEvent(
       screen.getByTestId(`shopping-list-context-sync-${aList.id}`),
       "valueChange",
       false
@@ -127,7 +127,7 @@ describe("Index - turn off sync confirmation", () => {
     )
     expect(setSyncEnabled).not.toHaveBeenCalled()
 
-    fireEvent.press(screen.getByTestId("sync-off-confirm-confirm"))
+    await fireEvent.press(screen.getByTestId("sync-off-confirm-confirm"))
     await waitFor(() =>
       expect(setSyncEnabled).toHaveBeenCalledWith("list-1", false)
     )
@@ -139,12 +139,12 @@ describe("Index - turn off sync confirmation", () => {
 
     await renderIndex()
 
-    fireEvent(
+    await fireEvent(
       screen.getByTestId(`shopping-list-entry-${aList.id}`),
       "longPress"
     )
 
-    fireEvent(
+    await fireEvent(
       screen.getByTestId(`shopping-list-context-sync-${aList.id}`),
       "valueChange",
       false
@@ -162,12 +162,12 @@ describe("Index - turn off sync confirmation", () => {
 
     await renderIndex()
 
-    fireEvent(
+    await fireEvent(
       screen.getByTestId(`shopping-list-entry-${aList.id}`),
       "longPress"
     )
 
-    fireEvent(
+    await fireEvent(
       screen.getByTestId(`shopping-list-context-sync-${aList.id}`),
       "valueChange",
       true

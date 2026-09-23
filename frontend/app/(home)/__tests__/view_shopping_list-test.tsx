@@ -96,7 +96,7 @@ describe("<ViewShoppingList /> Component Tests", () => {
   })
 
   it("renders without crashing", async () => {
-    renderShoppingListView("list-1")
+    await renderShoppingListView("list-1")
 
     await waitForAppReady()
 
@@ -109,7 +109,7 @@ describe("<ViewShoppingList /> Component Tests", () => {
       name: "Empty List",
     })
 
-    renderShoppingListView("empty-list")
+    await renderShoppingListView("empty-list")
 
     await waitForAppReady()
 
@@ -148,7 +148,7 @@ describe("<ViewShoppingList /> Component Tests", () => {
       list_id: "list-2",
     })
 
-    renderShoppingListView("list-with-items")
+    await renderShoppingListView("list-with-items")
     await waitForAppReady()
 
     expect(await screen.findByText("Milk")).toBeTruthy()
@@ -189,7 +189,7 @@ describe("<ViewShoppingList /> Component Tests", () => {
       created_at: now + 2000,
     })
 
-    renderShoppingListView("sync-list")
+    await renderShoppingListView("sync-list")
     await waitForAppReady()
 
     const before = screen
@@ -197,7 +197,7 @@ describe("<ViewShoppingList /> Component Tests", () => {
       .map((e) => e.props.testID)
 
     // Toggle "a" - real optimistic-update path (item stays in place).
-    fireEvent.press(screen.getByTestId("entry-component-a"))
+    await fireEvent.press(screen.getByTestId("entry-component-a"))
 
     // Simulate the sync pull that confirms this device's own push.
     await act(async () => {
@@ -241,7 +241,7 @@ describe("<ViewShoppingList /> Component Tests", () => {
       created_at: now + 1000,
     })
 
-    renderShoppingListView("add-list")
+    await renderShoppingListView("add-list")
     await waitForAppReady()
 
     // New item added while the screen is already open (e.g. from the "new
@@ -295,7 +295,7 @@ describe("<ViewShoppingList /> Component Tests", () => {
       list_id: "category-list",
     })
 
-    renderShoppingListView("category-list")
+    await renderShoppingListView("category-list")
     await waitForAppReady()
 
     expect(await screen.findByText("Milch")).toBeTruthy()
@@ -313,12 +313,14 @@ it("shows the permission explanation above the items of an offline list", async 
   // sync-enabled lists (see ListSyncStateRepository.setPermissionDenied).
   await new ListSyncStateRepository(db).setEnabled("denied-detail", true)
   await setListPermissionDenied("denied-detail", true)
-  renderShoppingListView("denied-detail")
+  await renderShoppingListView("denied-detail")
   await waitForAppReady()
-  fireEvent.press(screen.getByRole("button", { name: "No permission to sync" }))
+  await fireEvent.press(
+    screen.getByRole("button", { name: "No permission to sync" })
+  )
   expect(
     screen.getByText(/You can keep using the list on this device/)
   ).toBeTruthy()
-  fireEvent.press(screen.getByText("Close"))
+  await fireEvent.press(screen.getByText("Close"))
   expect(screen.getByTestId("add-button")).toBeTruthy()
 })
