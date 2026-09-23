@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/command"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/interfaces"
@@ -44,7 +44,7 @@ func NewListSharingController(
 	return controller
 }
 
-func (lsc *ListSharingController) CreateInvite(c echo.Context) error {
+func (lsc *ListSharingController) CreateInvite(c *echo.Context) error {
 	userID, ok := middleware.UserIDFromContext(c)
 	if !ok {
 		return unauthorized(c)
@@ -85,7 +85,7 @@ func (lsc *ListSharingController) CreateInvite(c echo.Context) error {
 	return c.JSON(http.StatusCreated, mapper.ToCreateListInviteResponse(result))
 }
 
-func (lsc *ListSharingController) GetInvites(c echo.Context) error {
+func (lsc *ListSharingController) GetInvites(c *echo.Context) error {
 	userID, ok := middleware.UserIDFromContext(c)
 	if !ok {
 		return unauthorized(c)
@@ -111,7 +111,7 @@ func (lsc *ListSharingController) GetInvites(c echo.Context) error {
 	})
 }
 
-func (lsc *ListSharingController) RevokeInvite(c echo.Context) error {
+func (lsc *ListSharingController) RevokeInvite(c *echo.Context) error {
 	userID, ok := middleware.UserIDFromContext(c)
 	if !ok {
 		return unauthorized(c)
@@ -134,7 +134,7 @@ func (lsc *ListSharingController) RevokeInvite(c echo.Context) error {
 	return c.NoContent(http.StatusNoContent)
 }
 
-func (lsc *ListSharingController) RedeemInvite(c echo.Context) error {
+func (lsc *ListSharingController) RedeemInvite(c *echo.Context) error {
 	userID, ok := middleware.UserIDFromContext(c)
 	if !ok {
 		return unauthorized(c)
@@ -159,7 +159,7 @@ func (lsc *ListSharingController) RedeemInvite(c echo.Context) error {
 // PreviewInvite resolves a token without joining - authenticated (like every
 // sharing route), but it never touches list_members, so it's safe to call
 // repeatedly (e.g. before showing an "accept invite" screen).
-func (lsc *ListSharingController) PreviewInvite(c echo.Context) error {
+func (lsc *ListSharingController) PreviewInvite(c *echo.Context) error {
 	if _, ok := middleware.UserIDFromContext(c); !ok {
 		return unauthorized(c)
 	}
@@ -185,7 +185,7 @@ func (lsc *ListSharingController) PreviewInvite(c echo.Context) error {
 // ErrInviteNotFound (404), conflating a missing request field with a
 // genuinely unknown invite. Callers turn a non-nil error into a 400 with
 // its message; nothing here writes to the response itself.
-func bindInviteToken(c echo.Context) (string, error) {
+func bindInviteToken(c *echo.Context) (string, error) {
 	var req request.RedeemListInviteRequest
 	if err := c.Bind(&req); err != nil {
 		return "", errors.New("Failed to parse request body")
@@ -196,7 +196,7 @@ func bindInviteToken(c echo.Context) (string, error) {
 	return req.Token, nil
 }
 
-func (lsc *ListSharingController) GetMyLists(c echo.Context) error {
+func (lsc *ListSharingController) GetMyLists(c *echo.Context) error {
 	userID, ok := middleware.UserIDFromContext(c)
 	if !ok {
 		return unauthorized(c)
@@ -212,7 +212,7 @@ func (lsc *ListSharingController) GetMyLists(c echo.Context) error {
 	return c.JSON(http.StatusOK, mapper.ToMyListsResponse(result))
 }
 
-func unauthorized(c echo.Context) error {
+func unauthorized(c *echo.Context) error {
 	return c.JSON(http.StatusUnauthorized, map[string]string{
 		"error": "missing user identity",
 	})
@@ -222,7 +222,7 @@ func unauthorized(c echo.Context) error {
 // status; anything unrecognized is logged and collapsed to 500 rather than
 // leaking internals. errors.Is, not ==, since CreateInvite wraps
 // ErrInvalidInviteTTL with the offending key via fmt.Errorf("%w: ...").
-func (lsc *ListSharingController) errorResponse(c echo.Context, err error, logMsg string) error {
+func (lsc *ListSharingController) errorResponse(c *echo.Context, err error, logMsg string) error {
 	status, message := errorStatus(err)
 	if status == http.StatusInternalServerError {
 		middleware.RequestScopedLogger(lsc.logger, c).Error(logMsg, "error", err)

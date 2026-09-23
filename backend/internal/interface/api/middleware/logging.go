@@ -3,8 +3,8 @@ package middleware
 import (
 	"log/slog"
 
-	"github.com/labstack/echo/v4"
-	echomw "github.com/labstack/echo/v4/middleware"
+	"github.com/labstack/echo/v5"
+	echomw "github.com/labstack/echo/v5/middleware"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/infrastructure/logging"
 )
 
@@ -17,7 +17,7 @@ import (
 // entry and would just add noise.
 func RequestLogger(logger *slog.Logger) echo.MiddlewareFunc {
 	return echomw.RequestLoggerWithConfig(echomw.RequestLoggerConfig{
-		Skipper: func(c echo.Context) bool {
+		Skipper: func(c *echo.Context) bool {
 			return c.Path() == "/api/v1/sync/ws" || c.Path() == "/metrics"
 		},
 		LogRemoteIP:      true,
@@ -29,9 +29,8 @@ func RequestLogger(logger *slog.Logger) echo.MiddlewareFunc {
 		LogRequestID:     true,
 		LogContentLength: true,
 		LogResponseSize:  true,
-		LogError:         true,
 		HandleError:      true,
-		LogValuesFunc: func(c echo.Context, v echomw.RequestLoggerValues) error {
+		LogValuesFunc: func(c *echo.Context, v echomw.RequestLoggerValues) error {
 			level := slog.LevelInfo
 			switch {
 			case v.Status >= 500:
@@ -62,7 +61,7 @@ func RequestLogger(logger *slog.Logger) echo.MiddlewareFunc {
 // without threading a logger through every call.
 func ContextLogger(logger *slog.Logger) echo.MiddlewareFunc {
 	return func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			requestLogger := logger.With("request_id", c.Response().Header().Get(echo.HeaderXRequestID))
 			c.SetRequest(c.Request().WithContext(logging.NewContext(c.Request().Context(), requestLogger)))
 			return next(c)
@@ -74,7 +73,7 @@ func ContextLogger(logger *slog.Logger) echo.MiddlewareFunc {
 // and, once authenticated, its user id (see middleware.NewKeycloakAuth) -
 // the shared helper every REST controller uses so 500 paths log with
 // consistent correlation fields instead of copy-pasted attribute lists.
-func RequestScopedLogger(base *slog.Logger, c echo.Context) *slog.Logger {
+func RequestScopedLogger(base *slog.Logger, c *echo.Context) *slog.Logger {
 	l := base.With("request_id", c.Response().Header().Get(echo.HeaderXRequestID))
 	if userID, ok := UserIDFromContext(c); ok {
 		l = l.With("user_id", userID)

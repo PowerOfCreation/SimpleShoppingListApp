@@ -5,7 +5,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/interfaces"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
@@ -44,7 +44,7 @@ func NewSyncStateController(
 // synced but that doesn't show up here back to pending so it gets resent -
 // this is what recovers from a lost ack, an app kill between send and ack,
 // or the server losing data it had previously acked.
-func (ssc *SyncStateController) GetSyncState(c echo.Context) error {
+func (ssc *SyncStateController) GetSyncState(c *echo.Context) error {
 	userID, ok := middleware.UserIDFromContext(c)
 	if !ok {
 		return unauthorized(c)

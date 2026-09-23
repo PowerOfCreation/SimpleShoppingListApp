@@ -6,7 +6,7 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/infrastructure/db/postgres"
@@ -22,7 +22,7 @@ func TestKeycloakAuth_PersistsOnlyVerifiedGivenName(t *testing.T) {
 	mw, err := NewKeycloakAuth(context.Background(), testLogger(), postgres.NewSqlcUserProfileRepository(db.Queries))
 	require.NoError(t, err)
 	e := echo.New()
-	e.GET("/test", func(c echo.Context) error { return c.NoContent(http.StatusOK) }, mw)
+	e.GET("/test", func(c *echo.Context) error { return c.NoContent(http.StatusOK) }, mw)
 	for _, tc := range []struct {
 		name      string
 		overrides map[string]any
