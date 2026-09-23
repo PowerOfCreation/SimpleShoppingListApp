@@ -10,7 +10,7 @@ import (
 	"strings"
 
 	"github.com/coreos/go-oidc/v3/oidc"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/entities"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
 )
@@ -63,7 +63,7 @@ func NewKeycloakAuth(ctx context.Context, logger *slog.Logger, profiles reposito
 	logger.Info("auth configured", "issuer", issuer, "client_id", clientID)
 
 	mw := func(next echo.HandlerFunc) echo.HandlerFunc {
-		return func(c echo.Context) error {
+		return func(c *echo.Context) error {
 			token, ok := bearerToken(c.Request())
 			if !ok {
 				RequestScopedLogger(logger, c).Warn("rejected request", "reason", "missing bearer token")
@@ -140,7 +140,7 @@ func NewKeycloakAuth(ctx context.Context, logger *slog.Logger, profiles reposito
 // (e.g. middleware.Passthrough in tests) - handlers must reject rather than
 // fall back to an empty user, which would otherwise claim ownership of an
 // unowned list (see ListAccessService.AuthorizeWrite).
-func UserIDFromContext(c echo.Context) (string, bool) {
+func UserIDFromContext(c *echo.Context) (string, bool) {
 	userID, ok := c.Get(userIDContextKey).(string)
 	if !ok || userID == "" {
 		return "", false
@@ -152,7 +152,7 @@ func UserIDFromContext(c echo.Context) (string, bool) {
 // stashed by NewKeycloakAuth from optional JWT claims - both "" when absent
 // (no ok bool: unlike UserIDFromContext, nothing here is ever authorized
 // against, so there's no unset case a handler must reject).
-func UserProfileFromContext(c echo.Context) (name, pictureURL string) {
+func UserProfileFromContext(c *echo.Context) (name, pictureURL string) {
 	name, _ = c.Get(userNameContextKey).(string)
 	pictureURL, _ = c.Get(userPictureContextKey).(string)
 	return name, pictureURL
