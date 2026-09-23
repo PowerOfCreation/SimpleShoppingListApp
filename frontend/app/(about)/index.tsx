@@ -50,7 +50,7 @@ export default function AboutScreen() {
       <FlatList
         data={releases.filter((release) => {
           const comparison = compareReleaseVersions(release.tag_name, version)
-          return comparison !== null && comparison >= 0
+          return comparison !== null && comparison <= 0
         })}
         keyExtractor={(item) => String(item.id)}
         contentContainerStyle={styles.content}
@@ -72,10 +72,6 @@ export default function AboutScreen() {
               the Open Database License (ODbL).
             </ThemedText>
             <ThemedText type="subtitle">Changelog</ThemedText>
-            <ThemedText style={{ color: secondary }}>
-              Frontend releases from your installed version onward, including
-              pre-releases. Latest first.
-            </ThemedText>
             {error ? (
               <ThemedText accessibilityRole="alert">{error}</ThemedText>
             ) : null}
@@ -92,7 +88,7 @@ export default function AboutScreen() {
         ListEmptyComponent={
           !loading && !error ? (
             <ThemedText>
-              No releases available for your installed version or newer.
+              No releases available up to your installed version.
             </ThemedText>
           ) : null
         }
