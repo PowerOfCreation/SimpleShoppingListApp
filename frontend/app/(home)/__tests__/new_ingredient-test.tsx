@@ -98,7 +98,7 @@ describe("<NewIngredient /> Component Tests", () => {
       name: "Test List",
     })
 
-    renderNewIngredient("list-1")
+    await renderNewIngredient("list-1")
 
     expect(await screen.findByPlaceholderText("Ingredient name")).toBeTruthy()
     expect(screen.getByText("Add")).toBeTruthy()
@@ -122,7 +122,7 @@ describe("<NewIngredient /> Component Tests", () => {
       list_id: "list-1",
     })
 
-    renderNewIngredient("list-1")
+    await renderNewIngredient("list-1")
 
     expect(await screen.findByText("Previously completed")).toBeTruthy()
     expect(await screen.findByText("Milk")).toBeTruthy()
@@ -147,7 +147,7 @@ describe("<NewIngredient /> Component Tests", () => {
       list_id: "list-1",
     })
 
-    renderNewIngredient("list-1")
+    await renderNewIngredient("list-1")
 
     expect(await screen.findByText("Milk")).toBeTruthy()
     expect(screen.queryByText("Eggs")).toBeNull()
@@ -175,7 +175,7 @@ describe("<NewIngredient /> Component Tests", () => {
       list_id: "list-2",
     })
 
-    renderNewIngredient("list-1")
+    await renderNewIngredient("list-1")
 
     expect(await screen.findByText("Milk")).toBeTruthy()
     expect(screen.queryByText("Eggs")).toBeNull()
@@ -200,7 +200,7 @@ describe("<NewIngredient /> Component Tests", () => {
         list_id: "list-1",
       })
 
-      renderNewIngredient("list-1")
+      await renderNewIngredient("list-1")
 
       expect(await screen.findByText("Milk")).toBeTruthy()
       expect(await screen.findByText("Bread")).toBeTruthy()
@@ -230,12 +230,12 @@ describe("<NewIngredient /> Component Tests", () => {
         list_id: "list-1",
       })
 
-      renderNewIngredient("list-1")
+      await renderNewIngredient("list-1")
 
       const input = await screen.findByPlaceholderText("Ingredient name")
 
       // Type "milk" to filter
-      fireEvent.changeText(input, "milk")
+      await fireEvent.changeText(input, "milk")
 
       await waitFor(() => {
         expect(screen.getByText("Whole Milk")).toBeTruthy()
@@ -262,12 +262,12 @@ describe("<NewIngredient /> Component Tests", () => {
         list_id: "list-1",
       })
 
-      renderNewIngredient("list-1")
+      await renderNewIngredient("list-1")
 
       const input = await screen.findByPlaceholderText("Ingredient name")
 
       // Type uppercase version
-      fireEvent.changeText(input, "MILK")
+      await fireEvent.changeText(input, "MILK")
 
       await waitFor(() => {
         expect(screen.getByText("Milk")).toBeTruthy()
@@ -287,11 +287,11 @@ describe("<NewIngredient /> Component Tests", () => {
         list_id: "list-1",
       })
 
-      renderNewIngredient("list-1")
+      await renderNewIngredient("list-1")
 
       const input = await screen.findByPlaceholderText("Ingredient name")
 
-      fireEvent.changeText(input, "xyz")
+      await fireEvent.changeText(input, "xyz")
 
       await waitFor(() => {
         expect(screen.queryByText("Milk")).toBeNull()
@@ -311,12 +311,12 @@ describe("<NewIngredient /> Component Tests", () => {
         list_id: "list-1",
       })
 
-      renderNewIngredient("list-1")
+      await renderNewIngredient("list-1")
 
       const input = await screen.findByPlaceholderText("Ingredient name")
 
       // Type with leading/trailing spaces
-      fireEvent.changeText(input, "  milk  ")
+      await fireEvent.changeText(input, "  milk  ")
 
       await waitFor(() => {
         expect(screen.getByText("Milk")).toBeTruthy()
@@ -341,18 +341,18 @@ describe("<NewIngredient /> Component Tests", () => {
         list_id: "list-1",
       })
 
-      renderNewIngredient("list-1")
+      await renderNewIngredient("list-1")
 
       const input = await screen.findByPlaceholderText("Ingredient name")
 
       // Filter to show only Milk
-      fireEvent.changeText(input, "milk")
+      await fireEvent.changeText(input, "milk")
       await waitFor(() => {
         expect(screen.queryByText("Bread")).toBeNull()
       })
 
       // Clear the filter
-      fireEvent.changeText(input, "")
+      await fireEvent.changeText(input, "")
 
       await waitFor(() => {
         expect(screen.getByText("Milk")).toBeTruthy()
@@ -368,13 +368,13 @@ describe("<NewIngredient /> Component Tests", () => {
         name: "Test List",
       })
 
-      renderNewIngredient("list-1")
+      await renderNewIngredient("list-1")
 
       const input = await screen.findByPlaceholderText("Ingredient name")
       const addButton = screen.getByText("Add")
 
-      fireEvent.changeText(input, "New Ingredient")
-      fireEvent.press(addButton)
+      await fireEvent.changeText(input, "New Ingredient")
+      await fireEvent.press(addButton)
 
       // Verify ingredient was added to database
       await waitFor(async () => {
@@ -402,14 +402,14 @@ describe("<NewIngredient /> Component Tests", () => {
         list_id: "list-1",
       })
 
-      renderNewIngredient("list-1")
+      await renderNewIngredient("list-1")
 
       const input = await screen.findByPlaceholderText("Ingredient name")
       const addButton = screen.getByText("Add")
 
       // Different case/whitespace than the stored "Milk"
-      fireEvent.changeText(input, " milk ")
-      fireEvent.press(addButton)
+      await fireEvent.changeText(input, " milk ")
+      await fireEvent.press(addButton)
 
       await waitFor(async () => {
         const repo = new IngredientRepository(db)
@@ -428,12 +428,12 @@ describe("<NewIngredient /> Component Tests", () => {
         name: "Test List",
       })
 
-      renderNewIngredient("list-1")
+      await renderNewIngredient("list-1")
 
       const addButton = screen.getByText("Add")
 
       // Try to add with empty name
-      fireEvent.press(addButton)
+      await fireEvent.press(addButton)
 
       await waitFor(() => {
         expect(screen.getByText("Ingredient name can't be empty")).toBeTruthy()
@@ -446,13 +446,13 @@ describe("<NewIngredient /> Component Tests", () => {
         name: "Test List",
       })
 
-      renderNewIngredient("list-1")
+      await renderNewIngredient("list-1")
 
       const input = await screen.findByPlaceholderText("Ingredient name")
       const addButton = screen.getByText("Add")
 
-      fireEvent.changeText(input, "   ")
-      fireEvent.press(addButton)
+      await fireEvent.changeText(input, "   ")
+      await fireEvent.press(addButton)
 
       await waitFor(() => {
         expect(screen.getByText("Ingredient name can't be empty")).toBeTruthy()
@@ -465,19 +465,19 @@ describe("<NewIngredient /> Component Tests", () => {
         name: "Test List",
       })
 
-      renderNewIngredient("list-1")
+      await renderNewIngredient("list-1")
 
       const input = await screen.findByPlaceholderText("Ingredient name")
       const addButton = screen.getByText("Add")
 
       // Trigger error
-      fireEvent.press(addButton)
+      await fireEvent.press(addButton)
       await waitFor(() => {
         expect(screen.getByText("Ingredient name can't be empty")).toBeTruthy()
       })
 
       // Start typing
-      fireEvent.changeText(input, "M")
+      await fireEvent.changeText(input, "M")
 
       await waitFor(() => {
         expect(screen.queryByText("Ingredient name can't be empty")).toBeNull()
@@ -498,12 +498,12 @@ describe("<NewIngredient /> Component Tests", () => {
         list_id: "list-1",
       })
 
-      renderNewIngredient("list-1")
+      await renderNewIngredient("list-1")
 
       const completedIngredient = await screen.findByText("Milk")
       const input = await screen.findByPlaceholderText("Ingredient name")
 
-      fireEvent.press(completedIngredient)
+      await fireEvent.press(completedIngredient)
 
       await waitFor(() => {
         expect(input.props.value).toBe("Milk")

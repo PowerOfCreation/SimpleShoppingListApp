@@ -16,48 +16,51 @@ beforeEach(() => {
   reportSyncStarted().finish(true)
 })
 
-it("shows sync failures while the device is online", () => {
-  const { result } = renderHook(() => useSyncStatus())
-  act(() => reportSyncStarted().finish(false))
+it("shows sync failures while the device is online", async () => {
+  const { result } = await renderHook(() => useSyncStatus())
+  await act(() => reportSyncStarted().finish(false))
   expect(result.current).toBe("error")
 })
 
 it.each([
   { isConnected: false },
   { isConnected: true, isInternetReachable: false },
-])("keeps offline visible during automatic sync attempts: %j", (network) => {
-  mockNetworkState.mockReturnValue(network)
-  const { result } = renderHook(() => useSyncStatus())
-  expect(result.current).toBe("offline")
-  let finish!: (ok: boolean) => void
-  act(() => {
-    finish = reportSyncStarted().finish
-  })
-  expect(result.current).toBe("offline")
-  act(() => finish(false))
-  expect(result.current).toBe("offline")
-})
+])(
+  "keeps offline visible during automatic sync attempts: %j",
+  async (network) => {
+    mockNetworkState.mockReturnValue(network)
+    const { result } = await renderHook(() => useSyncStatus())
+    expect(result.current).toBe("offline")
+    let finish!: (ok: boolean) => void
+    await act(() => {
+      finish = reportSyncStarted().finish
+    })
+    expect(result.current).toBe("offline")
+    await act(() => finish(false))
+    expect(result.current).toBe("offline")
+  }
+)
 
-it("preserves the failed sync after reconnecting until a new sync succeeds", () => {
+it("preserves the failed sync after reconnecting until a new sync succeeds", async () => {
   mockNetworkState.mockReturnValue({ isConnected: false })
-  const { result, rerender } = renderHook(() => useSyncStatus())
-  act(() => reportSyncStarted().finish(false))
+  const { result, rerender } = await renderHook(() => useSyncStatus())
+  await act(() => reportSyncStarted().finish(false))
   mockNetworkState.mockReturnValue({ isConnected: true })
-  rerender({})
+  await rerender({})
   expect(result.current).toBe("error")
   let finish!: (ok: boolean) => void
-  act(() => {
+  await act(() => {
     finish = reportSyncStarted().finish
   })
   expect(result.current).toBe("syncing")
-  act(() => finish(true))
+  await act(() => finish(true))
   expect(result.current).toBe("synced")
 })
 
-it("does not classify unknown connectivity as offline", () => {
+it("does not classify unknown connectivity as offline", async () => {
   mockNetworkState.mockReturnValue({})
-  const { result } = renderHook(() => useSyncStatus())
+  const { result } = await renderHook(() => useSyncStatus())
   expect(result.current).toBe("synced")
-  act(() => reportSyncStarted().finish(false))
+  await act(() => reportSyncStarted().finish(false))
   expect(result.current).toBe("error")
 })
