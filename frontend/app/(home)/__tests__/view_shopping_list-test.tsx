@@ -7,6 +7,7 @@ import { IngredientRepository } from "@/database/ingredient-repository"
 import { getDatabase } from "@/database/database"
 import { initializeAndMigrateDatabase } from "@/database/data-migration"
 import { notifyListDataChanged } from "@/api/sync/sync-events"
+import { getIngredientService } from "@/api/ingredient-service"
 import type { Ingredient } from "@/types/Ingredient"
 import type { IngredientList } from "@/types/IngredientList"
 
@@ -270,6 +271,77 @@ describe("<ViewShoppingList /> Component Tests", () => {
       "entry-component-a",
       "entry-component-b",
     ])
+  })
+
+  it("reactivates and shows a completed item buried deep in a 1000+ item list, without pressing Sort", async () => {
+    // Reported bug: on a large list (2 open, 1374 done), re-adding an item
+    // whose match sits far down in the completed block reactivates it
+    // (same id, see AddIngredients) and the header count updated to 3 open,
+    // but the row itself stayed invisible until pressing Sort. Reproduces
+    // at the same scale to catch anything that only shows up there.
+    await createTestList(db, { id: "big-list", name: "Big List" })
+    const now = Date.now()
+
+    await db.withTransactionAsync(async () => {
+      await db.runAsync(
+        `INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+        "open-1",
+        "Milk",
+        0,
+        "big-list",
+        now,
+        now
+      )
+      await db.runAsync(
+        `INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+        "open-2",
+        "Bread",
+        0,
+        "big-list",
+        now + 1,
+        now + 1
+      )
+      for (let i = 0; i < 1374; i++) {
+        await db.runAsync(
+          `INSERT INTO ingredients (id, name, completed, list_id, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)`,
+          `done-${i}`,
+          i === 700 ? "Buried Item" : `Done ${i}`,
+          1,
+          "big-list",
+          now + 2 + i,
+          now + 2 + i
+        )
+      }
+    })
+
+    await renderShoppingListView("big-list")
+    await waitForAppReady()
+
+    expect(screen.getByText("2 open")).toBeTruthy()
+
+    // Same call the "new ingredient" screen makes - matches "Buried Item" by
+    // name and reactivates it (same id) instead of creating a duplicate.
+    const result = await getIngredientService().AddIngredients(
+      "Buried Item",
+      "big-list"
+    )
+    expect(result.success).toBe(true)
+    // Sanity check: confirm this actually reactivated done-700 in place,
+    // not a plain create with a fresh id.
+    expect(result.getValue()?.id).toBe("done-700")
+
+    await act(async () => {
+      notifyListDataChanged("big-list")
+    })
+
+    await waitFor(() => expect(screen.getByText("3 open")).toBeTruthy())
+
+    // Not just present somewhere off-screen - the first rendered row.
+    expect(await screen.findByTestId("entry-component-done-700")).toBeTruthy()
+    const order = screen
+      .getAllByTestId(/^entry-component-/)
+      .map((e) => e.props.testID)
+    expect(order[0]).toBe("entry-component-done-700")
   })
 
   it("shows no category headers in the default (date) sort mode", async () => {
