@@ -25,6 +25,13 @@
         'powerofcreation/imp-list-backend',
       ],
       minimumReleaseAge: null,
+      // Default docker versioning treats "-rc.N" as a compatibility suffix
+      // (like "-alpine"), so it's never proposed as an update target. semver
+      // versioning treats it as a real pre-release instead - but by default
+      // Renovate still won't jump a stable version to an unstable one, hence
+      // ignoreUnstable: false.
+      versioning: 'semver',
+      ignoreUnstable: false,
     },
     {
       matchFileNames: [
