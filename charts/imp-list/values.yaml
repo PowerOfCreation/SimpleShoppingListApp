@@ -76,11 +76,11 @@ backend:
       timeoutSeconds: 3
       failureThreshold: 3
 
-  resources: {}
-  # Empty by default — set explicit requests/limits before production use, e.g.:
-  # resources:
-  #   requests: { cpu: 100m, memory: 64Mi }
-  #   limits: { cpu: 500m, memory: 256Mi }
+  # Sized for < 10 CCU. Measured over 7d (Prometheus, krr-style): CPU p95 <1m,
+  # max ~0.5m; memory working set max ~11Mi. Values include generous headroom.
+  resources:
+    requests: { cpu: 10m, memory: 32Mi }
+    limits: { cpu: 250m, memory: 64Mi }
 
   # preStopSleepSeconds (0 = disabled) delays SIGTERM via K8s' native preStop
   # "sleep" action (no shell to exec into in the distroless image), giving
