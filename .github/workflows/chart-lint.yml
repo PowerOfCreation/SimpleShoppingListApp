@@ -67,6 +67,26 @@ jobs:
             --api-versions gateway.networking.k8s.io/v1 \
             > /dev/null
 
+      # kube-linter: best-practice checks on the rendered manifests. Binary is
+      # downloaded from the release and only executed if it matches the pinned
+      # SHA256 (bump both together, Renovate does not track this).
+      # --skip-tests: the helm-test pod is throwaway and not hardened.
+      - name: 🧹 kube-linter
+        env:
+          KUBE_LINTER_VERSION: v0.8.3
+          KUBE_LINTER_SHA256: 618d299a3e2839c8ca9d86fce0db617be0fba41f0fecbbbfb7fbf1c04299fae1
+        run: |
+          set -euo pipefail
+          curl -sSfL -o kube-linter "https://github.com/stackrox/kube-linter/releases/download/${KUBE_LINTER_VERSION}/kube-linter-linux"
+          echo "${KUBE_LINTER_SHA256}  kube-linter" | sha256sum -c -
+          chmod +x kube-linter
+          helm template charts/imp-list --skip-tests \
+            --set backend.secret.databaseUrl=postgres-placeholder \
+            --set backend.keycloak.issuer=https://example.invalid/realms/placeholder \
+            --set backend.keycloak.clientId=placeholder \
+            > rendered.yaml
+          ./kube-linter lint rendered.yaml
+
       # helm template/lint only check the chart against the OpenAPI *schema*
       # - they never caught the Renovate-driven backend.image.tag digest pin
       # (e.g. "0.2.0@sha256:...") that broke the app.kubernetes.io/version
