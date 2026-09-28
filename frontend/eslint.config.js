@@ -1,6 +1,6 @@
 const expo = require("eslint-config-expo/flat")
 const reactNative = require("@react-native/eslint-plugin")
-const { fixupPluginRules } = require("@eslint/compat")
+const { fixupConfigRules, fixupPluginRules } = require("@eslint/compat")
 // eslint-plugin-react-native is maintenance-only (maintainer hasn't worked with RN
 // for years), but no actively maintained replacement exists for these style rules.
 // fixupPluginRules wraps the legacy plugin API for ESLint v9 flat config compatibility.
@@ -10,7 +10,8 @@ const prettierRecommended = require("eslint-plugin-prettier/recommended")
 
 module.exports = [
   { ignores: ["expo-env.d.ts", "metro.config.js"] },
-  ...expo,
+  // Expo's bundled plugins still use rule-context methods removed in ESLint 10.
+  ...fixupConfigRules(expo),
   {
     plugins: { "@react-native": reactNative },
     rules: {
