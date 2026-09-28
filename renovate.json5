@@ -75,6 +75,8 @@
         'expo',
         '/^expo-/',
         '/^@expo//',
+        '!expo-doctor',
+        '!expo-sqlite-mock',
       ],
       groupName: 'expo sdk packages',
       groupSlug: 'expo-sdk',
