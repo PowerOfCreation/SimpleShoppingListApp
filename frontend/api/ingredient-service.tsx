@@ -18,8 +18,6 @@ import { notifyOutboxChanged } from "@/api/sync/outbox-events"
 const logger = createLogger("IngredientService")
 
 export class IngredientService {
-  ingredients: Ingredient[] = []
-  initialLoad = true
   private repository: IngredientRepository
   private eventRepository: EventRepository
   private listRepository: IngredientListRepository
@@ -80,8 +78,7 @@ export class IngredientService {
         return result
       }
 
-      this.ingredients = result.getValue()!
-      return Result.ok([...this.ingredients])
+      return Result.ok(result.getValue()!)
     } catch (error) {
       logger.error("Error fetching ingredients", error)
       return Result.fail(
@@ -178,8 +175,6 @@ export class IngredientService {
         updated_at: now,
         priority,
       }
-      this.ingredients.unshift(newIngredient)
-
       return Result.ok(newIngredient)
     } catch (error) {
       logger.error("Error adding ingredient", error)
@@ -224,13 +219,6 @@ export class IngredientService {
           result.getError()
         )
         return result
-      }
-
-      const index = this.ingredients.findIndex((ing) => ing.id === id)
-      if (index !== -1) {
-        this.ingredients[index].completed = completed
-        this.ingredients[index].updated_at = now
-        this.ingredients[index].completed_at = completed ? now : undefined
       }
 
       return Result.ok(undefined)
@@ -286,12 +274,6 @@ export class IngredientService {
         return result
       }
 
-      const index = this.ingredients.findIndex((ing) => ing.id === id)
-      if (index !== -1) {
-        this.ingredients[index].name = name
-        this.ingredients[index].updated_at = now
-      }
-
       return Result.ok(undefined)
     } catch (error) {
       logger.error(`Error updating name for ingredient ${id}`, error)
@@ -342,12 +324,6 @@ export class IngredientService {
         return result
       }
 
-      const index = this.ingredients.findIndex((ing) => ing.id === id)
-      if (index !== -1) {
-        this.ingredients[index].priority = priority
-        this.ingredients[index].updated_at = now
-      }
-
       return Result.ok(undefined)
     } catch (error) {
       logger.error(`Error updating priority for ingredient ${id}`, error)
@@ -392,12 +368,6 @@ export class IngredientService {
         return result
       }
 
-      const index = this.ingredients.findIndex((ing) => ing.id === id)
-      if (index !== -1) {
-        this.ingredients[index].priority = undefined
-        this.ingredients[index].updated_at = now
-      }
-
       return Result.ok(undefined)
     } catch (error) {
       logger.error(`Error clearing priority for ingredient ${id}`, error)
@@ -436,11 +406,6 @@ export class IngredientService {
       if (!result.success) {
         logger.error(`Error deleting ingredient ${id}`, result.getError())
         return result
-      }
-
-      const index = this.ingredients.findIndex((ing) => ing.id === id)
-      if (index !== -1) {
-        this.ingredients.splice(index, 1)
       }
 
       return Result.ok(undefined)

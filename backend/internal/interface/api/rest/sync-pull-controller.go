@@ -7,7 +7,7 @@ import (
 	"strconv"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/interfaces"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
@@ -48,7 +48,7 @@ func NewSyncPullController(
 // string - maxPullLimit's sibling cap (maxSyncListIDs, defined in
 // sync-state-controller.go) applies here too, reused rather than duplicated
 // since both endpoints bound the same kind of request.
-func (spc *SyncPullController) GetHead(c echo.Context) error {
+func (spc *SyncPullController) GetHead(c *echo.Context) error {
 	userID, ok := middleware.UserIDFromContext(c)
 	if !ok {
 		return unauthorized(c)
@@ -123,7 +123,7 @@ func (spc *SyncPullController) GetHead(c echo.Context) error {
 // need two parsers. Unlike GetHead, a single list_id here is a normal
 // parameter, not a batch to filter - a caller who isn't a member gets 403
 // outright, since there's no ambiguity across other ids to hide behind.
-func (spc *SyncPullController) GetEvents(c echo.Context) error {
+func (spc *SyncPullController) GetEvents(c *echo.Context) error {
 	userID, ok := middleware.UserIDFromContext(c)
 	if !ok {
 		return unauthorized(c)

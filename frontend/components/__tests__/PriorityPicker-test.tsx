@@ -16,8 +16,8 @@ describe("PriorityPicker", () => {
     jest.clearAllMocks()
   })
 
-  it("renders all priority options and a None option", () => {
-    const { getByText } = render(<PriorityPicker {...defaultProps} />)
+  it("renders all priority options and a None option", async () => {
+    const { getByText } = await render(<PriorityPicker {...defaultProps} />)
 
     expect(getByText("Now")).toBeTruthy()
     expect(getByText("1-3 days")).toBeTruthy()
@@ -25,16 +25,16 @@ describe("PriorityPicker", () => {
     expect(getByText("None")).toBeTruthy()
   })
 
-  it("shows the ingredient name as subtitle", () => {
-    const { getByText } = render(<PriorityPicker {...defaultProps} />)
+  it("shows the ingredient name as subtitle", async () => {
+    const { getByText } = await render(<PriorityPicker {...defaultProps} />)
 
     expect(getByText("Milk")).toBeTruthy()
   })
 
-  it("calls onApply with the selected priority and closes when Apply is pressed", () => {
+  it("calls onApply with the selected priority and closes when Apply is pressed", async () => {
     const onApply = jest.fn()
     const onClose = jest.fn()
-    const { getByTestId } = render(
+    const { getByTestId } = await render(
       <PriorityPicker
         {...defaultProps}
         testID="priority-picker"
@@ -43,18 +43,18 @@ describe("PriorityPicker", () => {
       />
     )
 
-    fireEvent.press(
+    await fireEvent.press(
       getByTestId(`priority-picker-option-${Priority.DAYS_1_TO_3}`)
     )
-    fireEvent.press(getByTestId("priority-picker-apply"))
+    await fireEvent.press(getByTestId("priority-picker-apply"))
 
     expect(onApply).toHaveBeenCalledWith(Priority.DAYS_1_TO_3)
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it("calls onApply with undefined when None is selected and applied", () => {
+  it("calls onApply with undefined when None is selected and applied", async () => {
     const onApply = jest.fn()
-    const { getByTestId } = render(
+    const { getByTestId } = await render(
       <PriorityPicker
         {...defaultProps}
         testID="priority-picker"
@@ -63,16 +63,16 @@ describe("PriorityPicker", () => {
       />
     )
 
-    fireEvent.press(getByTestId("priority-picker-none"))
-    fireEvent.press(getByTestId("priority-picker-apply"))
+    await fireEvent.press(getByTestId("priority-picker-none"))
+    await fireEvent.press(getByTestId("priority-picker-apply"))
 
     expect(onApply).toHaveBeenCalledWith(undefined)
   })
 
-  it("does not call onApply when Cancel is pressed", () => {
+  it("does not call onApply when Cancel is pressed", async () => {
     const onApply = jest.fn()
     const onClose = jest.fn()
-    const { getByTestId } = render(
+    const { getByTestId } = await render(
       <PriorityPicker
         {...defaultProps}
         testID="priority-picker"
@@ -81,16 +81,16 @@ describe("PriorityPicker", () => {
       />
     )
 
-    fireEvent.press(getByTestId(`priority-picker-option-${Priority.NOW}`))
-    fireEvent.press(getByTestId("priority-picker-cancel"))
+    await fireEvent.press(getByTestId(`priority-picker-option-${Priority.NOW}`))
+    await fireEvent.press(getByTestId("priority-picker-cancel"))
 
     expect(onApply).not.toHaveBeenCalled()
     expect(onClose).toHaveBeenCalledTimes(1)
   })
 
-  it("resets selection to currentPriority when reopened", () => {
+  it("resets selection to currentPriority when reopened", async () => {
     const onApply = jest.fn()
-    const { getByTestId, rerender } = render(
+    const { getByTestId, rerender } = await render(
       <PriorityPicker
         {...defaultProps}
         testID="priority-picker"
@@ -100,7 +100,7 @@ describe("PriorityPicker", () => {
       />
     )
 
-    rerender(
+    await rerender(
       <PriorityPicker
         {...defaultProps}
         testID="priority-picker"
@@ -110,7 +110,7 @@ describe("PriorityPicker", () => {
       />
     )
 
-    fireEvent.press(getByTestId("priority-picker-apply"))
+    await fireEvent.press(getByTestId("priority-picker-apply"))
 
     expect(onApply).toHaveBeenCalledWith(Priority.NOW)
   })

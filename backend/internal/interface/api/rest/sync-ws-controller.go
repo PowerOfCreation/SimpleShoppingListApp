@@ -4,7 +4,7 @@ import (
 	"net/http"
 
 	"github.com/gorilla/websocket"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/infrastructure/realtime"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
 )
@@ -33,7 +33,7 @@ func NewSyncWebSocketController(e *echo.Echo, hub *realtime.Hub, authMW echo.Mid
 // access-checks list_ids against; nothing is keyed off a client-supplied
 // value. A client_id query parameter is not required and, if present,
 // ignored - the client stopped sending one when the ack path went away.
-func (swc *SyncWebSocketController) Connect(c echo.Context) error {
+func (swc *SyncWebSocketController) Connect(c *echo.Context) error {
 	userID, ok := middleware.UserIDFromContext(c)
 	if !ok {
 		return unauthorized(c)

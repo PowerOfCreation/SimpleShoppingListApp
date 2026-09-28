@@ -13,8 +13,8 @@ jest
   .mocked(ListSyncStateRepository.prototype.isPermissionDenied)
   .mockResolvedValue(Result.ok(false))
 
-afterEach(() => {
-  act(() => clearListSyncStatus("syncing"))
+afterEach(async () => {
+  await act(() => clearListSyncStatus("syncing"))
 })
 
 it.each([
@@ -25,17 +25,17 @@ it.each([
   ["error", true, "error", "Sync failed", /could not be synchronized/],
 ] as const)(
   "opens and closes the explanation for %s",
-  (id, enabled, status, label, message) => {
+  async (id, enabled, status, label, message) => {
     if (status) {
       const { finish } = startListSync(id, "push")
       if (status !== "syncing") finish(status === "synced")
     }
-    const screen = render(
+    const screen = await render(
       <ListSyncStatusIndicator listId={id} syncEnabled={enabled} />
     )
-    fireEvent.press(screen.getByRole("button", { name: label }))
+    await fireEvent.press(screen.getByRole("button", { name: label }))
     expect(screen.getByText(message)).toBeTruthy()
-    fireEvent.press(screen.getByText("Close"))
+    await fireEvent.press(screen.getByText("Close"))
     expect(screen.queryByText(message)).toBeNull()
   }
 )

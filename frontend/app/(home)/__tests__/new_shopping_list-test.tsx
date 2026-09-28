@@ -65,9 +65,9 @@ describe("<NewShoppingList /> Component Tests", () => {
   })
 
   describe("layout", () => {
-    it("renders the list name label, input, sync row, and create button", () => {
+    it("renders the list name label, input, sync row, and create button", async () => {
       mockAuth("signedOut")
-      renderNewShoppingList()
+      await renderNewShoppingList()
 
       expect(screen.getByText(/list name/i)).toBeTruthy()
       expect(screen.getByPlaceholderText("Shopping list name")).toBeTruthy()
@@ -78,9 +78,9 @@ describe("<NewShoppingList /> Component Tests", () => {
   })
 
   describe("sync toggle when signed out", () => {
-    it("is disabled, off, and explains that sign-in is required", () => {
+    it("is disabled, off, and explains that sign-in is required", async () => {
       mockAuth("signedOut")
-      renderNewShoppingList()
+      await renderNewShoppingList()
 
       const toggle = screen.getByTestId("sync-with-account-switch")
       expect(toggle.props.disabled).toBe(true)
@@ -92,9 +92,9 @@ describe("<NewShoppingList /> Component Tests", () => {
   })
 
   describe("sync toggle when signed in", () => {
-    it("is enabled, off by default, and explains cross-device availability", () => {
+    it("is enabled, off by default, and explains cross-device availability", async () => {
       mockAuth("signedIn")
-      renderNewShoppingList()
+      await renderNewShoppingList()
 
       const toggle = screen.getByTestId("sync-with-account-switch")
       expect(toggle.props.disabled).toBe(false)
@@ -104,12 +104,12 @@ describe("<NewShoppingList /> Component Tests", () => {
       ).toBeTruthy()
     })
 
-    it("can be toggled on", () => {
+    it("can be toggled on", async () => {
       mockAuth("signedIn")
-      renderNewShoppingList()
+      await renderNewShoppingList()
 
       const toggle = screen.getByTestId("sync-with-account-switch")
-      fireEvent(toggle, "valueChange", true)
+      await fireEvent(toggle, "valueChange", true)
 
       expect(screen.getByTestId("sync-with-account-switch").props.value).toBe(
         true
@@ -120,13 +120,13 @@ describe("<NewShoppingList /> Component Tests", () => {
   describe("creating a list", () => {
     it("creates a list without sync when signed out, and does not enqueue it", async () => {
       mockAuth("signedOut")
-      renderNewShoppingList()
+      await renderNewShoppingList()
 
-      fireEvent.changeText(
+      await fireEvent.changeText(
         screen.getByPlaceholderText("Shopping list name"),
         "Rewe"
       )
-      fireEvent.press(screen.getByTestId("create-list-button"))
+      await fireEvent.press(screen.getByTestId("create-list-button"))
 
       await waitFor(() => expect(router.replace).toHaveBeenCalledTimes(1))
 
@@ -151,18 +151,18 @@ describe("<NewShoppingList /> Component Tests", () => {
 
     it("creates a list with sync enabled when signed in and toggled on, and enqueues it", async () => {
       mockAuth("signedIn")
-      renderNewShoppingList()
+      await renderNewShoppingList()
 
-      fireEvent.changeText(
+      await fireEvent.changeText(
         screen.getByPlaceholderText("Shopping list name"),
         "Ikea"
       )
-      fireEvent(
+      await fireEvent(
         screen.getByTestId("sync-with-account-switch"),
         "valueChange",
         true
       )
-      fireEvent.press(screen.getByTestId("create-list-button"))
+      await fireEvent.press(screen.getByTestId("create-list-button"))
 
       await waitFor(() => expect(router.replace).toHaveBeenCalledTimes(1))
 
@@ -186,13 +186,13 @@ describe("<NewShoppingList /> Component Tests", () => {
 
     it("navigates to the new list", async () => {
       mockAuth("signedOut")
-      renderNewShoppingList()
+      await renderNewShoppingList()
 
-      fireEvent.changeText(
+      await fireEvent.changeText(
         screen.getByPlaceholderText("Shopping list name"),
         "Lidl"
       )
-      fireEvent.press(screen.getByTestId("create-list-button"))
+      await fireEvent.press(screen.getByTestId("create-list-button"))
 
       await waitFor(() => expect(router.replace).toHaveBeenCalledTimes(1))
       const [destination] = (router.replace as jest.Mock).mock.calls[0]
@@ -201,9 +201,9 @@ describe("<NewShoppingList /> Component Tests", () => {
 
     it("shows an error and does not navigate when the name is empty", async () => {
       mockAuth("signedOut")
-      renderNewShoppingList()
+      await renderNewShoppingList()
 
-      fireEvent.press(screen.getByTestId("create-list-button"))
+      await fireEvent.press(screen.getByTestId("create-list-button"))
 
       await waitFor(() =>
         expect(
@@ -215,16 +215,16 @@ describe("<NewShoppingList /> Component Tests", () => {
 
     it("clears the error message once the user starts typing", async () => {
       mockAuth("signedOut")
-      renderNewShoppingList()
+      await renderNewShoppingList()
 
-      fireEvent.press(screen.getByTestId("create-list-button"))
+      await fireEvent.press(screen.getByTestId("create-list-button"))
       await waitFor(() =>
         expect(
           screen.getByText("Shopping list name can't be empty")
         ).toBeTruthy()
       )
 
-      fireEvent.changeText(
+      await fireEvent.changeText(
         screen.getByPlaceholderText("Shopping list name"),
         "R"
       )

@@ -116,7 +116,7 @@ describe("SyncProvider", () => {
   it("does not flush, pull, subscribe, or connect the socket when signed out", async () => {
     mockAuth("signedOut")
 
-    renderProvider()
+    await renderProvider()
 
     await flushMicrotasks()
     expect(flushMock).not.toHaveBeenCalled()
@@ -129,7 +129,7 @@ describe("SyncProvider", () => {
     mockAuth("signedIn")
     jest.spyOn(syncConfigModule, "isSyncConfigured").mockReturnValue(false)
 
-    renderProvider()
+    await renderProvider()
 
     await flushMicrotasks()
     expect(flushMock).not.toHaveBeenCalled()
@@ -141,7 +141,7 @@ describe("SyncProvider", () => {
   it("subscribes to sync-enabled lists on mount, before connecting", async () => {
     mockAuth("signedIn")
 
-    renderProvider()
+    await renderProvider()
 
     await waitFor(() =>
       expect(socketSubscribeMock).toHaveBeenCalledWith(["list-1", "list-2"])
@@ -151,7 +151,7 @@ describe("SyncProvider", () => {
   it("flushes, pulls sync-enabled lists, and connects the socket once on mount when signed in and configured", async () => {
     mockAuth("signedIn")
 
-    renderProvider()
+    await renderProvider()
 
     await waitFor(() => expect(flushMock).toHaveBeenCalledTimes(1))
     expect(socketConnectMock).toHaveBeenCalledTimes(1)
@@ -162,11 +162,11 @@ describe("SyncProvider", () => {
 
   it("disconnects the socket when signed out after being signed in", async () => {
     mockAuth("signedIn")
-    const { rerender } = renderProvider()
+    const { rerender } = await renderProvider()
     await waitFor(() => expect(socketConnectMock).toHaveBeenCalledTimes(1))
 
     mockAuth("signedOut")
-    rerender(
+    await rerender(
       <SyncProvider>
         <Text>child</Text>
       </SyncProvider>
@@ -178,7 +178,7 @@ describe("SyncProvider", () => {
   it("flushes again when the outbox reports a change", async () => {
     mockAuth("signedIn")
 
-    renderProvider()
+    await renderProvider()
     await waitFor(() => expect(flushMock).toHaveBeenCalledTimes(1))
 
     notifyOutboxChanged()
@@ -188,13 +188,13 @@ describe("SyncProvider", () => {
 
   it("starts flushing and connecting once status becomes signedIn after mounting signed out", async () => {
     mockAuth("signedOut")
-    const { rerender } = renderProvider()
+    const { rerender } = await renderProvider()
 
     await flushMicrotasks()
     expect(flushMock).not.toHaveBeenCalled()
 
     mockAuth("signedIn")
-    rerender(
+    await rerender(
       <SyncProvider>
         <Text>child</Text>
       </SyncProvider>
@@ -206,7 +206,7 @@ describe("SyncProvider", () => {
 
   it("pulls and reconciles sync-enabled list ids when the socket (re)connects", async () => {
     mockAuth("signedIn")
-    renderProvider()
+    await renderProvider()
     await waitFor(() => expect(socketConnectMock).toHaveBeenCalledTimes(1))
     pullMock.mockClear()
 
@@ -221,7 +221,7 @@ describe("SyncProvider", () => {
 
   it("flushes, pulls, reconciles, and reconnects when the app comes to the foreground", async () => {
     mockAuth("signedIn")
-    renderProvider()
+    await renderProvider()
     await waitFor(() => expect(flushMock).toHaveBeenCalledTimes(1))
     pullMock.mockClear()
 
@@ -242,7 +242,7 @@ describe("SyncProvider", () => {
     jest.useFakeTimers()
     try {
       mockAuth("signedIn")
-      renderProvider()
+      await renderProvider()
       await waitFor(() => expect(flushMock).toHaveBeenCalledTimes(1))
       pullMock.mockClear()
       reconcileMock.mockClear()
@@ -261,7 +261,7 @@ describe("SyncProvider", () => {
     jest.useFakeTimers()
     try {
       mockAuth("signedIn")
-      renderProvider()
+      await renderProvider()
       await waitFor(() => expect(socketConnectMock).toHaveBeenCalledTimes(1))
 
       expect(listEventHandler).toBeDefined()
@@ -283,7 +283,7 @@ describe("SyncProvider", () => {
     jest.useFakeTimers()
     try {
       mockAuth("signedIn")
-      renderProvider()
+      await renderProvider()
       await waitFor(() => expect(socketConnectMock).toHaveBeenCalledTimes(1))
 
       expect(listEventHandler).toBeDefined()

@@ -11,8 +11,8 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/labstack/echo/v4"
-	echomw "github.com/labstack/echo/v4/middleware"
+	"github.com/labstack/echo/v5"
+	echomw "github.com/labstack/echo/v5/middleware"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/services"
 	postgres2 "github.com/powerofcreation/simpleshoppinglistapp/internal/infrastructure/db/postgres"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/infrastructure/logging"
@@ -78,17 +78,14 @@ func run(logger *slog.Logger) error {
 	}
 
 	e := echo.New()
-	e.HideBanner = true
-	e.HidePort = true
-	e.HTTPErrorHandler = httpErrorHandler(logger, e.DefaultHTTPErrorHandler)
+	e.Logger = logger
+	e.HTTPErrorHandler = httpErrorHandler(logger, echo.DefaultHTTPErrorHandler(false))
 
 	e.Use(echomw.RequestID())
-	e.Use(echomw.RecoverWithConfig(echomw.RecoverConfig{
-		LogErrorFunc: func(c echo.Context, err error, stack []byte) error {
-			middleware.RequestScopedLogger(logger, c).Error("panic recovered", "error", err, "stack", string(stack))
-			return err
-		},
-	}))
+	// Panic details (stack included) are logged in httpErrorHandler, via the
+	// *echomw.PanicStackError that Recover wraps the panic in - v5 dropped
+	// RecoverConfig.LogErrorFunc, so there's no separate hook here anymore.
+	e.Use(echomw.Recover())
 	e.Use(middleware.RequestLogger(logger))
 	e.Use(middleware.ContextLogger(logger))
 
@@ -96,7 +93,7 @@ func run(logger *slog.Logger) error {
 	// have no Keycloak token. Registered after migrations and Keycloak
 	// discovery above already succeeded, so 200 here means the process is
 	// actually ready to serve, not just that the binary started.
-	e.GET("/healthz", func(c echo.Context) error {
+	e.GET("/healthz", func(c *echo.Context) error {
 		return c.NoContent(http.StatusOK)
 	})
 
@@ -109,42 +106,34 @@ func run(logger *slog.Logger) error {
 	rest.NewListSharingController(e, logger, listSharingService, authMW)
 	rest.NewListMembersController(e, logger, services.NewListMembersService(userProfileRepo, listAccessService), authMW)
 
-	errCh := make(chan error, 1)
-	go func() {
-		if err := e.Start(port); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			errCh <- err
-			return
-		}
-		errCh <- nil
-	}()
+	var shutdownErr error
+	sc := echo.StartConfig{
+		Address:    port,
+		HideBanner: true,
+		HidePort:   true,
+		// Comfortably under Docker/Compose's default 10s SIGTERM->SIGKILL
+		// grace period.
+		GracefulTimeout: 8 * time.Second,
+		OnShutdownError: func(err error) {
+			shutdownErr = errors.Join(shutdownErr, fmt.Errorf("http server shutdown: %w", err))
+		},
+	}
 	logger.Info("server starting", "port", port)
 
-	select {
-	case err := <-errCh:
-		if err != nil {
-			return fmt.Errorf("failed to start server: %w", err)
-		}
-		return nil
-	case <-ctx.Done():
-		logger.Info("shutdown signal received")
+	// sc.Start blocks until ctx is cancelled, then runs its own graceful
+	// shutdown and only returns once that's done - it does not close or
+	// wait for hijacked connections (the sync websocket) though, so the
+	// hub is closed and waited on separately below.
+	startErr := sc.Start(ctx, e)
+	logger.Info("http server drained")
+	if startErr != nil {
+		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("http server: %w", startErr))
 	}
 
-	// Comfortably under Docker/Compose's default 10s SIGTERM->SIGKILL grace
-	// period.
-	shutdownCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
+	hubShutdownCtx, cancel := context.WithTimeout(context.Background(), 8*time.Second)
 	defer cancel()
-
-	var shutdownErr error
-	if err := e.Shutdown(shutdownCtx); err != nil {
-		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("http server shutdown: %w", err))
-	}
-	// e.Shutdown does not close or wait for hijacked connections (the sync
-	// websocket), so the hub closes and waits for those separately.
-	if err := hub.Shutdown(shutdownCtx); err != nil {
+	if err := hub.Shutdown(hubShutdownCtx); err != nil {
 		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("hub shutdown: %w", err))
-	}
-	if err := <-errCh; err != nil {
-		shutdownErr = errors.Join(shutdownErr, fmt.Errorf("server error during shutdown: %w", err))
 	}
 
 	logger.Info("server stopped")
@@ -152,9 +141,9 @@ func run(logger *slog.Logger) error {
 }
 
 // httpErrorHandler logs errors that never went through a controller's own
-// JSON response (e.g. a failed websocket upgrade, or Echo's own 404/405) -
-// level by status, same convention as the access log - then delegates to
-// fallback for the actual response.
+// JSON response (e.g. a failed websocket upgrade, a panic, or Echo's own
+// 404/405) - level by status, same convention as the access log - then
+// delegates to fallback for the actual response.
 //
 // middleware.RequestLogger's HandleError:true already forwards handler
 // errors here via c.Error before they bubble back up to Echo's own
@@ -164,17 +153,25 @@ func run(logger *slog.Logger) error {
 // response is already committed, to avoid logging (and trying to write)
 // the same error twice.
 func httpErrorHandler(logger *slog.Logger, fallback echo.HTTPErrorHandler) echo.HTTPErrorHandler {
-	return func(err error, c echo.Context) {
-		if c.Response().Committed {
+	return func(c *echo.Context, err error) {
+		if r, unwrapErr := echo.UnwrapResponse(c.Response()); unwrapErr == nil && r.Committed {
 			return
 		}
 
-		status := http.StatusInternalServerError
-		if he, ok := err.(*echo.HTTPError); ok {
-			status = he.Code
+		l := middleware.RequestScopedLogger(logger, c)
+
+		// echomw.Recover wraps a recovered panic in this before it reaches
+		// here (v5 dropped RecoverConfig.LogErrorFunc) - log it with its
+		// stack same as before, in addition to the status-based logging.
+		var panicErr *echomw.PanicStackError
+		if errors.As(err, &panicErr) {
+			l.Error("panic recovered", "error", panicErr.Err, "stack", string(panicErr.Stack))
 		}
 
-		l := middleware.RequestScopedLogger(logger, c)
+		status := echo.StatusCode(err)
+		if status == 0 {
+			status = http.StatusInternalServerError
+		}
 		switch {
 		case status >= 500:
 			l.Error("http error", "status", status, "error", err)
@@ -182,6 +179,6 @@ func httpErrorHandler(logger *slog.Logger, fallback echo.HTTPErrorHandler) echo.
 			l.Warn("http error", "status", status, "error", err)
 		}
 
-		fallback(err, c)
+		fallback(c, err)
 	}
 }

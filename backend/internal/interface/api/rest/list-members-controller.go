@@ -6,7 +6,7 @@ import (
 	"net/http"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/interfaces"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/interface/api/middleware"
@@ -14,7 +14,7 @@ import (
 
 // NewListMembersController exposes identity and first name, including the owner.
 func NewListMembersController(e *echo.Echo, logger *slog.Logger, service interfaces.ListMembersService, authMW echo.MiddlewareFunc) {
-	e.GET("/api/v1/todo-lists/:listId/members", func(c echo.Context) error {
+	e.GET("/api/v1/todo-lists/:listId/members", func(c *echo.Context) error {
 		userID, ok := middleware.UserIDFromContext(c)
 		if !ok {
 			return unauthorized(c)

@@ -43,7 +43,7 @@ describe("useSharedSyncedLists", () => {
       Result.ok([{ listId: "a", role: "member" }])
     )
 
-    const { result } = renderHook(() => useSharedSyncedLists())
+    const { result } = await renderHook(() => useSharedSyncedLists())
     let shared: unknown
     await act(async () => {
       shared = await result.current.load()
@@ -68,7 +68,7 @@ describe("useSharedSyncedLists", () => {
       Promise.resolve(Result.ok(listId === "a" ? [{ inviteId: "i1" }] : []))
     )
 
-    const { result } = renderHook(() => useSharedSyncedLists())
+    const { result } = await renderHook(() => useSharedSyncedLists())
     let shared: unknown
     await act(async () => {
       shared = await result.current.load()
@@ -80,7 +80,7 @@ describe("useSharedSyncedLists", () => {
   it("excludes lists that are not currently synced on this device", async () => {
     mockLists([{ id: "a", name: "Not synced", syncEnabled: false }])
 
-    const { result } = renderHook(() => useSharedSyncedLists())
+    const { result } = await renderHook(() => useSharedSyncedLists())
     let shared: unknown
     await act(async () => {
       shared = await result.current.load()
@@ -96,7 +96,7 @@ describe("useSharedSyncedLists", () => {
       Result.fail(new Error("network") as never)
     )
 
-    const { result } = renderHook(() => useSharedSyncedLists())
+    const { result } = await renderHook(() => useSharedSyncedLists())
     let shared: unknown
     await act(async () => {
       shared = await result.current.load()
@@ -117,7 +117,7 @@ describe("useSharedSyncedLists", () => {
       ])
     )
 
-    const { result } = renderHook(() => useSharedSyncedLists())
+    const { result } = await renderHook(() => useSharedSyncedLists())
     let shared: unknown
     await act(async () => {
       shared = await result.current.load("b")

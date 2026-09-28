@@ -10,7 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/application/interfaces"
 	"github.com/powerofcreation/simpleshoppinglistapp/internal/domain/repositories"
@@ -84,7 +84,7 @@ func NewEventController(
 // request. That's an acceptable, narrow window - a client retries the
 // whole batch on any non-2xx response, and every append is idempotent on
 // event_id, so the retry simply re-confirms what already landed.
-func (ec *EventController) SyncEvents(c echo.Context) error {
+func (ec *EventController) SyncEvents(c *echo.Context) error {
 	userID, ok := middleware.UserIDFromContext(c)
 	if !ok {
 		return unauthorized(c)

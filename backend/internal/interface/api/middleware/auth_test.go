@@ -15,7 +15,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/labstack/echo/v4"
+	"github.com/labstack/echo/v5"
 	"github.com/stretchr/testify/require"
 )
 
@@ -128,7 +128,7 @@ func defaultClaims(issuer string, overrides map[string]any) map[string]any {
 func newTestEcho(mw echo.MiddlewareFunc) (*echo.Echo, *bool) {
 	called := false
 	e := echo.New()
-	e.GET("/protected", func(c echo.Context) error {
+	e.GET("/protected", func(c *echo.Context) error {
 		called = true
 		return c.NoContent(http.StatusOK)
 	}, mw)

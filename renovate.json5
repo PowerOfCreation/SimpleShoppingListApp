@@ -4,6 +4,7 @@
   extends: [
     'config:best-practices',
     'helpers:pinGitHubActionDigestsToSemver',
+    ':dependencyDashboard',
   ],
   prConcurrentLimit: 0,
   prHourlyLimit: 0,
@@ -25,6 +26,13 @@
         'powerofcreation/imp-list-backend',
       ],
       minimumReleaseAge: null,
+      // Default docker versioning treats "-rc.N" as a compatibility suffix
+      // (like "-alpine"), so it's never proposed as an update target. semver
+      // versioning treats it as a real pre-release instead - but by default
+      // Renovate still won't jump a stable version to an unstable one, hence
+      // ignoreUnstable: false.
+      versioning: 'semver',
+      ignoreUnstable: false,
     },
     {
       matchFileNames: [
@@ -65,25 +73,39 @@
       ],
       matchPackageNames: [
         'expo',
+        '/^expo-/',
+        '/^@expo//',
+        '!expo-doctor',
+        '!expo-sqlite-mock',
+      ],
+      groupName: 'expo sdk packages',
+      groupSlug: 'expo-sdk',
+      rangeStrategy: 'replace',
+    },
+    {
+      // Expo and React Native are not backwards compatible across arbitrary
+      // versions. Keep new releases visible in the Dependency Dashboard, but
+      // only create their PRs as part of a deliberate Expo SDK upgrade.
+      matchFileNames: [
+        'frontend/**',
+      ],
+      matchPackageNames: [
         'react',
         'react-dom',
         'react-test-renderer',
         '@types/react-test-renderer',
         'react-native',
         'react-native-gesture-handler',
+        'react-native-get-random-values',
         'react-native-reanimated',
         'react-native-safe-area-context',
         'react-native-screens',
         'react-native-web',
         'react-native-worklets',
         '@react-native-async-storage/async-storage',
-        '/^expo-/',
-        '/^@expo//',
         '/^@react-navigation//',
       ],
-      groupName: 'expo sdk',
-      groupSlug: 'expo-sdk',
-      rangeStrategy: 'replace',
+      dependencyDashboardApproval: true,
     },
     {
       // aktiviert Updates der `go`-Direktive in go.mod (per Default deaktiviert)

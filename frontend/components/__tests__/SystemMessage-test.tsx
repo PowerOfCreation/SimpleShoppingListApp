@@ -27,38 +27,38 @@ describe("SystemMessage", () => {
     jest.restoreAllMocks()
   })
 
-  it("hides on its original schedule even when the parent re-renders with a new onHide", () => {
+  it("hides on its original schedule even when the parent re-renders with a new onHide", async () => {
     // Regression test: onHide used to be an effect dependency, so any
     // unrelated parent re-render (fresh inline closure) reset the hide
     // timer - the toast visibly flickered and stayed up far longer than
     // `duration`.
     const onHide = jest.fn()
-    const { rerender } = render(<Wrapper onHide={onHide} />)
+    const { rerender } = await render(<Wrapper onHide={onHide} />)
 
-    act(() => {
+    await act(() => {
       jest.advanceTimersByTime(500)
     })
     // Unrelated re-render halfway through, with a brand-new onHide identity.
-    rerender(<Wrapper onHide={() => onHide()} />)
+    await rerender(<Wrapper onHide={() => onHide()} />)
 
-    act(() => {
+    await act(() => {
       jest.advanceTimersByTime(500)
     })
     expect(onHide).toHaveBeenCalledTimes(1)
   })
 
-  it("does not restart the timer on every render when nothing changed", () => {
+  it("does not restart the timer on every render when nothing changed", async () => {
     const onHide = jest.fn()
-    const { rerender } = render(<Wrapper onHide={onHide} />)
+    const { rerender } = await render(<Wrapper onHide={onHide} />)
 
     for (let i = 0; i < 5; i++) {
-      act(() => {
+      await act(() => {
         jest.advanceTimersByTime(100)
       })
-      rerender(<Wrapper onHide={() => onHide()} />)
+      await rerender(<Wrapper onHide={() => onHide()} />)
     }
 
-    act(() => {
+    await act(() => {
       jest.advanceTimersByTime(500)
     })
     expect(onHide).toHaveBeenCalledTimes(1)

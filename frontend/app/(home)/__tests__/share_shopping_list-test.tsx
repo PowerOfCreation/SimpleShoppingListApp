@@ -83,7 +83,7 @@ describe("ShareShoppingList", () => {
   it("loads the active invites for the given list", async () => {
     mockGetInvites.mockResolvedValue(Result.ok([anInvite()]))
 
-    renderShareScreen()
+    await renderShareScreen()
 
     await waitFor(() => {
       expect(screen.getByTestId("invite-entry-invite-1")).toBeTruthy()
@@ -92,7 +92,7 @@ describe("ShareShoppingList", () => {
   })
 
   it("explains the empty state instead of showing nothing", async () => {
-    renderShareScreen()
+    await renderShareScreen()
 
     await waitFor(() => {
       expect(screen.getByTestId("invites-empty")).toBeTruthy()
@@ -104,7 +104,7 @@ describe("ShareShoppingList", () => {
   it("asks the user to sign in and stays off the network when signed out", async () => {
     mockAuth("signedOut")
 
-    renderShareScreen()
+    await renderShareScreen()
 
     await waitFor(() => {
       expect(screen.getByTestId("share-unavailable")).toBeTruthy()
@@ -113,14 +113,14 @@ describe("ShareShoppingList", () => {
   })
 
   it("creates a link with the selected validity preset", async () => {
-    renderShareScreen()
+    await renderShareScreen()
 
     await waitFor(() => {
       expect(screen.getByTestId("invites-empty")).toBeTruthy()
     })
 
-    fireEvent.press(screen.getByTestId("invite-ttl-1h"))
-    fireEvent.press(screen.getByTestId("create-invite"))
+    await fireEvent.press(screen.getByTestId("invite-ttl-1h"))
+    await fireEvent.press(screen.getByTestId("create-invite"))
 
     await waitFor(() => {
       expect(mockCreateInvite).toHaveBeenCalledWith("list-1", "1h", "Rewe")
@@ -128,13 +128,13 @@ describe("ShareShoppingList", () => {
   })
 
   it("defaults to the 7 day preset", async () => {
-    renderShareScreen()
+    await renderShareScreen()
 
     await waitFor(() => {
       expect(screen.getByTestId("invites-empty")).toBeTruthy()
     })
 
-    fireEvent.press(screen.getByTestId("create-invite"))
+    await fireEvent.press(screen.getByTestId("create-invite"))
 
     await waitFor(() => {
       expect(mockCreateInvite).toHaveBeenCalledWith("list-1", "7d", "Rewe")
@@ -144,13 +144,13 @@ describe("ShareShoppingList", () => {
   // The plaintext token exists exactly once, in this response - so the
   // screen has to show it, and say that it won't come back.
   it("shows the new link once, with a warning that it cannot be recovered", async () => {
-    renderShareScreen()
+    await renderShareScreen()
 
     await waitFor(() => {
       expect(screen.getByTestId("invites-empty")).toBeTruthy()
     })
 
-    fireEvent.press(screen.getByTestId("create-invite"))
+    await fireEvent.press(screen.getByTestId("create-invite"))
 
     await waitFor(() => {
       expect(screen.getByTestId("new-invite-link")).toHaveTextContent(
@@ -159,7 +159,7 @@ describe("ShareShoppingList", () => {
     })
     expect(screen.getByText(/cannot be recovered/i)).toBeTruthy()
 
-    fireEvent.press(screen.getByTestId("dismiss-invite"))
+    await fireEvent.press(screen.getByTestId("dismiss-invite"))
     await waitFor(() => {
       expect(screen.queryByTestId("new-invite-card")).toBeNull()
     })
@@ -170,17 +170,17 @@ describe("ShareShoppingList", () => {
       .spyOn(Share, "share")
       .mockResolvedValue({ action: "sharedAction" } as ShareAction)
 
-    renderShareScreen()
+    await renderShareScreen()
 
     await waitFor(() => {
       expect(screen.getByTestId("invites-empty")).toBeTruthy()
     })
-    fireEvent.press(screen.getByTestId("create-invite"))
+    await fireEvent.press(screen.getByTestId("create-invite"))
     await waitFor(() => {
       expect(screen.getByTestId("share-invite")).toBeTruthy()
     })
 
-    fireEvent.press(screen.getByTestId("share-invite"))
+    await fireEvent.press(screen.getByTestId("share-invite"))
 
     await waitFor(() => {
       expect(shareSpy).toHaveBeenCalledWith({
@@ -193,16 +193,16 @@ describe("ShareShoppingList", () => {
   it("revokes a link only after the confirmation is accepted", async () => {
     mockGetInvites.mockResolvedValue(Result.ok([anInvite()]))
 
-    renderShareScreen()
+    await renderShareScreen()
 
     await waitFor(() => {
       expect(screen.getByTestId("invite-revoke-invite-1")).toBeTruthy()
     })
 
-    fireEvent.press(screen.getByTestId("invite-revoke-invite-1"))
+    await fireEvent.press(screen.getByTestId("invite-revoke-invite-1"))
     expect(mockRevokeInvite).not.toHaveBeenCalled()
 
-    fireEvent.press(
+    await fireEvent.press(
       screen.getByTestId("invite-revoke-confirm-invite-1-confirm")
     )
 
@@ -219,13 +219,13 @@ describe("ShareShoppingList", () => {
       Result.fail(new SharingError("nope", "notOwner"))
     )
 
-    renderShareScreen()
+    await renderShareScreen()
 
     await waitFor(() => {
       expect(screen.getByTestId("invite-revoke-invite-1")).toBeTruthy()
     })
-    fireEvent.press(screen.getByTestId("invite-revoke-invite-1"))
-    fireEvent.press(
+    await fireEvent.press(screen.getByTestId("invite-revoke-invite-1"))
+    await fireEvent.press(
       screen.getByTestId("invite-revoke-confirm-invite-1-confirm")
     )
 
@@ -241,7 +241,7 @@ describe("ShareShoppingList", () => {
       Result.fail(new SharingError("nope", "notOwner"))
     )
 
-    renderShareScreen()
+    await renderShareScreen()
 
     await waitFor(() => {
       expect(screen.getByTestId("share-error")).toHaveTextContent(
@@ -257,7 +257,7 @@ describe("ShareShoppingList", () => {
       Result.fail(new SharingError("nope", "notOwner"))
     )
 
-    renderShareScreen()
+    await renderShareScreen()
 
     await waitFor(() => {
       expect(screen.getByTestId("share-error")).toBeTruthy()
@@ -268,7 +268,7 @@ describe("ShareShoppingList", () => {
   it("waits for the session to be restored before judging it", async () => {
     mockAuth("loading")
 
-    renderShareScreen()
+    await renderShareScreen()
 
     await waitFor(() => {
       expect(screen.getByTestId("share-auth-loading")).toBeTruthy()

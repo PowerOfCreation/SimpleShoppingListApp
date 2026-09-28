@@ -194,7 +194,7 @@ export default function ViewShoppingList() {
         renderItem={renderEntry}
         renderSectionHeader={renderSectionHeader}
         keyExtractor={(item) => item.id}
-        extraData={error}
+        extraData={ingredients}
         removeClippedSubviews={false}
         keyboardShouldPersistTaps="handled"
         stickySectionHeadersEnabled={false}
