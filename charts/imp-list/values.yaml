@@ -111,8 +111,8 @@ backend:
   podLabels: {}
 
   logging:
-    level: ""
-    format: ""
+    level: "info"  # debug|info|warn|error (debug adds source + per-WS-connection detail)
+    format: ""     # json (default) | text
 
   # Keycloak config (not secret by itself). Choose ONE of:
   #   1. existingConfigMap — read issuer/client_id from an existing ConfigMap.
