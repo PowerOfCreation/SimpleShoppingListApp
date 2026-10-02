@@ -31,6 +31,10 @@ func RequestLogger(logger *slog.Logger) echo.MiddlewareFunc {
 		LogResponseSize:  true,
 		HandleError:      true,
 		LogValuesFunc: func(c *echo.Context, v echomw.RequestLoggerValues) error {
+			// Successful k8s probes are noise; failing ones stay visible.
+			if c.Path() == "/healthz" && v.Status < 400 {
+				return nil
+			}
 			level := slog.LevelInfo
 			switch {
 			case v.Status >= 500:
