@@ -20,9 +20,35 @@ describe("ListSyncStateRepository", () => {
       CREATE TABLE list_sync_state (
         list_id    TEXT PRIMARY KEY,
         enabled    INTEGER NOT NULL DEFAULT 0,
-        updated_at INTEGER NOT NULL
+        updated_at INTEGER NOT NULL,
+        rejection_reason TEXT
       );
     `)
+  })
+
+  describe("getRejectionReason / setRejectionReason", () => {
+    it("stores, returns and clears a rejection reason", async () => {
+      await repository.setEnabled("list-1", true)
+      expect((await repository.getRejectionReason("list-1")).getValue()).toBe(
+        null
+      )
+
+      await repository.setRejectionReason("list-1", "400: bad")
+      expect((await repository.getRejectionReason("list-1")).getValue()).toBe(
+        "400: bad"
+      )
+
+      await repository.setRejectionReason("list-1", null)
+      expect((await repository.getRejectionReason("list-1")).getValue()).toBe(
+        null
+      )
+    })
+
+    it("returns null for a list without a row", async () => {
+      expect((await repository.getRejectionReason("nope")).getValue()).toBe(
+        null
+      )
+    })
   })
 
   describe("setEnabled / isEnabled", () => {

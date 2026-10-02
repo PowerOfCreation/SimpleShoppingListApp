@@ -5,6 +5,8 @@ import {
   startListSync,
   loadListSyncPermission,
   setListPermissionDenied,
+  setListSyncRejection,
+  getListSyncRejection,
   clearListSyncStatus,
 } from "../list-sync-status"
 jest.mock("@/database/database", () => {
@@ -12,6 +14,12 @@ jest.mock("@/database/database", () => {
   return { ...originalModule, DB_NAME: ":memory:" }
 })
 jest.mock("@/database/list-sync-state-repository")
+jest
+  .mocked(ListSyncStateRepository.prototype.getRejectionReason)
+  .mockResolvedValue(Result.ok(null))
+jest
+  .mocked(ListSyncStateRepository.prototype.setRejectionReason)
+  .mockResolvedValue(Result.ok(undefined))
 
 it("isolates lists and keeps upload errors until an upload succeeds", () => {
   startListSync("a", "push").finish(false)
@@ -197,4 +205,40 @@ it("does not let successful downloads conceal a stalled upload on the same list"
   } finally {
     jest.useRealTimers()
   }
+})
+
+it("restores a persisted rejection reason, ranks it below forbidden, and clears it", async () => {
+  jest
+    .mocked(ListSyncStateRepository.prototype.isPermissionDenied)
+    .mockResolvedValueOnce(Result.ok(false))
+  jest
+    .mocked(ListSyncStateRepository.prototype.getRejectionReason)
+    .mockResolvedValueOnce(Result.ok("400: aggregate_id is required"))
+  await loadListSyncPermission("rejected")
+  expect(getListSyncStatus("rejected")).toBe("rejected")
+  expect(getListSyncRejection("rejected")).toBe("400: aggregate_id is required")
+
+  jest
+    .mocked(ListSyncStateRepository.prototype.setPermissionDenied)
+    .mockResolvedValue(Result.ok(undefined))
+  await setListPermissionDenied("rejected", true)
+  expect(getListSyncStatus("rejected")).toBe("forbidden")
+  await setListPermissionDenied("rejected", false)
+
+  const setRejectionReason = jest.mocked(
+    ListSyncStateRepository.prototype.setRejectionReason
+  )
+  await setListSyncRejection("rejected", null)
+  expect(setRejectionReason).toHaveBeenLastCalledWith("rejected", null)
+  expect(getListSyncStatus("rejected")).toBeUndefined()
+  expect(getListSyncRejection("rejected")).toBeUndefined()
+})
+
+it("clears a persisted rejection even when it was never loaded this session", async () => {
+  const setRejectionReason = jest.mocked(
+    ListSyncStateRepository.prototype.setRejectionReason
+  )
+  setRejectionReason.mockClear()
+  await setListSyncRejection("never-loaded", null)
+  expect(setRejectionReason).toHaveBeenCalledWith("never-loaded", null)
 })

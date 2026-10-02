@@ -6,6 +6,7 @@ import { SyncError } from "@/api/common/error-types"
 import { DomainEventRow } from "@/types/DomainEvent"
 
 const logger = createLogger("SyncClient")
+const MAX_SERVER_MESSAGE_LENGTH = 300
 
 /**
  * The wire shape the backend's SyncEventRequest expects. Notably:
@@ -127,6 +128,20 @@ export type EventsPage = {
 
 export type FetchLike = typeof fetch
 
+/** Best-effort read of the backend's `{"error": "..."}` body; never throws. */
+async function readServerMessage(
+  response: Response
+): Promise<string | undefined> {
+  try {
+    const body = (await response.json()) as { error?: unknown }
+    return typeof body?.error === "string"
+      ? body.error.slice(0, MAX_SERVER_MESSAGE_LENGTH)
+      : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /**
  * 400, 401 and 403 all mean retrying the exact same request is pointless:
  * the request itself is malformed in a way that will never parse/validate
@@ -137,9 +152,17 @@ export type FetchLike = typeof fetch
  * ListAccessService - see sync-sharing-target.md §2). Anything else is
  * treated as possibly transient.
  */
-function nonRetryableError(response: Response): SyncError | null {
+async function nonRetryableError(
+  response: Response
+): Promise<SyncError | null> {
   if (response.status === 400) {
-    return new SyncError("Bad request", false)
+    return new SyncError(
+      "Bad request",
+      false,
+      undefined,
+      400,
+      await readServerMessage(response)
+    )
   }
   if (response.status === 401) {
     return new SyncError("Unauthorized", false)
@@ -220,7 +243,7 @@ export class SyncClient {
       }
       if (!response.ok) {
         return Result.fail(
-          nonRetryableError(response) ??
+          (await nonRetryableError(response)) ??
             new SyncError(`Unexpected response status ${response.status}`, true)
         )
       }

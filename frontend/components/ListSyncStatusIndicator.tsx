@@ -1,5 +1,8 @@
 import { MaterialIcons } from "@expo/vector-icons"
-import { useListSyncStatus } from "@/hooks/useListSyncStatus"
+import {
+  useListSyncRejection,
+  useListSyncStatus,
+} from "@/hooks/useListSyncStatus"
 import { useThemeColor } from "@/hooks/useThemeColor"
 import { listSyncPresentation } from "@/utils/listSyncPresentation"
 import { SyncStatusPopup } from "./SyncStatusPopup"
@@ -15,7 +18,8 @@ export function ListSyncStatusIndicator({
   size?: number
 }) {
   const status = useListSyncStatus(listId)
-  const presentation = listSyncPresentation(status, syncEnabled)
+  const rejection = useListSyncRejection(listId)
+  const presentation = listSyncPresentation(status, syncEnabled, rejection)
   const color = useThemeColor({}, presentation.tone)
   if (status === "forbidden") {
     return <ListSyncPermissionIndicator listId={listId} size={size} />

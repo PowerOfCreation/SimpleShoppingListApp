@@ -30,6 +30,12 @@ jest
   .mocked(ListSyncStateRepository.prototype.isPermissionDenied)
   .mockResolvedValue(Result.ok(false))
 jest
+  .mocked(ListSyncStateRepository.prototype.getRejectionReason)
+  .mockResolvedValue(Result.ok(null))
+jest
+  .mocked(ListSyncStateRepository.prototype.setRejectionReason)
+  .mockResolvedValue(Result.ok(undefined))
+jest
   .mocked(ListSyncStateRepository.prototype.setPermissionDenied)
   .mockResolvedValue(Result.ok(undefined))
 

@@ -1,4 +1,4 @@
-import { getListSyncStatus } from "../list-sync-status"
+import { getListSyncRejection, getListSyncStatus } from "../list-sync-status"
 import { getSyncStatus, onSyncStatusChanged } from "../sync-status"
 import { SyncEngine, MAX_DRAIN_BATCHES, MAX_PULL_PAGES } from "../sync-engine"
 import { OutboxRepository } from "@/database/outbox-repository"
@@ -107,6 +107,8 @@ describe("SyncEngine", () => {
       setEnabled: jest.fn().mockResolvedValue(Result.ok(undefined)),
       isPermissionDenied: jest.fn().mockResolvedValue(Result.ok(false)),
       setPermissionDenied: jest.fn().mockResolvedValue(Result.ok(undefined)),
+      getRejectionReason: jest.fn().mockResolvedValue(Result.ok(null)),
+      setRejectionReason: jest.fn().mockResolvedValue(Result.ok(undefined)),
     } as unknown as jest.Mocked<ListSyncStateRepository>
 
     client = {
@@ -459,6 +461,56 @@ describe("SyncEngine", () => {
       )
       await engine.flush()
       expect(getListSyncStatus("permission-list")).toBe("synced")
+    })
+
+    it("records the server's 400 reason for a rejected upload and clears it after a successful one", async () => {
+      outbox.getPending.mockResolvedValue(
+        Result.ok([makeOutboxRow("rejected-event")])
+      )
+      events.getByEventIds.mockResolvedValue(
+        Result.ok([
+          makeEvent({ event_id: "rejected-event", list_id: "rejected-list" }),
+        ])
+      )
+      client.sendEvents.mockResolvedValue(
+        Result.fail(
+          new SyncError(
+            "Bad request",
+            false,
+            undefined,
+            400,
+            "aggregate_id is required"
+          )
+        )
+      )
+      await engine.flush()
+      expect(getListSyncStatus("rejected-list")).toBe("rejected")
+      expect(getListSyncRejection("rejected-list")).toBe(
+        "400: aggregate_id is required"
+      )
+      expect(listSyncState.setEnabled).toHaveBeenCalledWith(
+        "rejected-list",
+        false
+      )
+
+      client.sendEvents.mockResolvedValue(
+        Result.ok([{ eventId: "rejected-event", seq: 1 }])
+      )
+      await engine.flush()
+      expect(getListSyncRejection("rejected-list")).toBeUndefined()
+      expect(getListSyncStatus("rejected-list")).toBe("synced")
+    })
+
+    it("does not record a rejection reason for a 403", async () => {
+      outbox.getPending.mockResolvedValue(Result.ok([makeOutboxRow("e403")]))
+      events.getByEventIds.mockResolvedValue(
+        Result.ok([makeEvent({ event_id: "e403", list_id: "list-403" })])
+      )
+      client.sendEvents.mockResolvedValue(
+        Result.fail(new SyncError("Forbidden", false, undefined, 403))
+      )
+      await engine.flush()
+      expect(getListSyncRejection("list-403")).toBeUndefined()
     })
 
     it("isolates a forbidden list in a rejected heads batch", async () => {

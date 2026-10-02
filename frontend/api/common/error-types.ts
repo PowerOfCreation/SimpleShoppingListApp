@@ -109,7 +109,9 @@ export class SyncError extends AppError {
     message: string = "Sync failed",
     public retryable: boolean = true,
     public originalError?: unknown,
-    public httpStatus?: number
+    public httpStatus?: number,
+    /** The server's own `error` text for a 400, for the user to report. */
+    public serverMessage?: string
   ) {
     super(message)
   }

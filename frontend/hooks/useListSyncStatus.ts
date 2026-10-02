@@ -1,5 +1,6 @@
 import { useEffect, useSyncExternalStore } from "react"
 import {
+  getListSyncRejection,
   getListSyncStatus,
   loadListSyncPermission,
   onListSyncStatusChanged,
@@ -11,5 +12,11 @@ export function useListSyncStatus(listId: string) {
   }, [listId])
   return useSyncExternalStore(onListSyncStatusChanged, () =>
     getListSyncStatus(listId)
+  )
+}
+
+export function useListSyncRejection(listId: string) {
+  return useSyncExternalStore(onListSyncStatusChanged, () =>
+    getListSyncRejection(listId)
   )
 }

@@ -2,7 +2,8 @@ import type { getListSyncStatus } from "@/api/sync/list-sync-status"
 
 export function listSyncPresentation(
   status: ReturnType<typeof getListSyncStatus>,
-  enabled: boolean
+  enabled: boolean,
+  rejection?: string
 ) {
   if (status === "forbidden") {
     return {
@@ -13,6 +14,14 @@ export function listSyncPresentation(
       // ListSyncPermissionIndicator's fuller explanation for this status
       // instead. Kept here so every branch has the same shape.
       message: "You do not have permission to sync this list.",
+    } as const
+  }
+  if (status === "rejected") {
+    return {
+      label: "Sync stopped after a problem",
+      icon: "error",
+      tone: "danger",
+      message: `Sync was stopped for this list because the server could not accept some of its data. Nothing is lost - the list keeps working normally on this device.\n\nPlease contact the developers and send them this error message so they can fix it:\n\n${rejection ?? "unknown error"}\n\nYou can also try duplicating the list from its menu and syncing the copy. This does not always help.`,
     } as const
   }
   if (status === "error") {
