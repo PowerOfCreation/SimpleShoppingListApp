@@ -262,8 +262,6 @@ export class ShoppingListService {
       }
 
       if (enabled) {
-        // A deliberate retry: drop the old rejection hint; a repeat 400 sets it again.
-        await setListSyncRejection(listId, null)
         const historyResult = await this.eventRepository.getByListId(listId)
         if (!historyResult.success) {
           return Result.fail(historyResult.getError())
@@ -277,6 +275,8 @@ export class ShoppingListService {
         if (!enqueueResult.success) {
           return Result.fail(enqueueResult.getError())
         }
+        // A deliberate retry: drop the old rejection hint; a repeat 400 sets it again.
+        await setListSyncRejection(listId, null)
       } else {
         const cancelResult = await this.outboxRepository.cancelForList(listId)
         if (!cancelResult.success) {

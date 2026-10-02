@@ -259,3 +259,26 @@ it("still clears the stored rejection after its initial read failed", async () =
   await setListSyncRejection("read-failed", null)
   expect(setRejectionReason).toHaveBeenCalledWith("read-failed", null)
 })
+
+it("retries a clear whose database write failed", async () => {
+  jest
+    .mocked(ListSyncStateRepository.prototype.isPermissionDenied)
+    .mockResolvedValueOnce(Result.ok(false))
+  jest
+    .mocked(ListSyncStateRepository.prototype.getRejectionReason)
+    .mockResolvedValueOnce(Result.ok("400: bad"))
+  await loadListSyncPermission("clear-failed")
+
+  const setRejectionReason = jest.mocked(
+    ListSyncStateRepository.prototype.setRejectionReason
+  )
+  setRejectionReason.mockClear()
+  setRejectionReason.mockResolvedValueOnce(
+    Result.fail(new Error("db locked")) as never
+  )
+  await setListSyncRejection("clear-failed", null)
+  expect(getListSyncStatus("clear-failed")).toBeUndefined()
+
+  await setListSyncRejection("clear-failed", null)
+  expect(setRejectionReason).toHaveBeenCalledTimes(2)
+})

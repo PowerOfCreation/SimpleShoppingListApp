@@ -9,6 +9,7 @@ import { getDatabase } from "@/database/database"
 import { ShoppingListService } from "@/api/shopping-list-service"
 import * as SQLite from "expo-sqlite"
 import { Result } from "@/api/common/result"
+import { DbQueryError } from "@/api/common/error-types"
 import { DomainEventRow, EventTypes, AggregateTypes } from "@/types/DomainEvent"
 import { Ingredient } from "@/types/Ingredient"
 
@@ -232,6 +233,19 @@ describe("ShoppingListService", () => {
       expect(
         mockListSyncStateRepository.setRejectionReason
       ).toHaveBeenCalledWith("list-with-hint", null)
+    })
+
+    it("enabling keeps the rejection hint when the history replay fails", async () => {
+      mockEventRepository.getByListId.mockResolvedValue(
+        Result.fail(new DbQueryError("boom", "getByListId", "DomainEvent"))
+      )
+
+      const result = await service.setSyncEnabled("list-hint-kept", true)
+
+      expect(result.success).toBe(false)
+      expect(
+        mockListSyncStateRepository.setRejectionReason
+      ).not.toHaveBeenCalled()
     })
 
     it("enabling replays only syncable history into the outbox", async () => {

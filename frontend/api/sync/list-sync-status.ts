@@ -89,6 +89,8 @@ export async function setListSyncRejection(
   ).setRejectionReason(listId, reason)
   if (!result.success) {
     logger.warn("Could not save sync rejection reason", result.getError())
+    // Forget a failed clear, so the next one isn't skipped as "already null".
+    if (reason === null) rejections.delete(listId)
   }
 }
 
