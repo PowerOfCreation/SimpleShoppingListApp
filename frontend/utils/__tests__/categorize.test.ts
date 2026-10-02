@@ -58,6 +58,18 @@ describe("categorizeIngredient", () => {
       ["Fleisch", Category.MEAT_FISH, "not frozen via 'eis'"],
       ["Apfelsaft", Category.DRINKS, "not fruit via 'apfel'"],
       ["Mayonnaise", Category.PANTRY, "not frozen via 'eis'"],
+      ["Tomatenmark", Category.PANTRY, "not fruit via 'tomate'"],
+      ["Passierte Tomaten", Category.PANTRY, "canned tomato product"],
+      ["Tomaten stückig", Category.PANTRY, "canned tomato product"],
+      ["Stückige Tomaten", Category.PANTRY, "canned tomato product"],
+      ["Tomatensauce", Category.PANTRY, "canned tomato product"],
+      ["Tomaten, stückig", Category.PANTRY, "word order/separator"],
+      ["Bio stückige Tomaten", Category.PANTRY, "words not adjacent"],
+      ["Tomaten (passiert)", Category.PANTRY, "words not adjacent"],
+      ["Kidneybohnen", Category.PANTRY, "not fruit via generated 'bohnen'"],
+      ["Kichererbsen", Category.PANTRY, "not fruit via generated 'erbsen'"],
+      ["Mais", Category.PANTRY, "same as other canned legumes"],
+      ["Maiskolben", Category.FRUIT_VEGETABLES, "fresh, not pantry via 'mais'"],
     ]
 
     it.each(cases)("%s -> %s (%s)", (name, expected) => {

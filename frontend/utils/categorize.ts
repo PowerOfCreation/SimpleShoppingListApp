@@ -27,12 +27,21 @@ const GENERATED = (
   .filter(([keyword]) => keyword.length >= MIN_GENERATED_KEYWORD_LENGTH)
   .sort(byLengthDescending)
 
+// Multi-word keywords match as a word set in any order and with anything in
+// between ("tomaten, stückig", "stückige bio tomaten"); single words stay
+// plain substrings. Longer keywords still win, so these beat "tomate".
+function matches(name: string, keyword: string): boolean {
+  return keyword.includes(" ")
+    ? keyword.split(" ").every((part) => name.includes(part))
+    : name.includes(keyword)
+}
+
 function findLongestMatch(
   name: string,
   table: [string, Category][]
 ): Category | undefined {
   for (const [keyword, category] of table) {
-    if (name.includes(keyword)) {
+    if (matches(name, keyword)) {
       return category
     }
   }
