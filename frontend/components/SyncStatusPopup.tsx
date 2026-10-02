@@ -56,7 +56,7 @@ export function SyncStatusPopup({
                 {explanation?.title ?? "Sync information"}
               </ThemedText>
               {explanation ? (
-                <ThemedText style={styles.row}>
+                <ThemedText selectable style={styles.row}>
                   {explanation.message}
                 </ThemedText>
               ) : (

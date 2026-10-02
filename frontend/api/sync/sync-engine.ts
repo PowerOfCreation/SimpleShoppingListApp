@@ -10,6 +10,7 @@ import { reportSyncStarted } from "@/api/sync/sync-status"
 import {
   startListSync,
   setListPermissionDenied,
+  setListSyncRejection,
 } from "@/api/sync/list-sync-status"
 import { SyncPass, SyncProgress } from "@/api/sync/stale-pass-guard"
 import { DomainEventRow, SYNCABLE_EVENT_TYPES } from "@/types/DomainEvent"
@@ -237,11 +238,20 @@ export class SyncEngine {
         }
         if (!error.retryable) {
           await this.giveUpOnGroup(listId, eventIds)
+          if (error.httpStatus === 400 && listId !== null) {
+            await setListSyncRejection(
+              listId,
+              `400: ${error.serverMessage ?? error.message}`
+            )
+          }
         }
         return false
       }
 
-      if (listId !== null) await setListPermissionDenied(listId, false)
+      if (listId !== null) {
+        await setListPermissionDenied(listId, false)
+        await setListSyncRejection(listId, null)
+      }
 
       // Confirm only what we actually sent: the server echoes back what it
       // stored, and an id we never put on the wire has no business marking

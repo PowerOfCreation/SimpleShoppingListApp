@@ -94,6 +94,34 @@ export class ListSyncStateRepository extends BaseRepository {
     }, "setPermissionDenied")
   }
 
+  /** Why the server last permanently rejected this list (400), or null. Device-local diagnostic, like permission_denied. */
+  async getRejectionReason(
+    listId: string
+  ): Promise<Result<string | null, DbQueryError>> {
+    return this._executeQuery(async () => {
+      const row = await this.db.getFirstAsync<{
+        rejection_reason: string | null
+      }>(
+        `SELECT rejection_reason FROM list_sync_state WHERE list_id = ?`,
+        listId
+      )
+      return row?.rejection_reason ?? null
+    }, "getRejectionReason")
+  }
+
+  async setRejectionReason(
+    listId: string,
+    reason: string | null
+  ): Promise<Result<void, DbQueryError>> {
+    return this._executeTransaction(async () => {
+      await this.db.runAsync(
+        `UPDATE list_sync_state SET rejection_reason = ? WHERE list_id = ?`,
+        reason,
+        listId
+      )
+    }, "setRejectionReason")
+  }
+
   async setEnabled(
     listId: string,
     enabled: boolean

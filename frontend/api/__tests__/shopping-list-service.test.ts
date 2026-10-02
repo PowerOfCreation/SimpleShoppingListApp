@@ -9,6 +9,7 @@ import { getDatabase } from "@/database/database"
 import { ShoppingListService } from "@/api/shopping-list-service"
 import * as SQLite from "expo-sqlite"
 import { Result } from "@/api/common/result"
+import { DbQueryError } from "@/api/common/error-types"
 import { DomainEventRow, EventTypes, AggregateTypes } from "@/types/DomainEvent"
 import { Ingredient } from "@/types/Ingredient"
 
@@ -101,6 +102,7 @@ describe("ShoppingListService", () => {
       isEnabled: jest.fn(),
       getEnabledIds: jest.fn(),
       remove: jest.fn().mockResolvedValue(Result.ok(undefined)),
+      setRejectionReason: jest.fn().mockResolvedValue(Result.ok(undefined)),
     } as unknown as jest.Mocked<ListSyncStateRepository>
 
     mockIngredientRepository = {
@@ -217,6 +219,33 @@ describe("ShoppingListService", () => {
         "list-1",
         true
       )
+    })
+
+    it("enabling clears an earlier rejection hint, disabling does not", async () => {
+      mockEventRepository.getByListId.mockResolvedValue(Result.ok([]))
+
+      await service.setSyncEnabled("list-with-hint", false)
+      expect(
+        mockListSyncStateRepository.setRejectionReason
+      ).not.toHaveBeenCalled()
+
+      await service.setSyncEnabled("list-with-hint", true)
+      expect(
+        mockListSyncStateRepository.setRejectionReason
+      ).toHaveBeenCalledWith("list-with-hint", null)
+    })
+
+    it("enabling keeps the rejection hint when the history replay fails", async () => {
+      mockEventRepository.getByListId.mockResolvedValue(
+        Result.fail(new DbQueryError("boom", "getByListId", "DomainEvent"))
+      )
+
+      const result = await service.setSyncEnabled("list-hint-kept", true)
+
+      expect(result.success).toBe(false)
+      expect(
+        mockListSyncStateRepository.setRejectionReason
+      ).not.toHaveBeenCalled()
     })
 
     it("enabling replays only syncable history into the outbox", async () => {

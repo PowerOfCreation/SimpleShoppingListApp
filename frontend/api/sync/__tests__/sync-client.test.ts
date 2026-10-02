@@ -135,6 +135,36 @@ describe("SyncClient", () => {
       expect(result.getError().retryable).toBe(false)
     })
 
+    it("carries the server's error text on a 400", async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: async () => ({ error: "aggregate_id is required" }),
+      })
+      const client = new SyncClient(fetchMock)
+
+      const result = await client.sendEvents([makeEvent()])
+
+      expect(result.getError().httpStatus).toBe(400)
+      expect(result.getError().serverMessage).toBe("aggregate_id is required")
+    })
+
+    it("still reports a 400 when its body is unreadable", async () => {
+      const fetchMock = jest.fn().mockResolvedValue({
+        ok: false,
+        status: 400,
+        json: async () => {
+          throw new Error("not json")
+        },
+      })
+      const client = new SyncClient(fetchMock)
+
+      const result = await client.sendEvents([makeEvent()])
+
+      expect(result.getError().retryable).toBe(false)
+      expect(result.getError().serverMessage).toBeUndefined()
+    })
+
     it("treats a 401 as non-retryable", async () => {
       const fetchMock = jest.fn().mockResolvedValue({ ok: false, status: 401 })
       const client = new SyncClient(fetchMock)

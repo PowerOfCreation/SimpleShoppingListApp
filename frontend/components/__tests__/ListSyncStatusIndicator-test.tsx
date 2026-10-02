@@ -12,6 +12,12 @@ jest.mock("@/database/list-sync-state-repository")
 jest
   .mocked(ListSyncStateRepository.prototype.isPermissionDenied)
   .mockResolvedValue(Result.ok(false))
+jest
+  .mocked(ListSyncStateRepository.prototype.getRejectionReason)
+  .mockResolvedValue(Result.ok(null))
+jest
+  .mocked(ListSyncStateRepository.prototype.setRejectionReason)
+  .mockResolvedValue(Result.ok(undefined))
 
 afterEach(async () => {
   await act(() => clearListSyncStatus("syncing"))
@@ -39,3 +45,17 @@ it.each([
     expect(screen.queryByText(message)).toBeNull()
   }
 )
+
+it("tells the user to report a server rejection and shows the reason", async () => {
+  jest
+    .mocked(ListSyncStateRepository.prototype.getRejectionReason)
+    .mockResolvedValueOnce(Result.ok("400: aggregate_id is required"))
+  const screen = await render(
+    <ListSyncStatusIndicator listId="rejected" syncEnabled={false} />
+  )
+  await fireEvent.press(
+    await screen.findByRole("button", { name: "Sync stopped after a problem" })
+  )
+  expect(screen.getByText(/contact the developers/)).toBeTruthy()
+  expect(screen.getByText(/400: aggregate_id is required/)).toBeTruthy()
+})

@@ -22,7 +22,10 @@ import {
 import { getClientId } from "@/api/common/client-id"
 import { notifyOutboxChanged } from "@/api/sync/outbox-events"
 import { notifySyncListsChanged } from "@/api/sync/sync-events"
-import { clearListSyncStatus } from "@/api/sync/list-sync-status"
+import {
+  clearListSyncStatus,
+  setListSyncRejection,
+} from "@/api/sync/list-sync-status"
 
 const logger = createLogger("ShoppingListService")
 
@@ -272,6 +275,8 @@ export class ShoppingListService {
         if (!enqueueResult.success) {
           return Result.fail(enqueueResult.getError())
         }
+        // A deliberate retry: drop the old rejection hint; a repeat 400 sets it again.
+        await setListSyncRejection(listId, null)
       } else {
         const cancelResult = await this.outboxRepository.cancelForList(listId)
         if (!cancelResult.success) {
