@@ -40,8 +40,9 @@ export async function loadListSyncPermission(listId: string): Promise<void> {
     if (!permissionDenied.has(listId)) {
       permissionDenied.set(listId, result.success && result.getValue()!)
     }
-    if (!rejections.has(listId)) {
-      rejections.set(listId, rejection.success ? rejection.getValue()! : null)
+    // Left uncached on a failed read, so a later clear still reaches the DB.
+    if (rejection.success && !rejections.has(listId)) {
+      rejections.set(listId, rejection.getValue()!)
     }
     listeners.forEach((listener) => listener())
     loading.delete(listId)

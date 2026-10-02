@@ -101,6 +101,7 @@ describe("ShoppingListService", () => {
       isEnabled: jest.fn(),
       getEnabledIds: jest.fn(),
       remove: jest.fn().mockResolvedValue(Result.ok(undefined)),
+      setRejectionReason: jest.fn().mockResolvedValue(Result.ok(undefined)),
     } as unknown as jest.Mocked<ListSyncStateRepository>
 
     mockIngredientRepository = {
@@ -217,6 +218,20 @@ describe("ShoppingListService", () => {
         "list-1",
         true
       )
+    })
+
+    it("enabling clears an earlier rejection hint, disabling does not", async () => {
+      mockEventRepository.getByListId.mockResolvedValue(Result.ok([]))
+
+      await service.setSyncEnabled("list-with-hint", false)
+      expect(
+        mockListSyncStateRepository.setRejectionReason
+      ).not.toHaveBeenCalled()
+
+      await service.setSyncEnabled("list-with-hint", true)
+      expect(
+        mockListSyncStateRepository.setRejectionReason
+      ).toHaveBeenCalledWith("list-with-hint", null)
     })
 
     it("enabling replays only syncable history into the outbox", async () => {

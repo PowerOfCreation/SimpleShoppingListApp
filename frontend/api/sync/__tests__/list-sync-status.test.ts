@@ -242,3 +242,20 @@ it("clears a persisted rejection even when it was never loaded this session", as
   await setListSyncRejection("never-loaded", null)
   expect(setRejectionReason).toHaveBeenCalledWith("never-loaded", null)
 })
+
+it("still clears the stored rejection after its initial read failed", async () => {
+  jest
+    .mocked(ListSyncStateRepository.prototype.isPermissionDenied)
+    .mockResolvedValueOnce(Result.ok(false))
+  jest
+    .mocked(ListSyncStateRepository.prototype.getRejectionReason)
+    .mockResolvedValueOnce(Result.fail(new Error("db locked")) as never)
+  await loadListSyncPermission("read-failed")
+
+  const setRejectionReason = jest.mocked(
+    ListSyncStateRepository.prototype.setRejectionReason
+  )
+  setRejectionReason.mockClear()
+  await setListSyncRejection("read-failed", null)
+  expect(setRejectionReason).toHaveBeenCalledWith("read-failed", null)
+})
