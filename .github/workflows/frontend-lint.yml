@@ -5,10 +5,12 @@ on:
     branches: [main, master]
     paths:
       - "frontend/**"
+      - ".github/workflows/frontend-lint.yml"
   pull_request:
     branches: [main, master]
     paths:
       - "frontend/**"
+      - ".github/workflows/frontend-lint.yml"
 
 jobs:
   lint:
@@ -40,7 +42,8 @@ jobs:
           eslint_flags: "--ext .js,.jsx,.ts,.tsx"
           fail_level: warning
 
-      - name: 🏃‍♂️ Run ESLint no PR
-        if: github.event_name != 'pull_request'
+      # reviewdog only comments on changed lines; this gates the whole tree
+      # and runs tsc, which otherwise never ran before merge.
+      - name: 🏃‍♂️ Run ESLint + tsc
         run: pnpm run lint
         working-directory: ./frontend
