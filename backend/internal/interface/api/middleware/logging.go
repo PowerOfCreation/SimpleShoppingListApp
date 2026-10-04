@@ -14,7 +14,8 @@ import (
 // minutes, and an access-log entry with a multi-minute "latency" would be
 // misleading; the hub logs its own connect/disconnect (see realtime.Hub).
 // Also skips /metrics - periodic scrapes aren't a meaningful access-log
-// entry and would just add noise.
+// entry and would just add noise. /healthz is only logged when the probe
+// fails (>=400), so successful k8s probes don't flood the log.
 func RequestLogger(logger *slog.Logger) echo.MiddlewareFunc {
 	return echomw.RequestLoggerWithConfig(echomw.RequestLoggerConfig{
 		Skipper: func(c *echo.Context) bool {
@@ -31,6 +32,10 @@ func RequestLogger(logger *slog.Logger) echo.MiddlewareFunc {
 		LogResponseSize:  true,
 		HandleError:      true,
 		LogValuesFunc: func(c *echo.Context, v echomw.RequestLoggerValues) error {
+			// Successful k8s probes are noise; failing ones stay visible.
+			if c.Path() == "/healthz" && v.Status < 400 {
+				return nil
+			}
 			level := slog.LevelInfo
 			switch {
 			case v.Status >= 500:
