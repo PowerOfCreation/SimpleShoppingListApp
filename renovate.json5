@@ -160,6 +160,14 @@
       groupName: 'imp-list chart appVersion',
       groupSlug: 'imp-list-chart-appversion',
     },
+    {
+      // Full tag (cli-X.Y.Z) in MAESTRO_VERSION: the digest lookup fetches the
+      // release by currentValue, so extractVersion would 404 on the bare version.
+      matchDepNames: [
+        'mobile-dev-inc/Maestro',
+      ],
+      versioning: 'regex:^cli-(?<major>\\d+)\\.(?<minor>\\d+)\\.(?<patch>\\d+)$',
+    },
   ],
   customManagers: [
     {
