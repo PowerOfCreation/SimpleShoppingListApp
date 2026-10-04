@@ -14,7 +14,8 @@ import (
 // minutes, and an access-log entry with a multi-minute "latency" would be
 // misleading; the hub logs its own connect/disconnect (see realtime.Hub).
 // Also skips /metrics - periodic scrapes aren't a meaningful access-log
-// entry and would just add noise.
+// entry and would just add noise. /healthz is only logged when the probe
+// fails (>=400), so successful k8s probes don't flood the log.
 func RequestLogger(logger *slog.Logger) echo.MiddlewareFunc {
 	return echomw.RequestLoggerWithConfig(echomw.RequestLoggerConfig{
 		Skipper: func(c *echo.Context) bool {
