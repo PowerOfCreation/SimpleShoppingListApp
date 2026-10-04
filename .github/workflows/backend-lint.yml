@@ -43,5 +43,25 @@ jobs:
         run: go mod tidy -diff
         working-directory: ./backend
 
+      # Generated code must match sql/queries + migrations (never hand-edited).
+      # Bump sqlc-version together with the "sqlc vX" header in the generated files.
+      - name: 🛠️ Setup sqlc
+        uses: sqlc-dev/setup-sqlc@bac53b7fb28c039a6c7f5736fd1e89744021bdd6 # v5.0.0
+        with:
+          sqlc-version: "1.31.1"
+
+      - name: 🔁 Check sqlc output is up to date
+        run: sqlc diff
+        working-directory: ./backend
+
+      - name: 🛡️ govulncheck (reachable vulns only)
+        uses: golang/govulncheck-action@032d45514ae346b1db93c04b0c90b841c370344f # v1.1.0
+        with:
+          work-dir: backend
+          go-version-input: "" # else 'stable' overrides go-version-file
+          go-version-file: backend/go.mod
+          cache-dependency-path: backend/go.sum
+          repo-checkout: false
+
       - name: 🐳 Build Docker image (catches go.mod/Dockerfile Go version drift)
         run: docker build backend
