@@ -19,10 +19,6 @@ on:
 permissions:
   contents: read
 
-env:
-  # renovate: datasource=github-releases depName=orhun/git-cliff extractVersion=^v(?<version>.+)$
-  GIT_CLIFF_VERSION: 2.14.2
-
 concurrency:
   group: frontend-release
   cancel-in-progress: false
@@ -40,7 +36,11 @@ jobs:
           fetch-depth: 0
       - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
-          tool: git-cliff@${{ env.GIT_CLIFF_VERSION }}
+          # No @version: the action SHA pins git-cliff via its checksummed manifest (+ cooldown).
+          # A version missing from that manifest would silently fall back to cargo-binstall
+          # (no manifest checksum, gets github.token); fallback: none fails instead.
+          tool: git-cliff
+          fallback: none
       - name: Resolve version and reject reused releases
         id: release
         env:
@@ -161,7 +161,11 @@ jobs:
           path: release-assets
       - uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
-          tool: git-cliff@${{ env.GIT_CLIFF_VERSION }}
+          # No @version: the action SHA pins git-cliff via its checksummed manifest (+ cooldown).
+          # A version missing from that manifest would silently fall back to cargo-binstall
+          # (no manifest checksum, gets github.token); fallback: none fails instead.
+          tool: git-cliff
+          fallback: none
       - name: Generate changelog and checksums
         run: |
           set -euo pipefail
