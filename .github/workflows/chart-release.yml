@@ -17,6 +17,10 @@ on:
         required: false
 
 env:
+  # renovate: datasource=github-releases depName=orhun/git-cliff extractVersion=^v(?<version>.+)$
+  GIT_CLIFF_VERSION: 2.14.2
+  # renovate: datasource=github-releases depName=helm/helm
+  HELM_VERSION: v4.3.0
   CHART_OCI_REF: oci://registry-1.docker.io/powerofcreation
 
 concurrency:
@@ -38,7 +42,7 @@ jobs:
       - name: 🛠️ Install git-cliff
         uses: taiki-e/install-action@83ac0ad63c0167e6f06796fab0fce28db1bf3db0 # v2.87.22
         with:
-          tool: git-cliff
+          tool: git-cliff@${{ env.GIT_CLIFF_VERSION }}
 
       # The tag itself isn't created until "🚀 Create draft release" (via
       # --target, only if it doesn't already exist), so a failed run up to
@@ -58,11 +62,14 @@ jobs:
         id: changelog
         uses: orhun/git-cliff-action@a9a95522b26fe6403f7bb24031f21fb573d0f5ff # v4.9.1
         with:
+          version: v${{ env.GIT_CLIFF_VERSION }}
           config: charts/imp-list/cliff.toml
           args: --latest --tag ${{ steps.release.outputs.tag }} --strip header
 
       - name: 🛠️ Install Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
 
       # Login early so a Docker Hub auth failure fails fast, before the
       # (slower) kind/smoke-test steps run.

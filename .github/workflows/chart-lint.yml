@@ -11,6 +11,10 @@ on:
       - "charts/imp-list/**"
       - ".github/workflows/chart-lint.yml"
 
+env:
+  # renovate: datasource=github-releases depName=helm/helm
+  HELM_VERSION: v4.3.0
+
 jobs:
   lint:
     runs-on: ubuntu-latest
@@ -20,6 +24,8 @@ jobs:
 
       - name: 🛠️ Install Helm
         uses: azure/setup-helm@9bc31f4ebc9c6b171d7bfbaa5d006ae7abdb4310 # v5.0.1
+        with:
+          version: ${{ env.HELM_VERSION }}
 
       - name: 🔎 helm lint
         run: |
@@ -69,10 +75,11 @@ jobs:
 
       # kube-linter: best-practice checks on the rendered manifests. Binary is
       # downloaded from the release and only executed if it matches the pinned
-      # SHA256 (bump both together, Renovate does not track this).
+      # SHA256 (Renovate bumps version and SHA256 together).
       # --skip-tests: the helm-test pod is throwaway and not hardened.
       - name: 🧹 kube-linter
         env:
+          # renovate: datasource=github-release-attachments depName=stackrox/kube-linter
           KUBE_LINTER_VERSION: v0.8.3
           KUBE_LINTER_SHA256: 618d299a3e2839c8ca9d86fce0db617be0fba41f0fecbbbfb7fbf1c04299fae1
         run: |

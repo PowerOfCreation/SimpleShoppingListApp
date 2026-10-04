@@ -163,6 +163,30 @@
   ],
   customManagers: [
     {
+      // Tools pinned in workflows via a "# renovate: datasource=… depName=…"
+      // comment above FOO_VERSION; an optional FOO_SHA256 line below is
+      // bumped too (github-release-attachments datasource).
+      customType: 'regex',
+      managerFilePatterns: [
+        '/^\\.github\\/(workflows|actions)\\/.+\\.ya?ml$/',
+      ],
+      matchStrings: [
+        '# renovate: datasource=(?<datasource>\\S+) depName=(?<depName>\\S+)(?: extractVersion=(?<extractVersion>\\S+))?\\s+\\w+_VERSION: ["\']?(?<currentValue>[^"\'\\s]+)["\']?(?:\\s+\\w+_SHA256: (?<currentDigest>[a-f0-9]{64}))?',
+      ],
+    },
+    {
+      // Images inside run:/heredoc scripts (e.g. the smoke-test Postgres),
+      // which the github-actions manager doesn't parse.
+      customType: 'regex',
+      managerFilePatterns: [
+        '/^\\.github\\/workflows\\/.+\\.ya?ml$/',
+      ],
+      matchStrings: [
+        '\\s(?<depName>[a-z0-9][a-z0-9./-]*):(?<currentValue>[\\w.-]+)@(?<currentDigest>sha256:[a-f0-9]{64})',
+      ],
+      datasourceTemplate: 'docker',
+    },
+    {
       customType: 'regex',
       managerFilePatterns: [
         '/^\\.github\\/workflows\\/renovate\\.yml$/',

@@ -7,6 +7,10 @@ on:
       - ".github/workflows/e2e-smoke.yml"
       - "frontend/**"
 
+env:
+  # renovate: datasource=github-releases depName=mobile-dev-inc/Maestro extractVersion=^cli-(?<version>.+)$
+  MAESTRO_VERSION: 2.8.0
+
 jobs:
   android-smoke:
     name: Android smoke test (Maestro)
@@ -57,7 +61,7 @@ jobs:
       - name: Install Maestro CLI
         uses: remarkablemark/setup-maestro-cli@868633700b615c0566cf3f0231ef79919c6dbd39 # v1.0.24
         with:
-          version: 2.8.0
+          version: ${{ env.MAESTRO_VERSION }}
 
       - name: 🤖 Run Maestro smoke flow on Android emulator
         uses: ReactiveCircus/android-emulator-runner@a421e43855164a8197daf9d8d40fe71c6996bb0d # v2.38.0
