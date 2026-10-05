@@ -241,6 +241,28 @@ describe("getValidAccessToken", () => {
     expect(result.getValue()).toBe("access-1")
     expect(mockedRefresh).not.toHaveBeenCalled()
   })
+
+  it("shares one refresh between concurrent callers", async () => {
+    await saveTokens(
+      makeTokenResponse({ issuedAt: Math.floor(Date.now() / 1000) - 3600 })
+    )
+    mockedRefresh.mockResolvedValue(
+      makeTokenResponse({ accessToken: "fresh-access" })
+    )
+
+    const results = await Promise.all([
+      getValidAccessToken(),
+      getValidAccessToken(),
+      getValidAccessToken(),
+    ])
+
+    expect(mockedRefresh).toHaveBeenCalledTimes(1)
+    expect(results.map((r) => r.getValue())).toEqual([
+      "fresh-access",
+      "fresh-access",
+      "fresh-access",
+    ])
+  })
 })
 
 describe("logout", () => {

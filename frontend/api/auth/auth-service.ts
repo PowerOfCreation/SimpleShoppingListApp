@@ -199,7 +199,18 @@ export async function restoreSession(): Promise<
   )
 }
 
-async function refreshTokens(stored: TokenResponse): Promise<TokenResponse> {
+// Concurrent callers (push, pull, socket) share one refresh: with rotation, a
+// second refresh using the same, already-consumed refresh token fails.
+let pendingRefresh: Promise<TokenResponse> | null = null
+
+function refreshTokens(stored: TokenResponse): Promise<TokenResponse> {
+  pendingRefresh ??= doRefreshTokens(stored).finally(() => {
+    pendingRefresh = null
+  })
+  return pendingRefresh
+}
+
+async function doRefreshTokens(stored: TokenResponse): Promise<TokenResponse> {
   if (!stored.refreshToken) {
     throw new AuthError("Access token expired and no refresh token is stored")
   }
