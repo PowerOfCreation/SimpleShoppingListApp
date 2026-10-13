@@ -60,7 +60,9 @@ jobs:
           work-dir: backend
           go-version-input: "" # else 'stable' overrides go-version-file
           go-version-file: backend/go.mod
-          cache-dependency-path: backend/go.sum
+          # Setup Go above already restored the cache; a second restore spams
+          # "tar: Cannot open: File exists" (golang/go#69597).
+          cache: false
           repo-checkout: false
 
       - name: 🐳 Build Docker image (catches go.mod/Dockerfile Go version drift)
