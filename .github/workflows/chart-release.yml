@@ -18,7 +18,7 @@ on:
 
 env:
   # renovate: datasource=github-releases depName=helm/helm
-  HELM_VERSION: v4.3.0
+  HELM_VERSION: v4.3.1
   CHART_OCI_REF: oci://registry-1.docker.io/powerofcreation
   # Same repo as CHART_OCI_REF; cosign only finds Docker Hub creds under docker.io.
   CHART_REPO: docker.io/powerofcreation/imp-list
