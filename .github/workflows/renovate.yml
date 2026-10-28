@@ -13,7 +13,7 @@ jobs:
       # clone, so no checkout is needed. Don't pass that file as
       # configurationFile either: it would then double as global config, which is
       # what forced global-only options like repositories into it.
-      - uses: renovatebot/github-action@f0f41e5f2e706165f6814b1d0f0d0e319de7d1d9 # v46.3.8
+      - uses: renovatebot/github-action@2804199d260ad00c1fae0e9e842888369391c776 # v46.3.10
         with:
           renovate-version: 43.220.0@sha256:459b7e28aa54fa2fa7db83df6a2d6ad26de416a054ee554e7833203adf3d9a47
           token: ${{ secrets.RENOVATE_TOKEN }}
