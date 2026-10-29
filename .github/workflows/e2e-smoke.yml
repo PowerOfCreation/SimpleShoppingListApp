@@ -60,8 +60,8 @@ jobs:
       - name: Install Maestro CLI
         env:
           # renovate: datasource=github-release-attachments depName=mobile-dev-inc/Maestro
-          MAESTRO_VERSION: cli-2.11.0
-          MAESTRO_SHA256: 5384593cb4e7a106489e75a821d157dd43f4e438df6bc308b72e82c685e1283a
+          MAESTRO_VERSION: cli-2.12.0
+          MAESTRO_SHA256: a6044a84542f522f434c5dc3d609e60c7446d423f3ed1b2ae513f5c48663ec5e
         run: |
           set -euo pipefail
           curl -sSfL -o "$RUNNER_TEMP/maestro.zip" "https://github.com/mobile-dev-inc/Maestro/releases/download/${MAESTRO_VERSION}/maestro.zip"
