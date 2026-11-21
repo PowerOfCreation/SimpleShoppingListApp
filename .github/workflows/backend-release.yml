@@ -38,7 +38,7 @@ jobs:
           fetch-tags: true
 
       - name: 🛠️ Install git-cliff
-        uses: taiki-e/install-action@1168f6810a3cb30a3514bf5756a3b7f0422c6df8 # v2.87.28
+        uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
         with:
           # No @version: the action SHA pins git-cliff via its checksummed manifest (+ cooldown).
           # A version missing from that manifest would silently fall back to cargo-binstall
