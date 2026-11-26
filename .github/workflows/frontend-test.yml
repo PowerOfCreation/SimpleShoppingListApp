@@ -32,7 +32,7 @@ jobs:
         working-directory: ./frontend
 
       - name: Jest Coverage Comment
-        uses: MishaKav/jest-coverage-comment@1b5d15445c8afba0c13bd00167bd31130b812d0a # v1.0.37
+        uses: MishaKav/jest-coverage-comment@7032bf8e71aa2b267b6b143be3c4480b625c2b12 # v1.0.38
         if: (success() || failure()) && github.event_name == 'pull_request'
         with:
           coverage-summary-path: ./frontend/coverage/coverage-summary.json
