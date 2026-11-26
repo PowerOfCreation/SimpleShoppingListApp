@@ -45,6 +45,18 @@ describe("categorizeIngredient", () => {
       ["Sonnenblumenöl", Category.PANTRY],
       ["Weintrauben kernlos", Category.FRUIT_VEGETABLES],
       ["2 Liter Milch", Category.DAIRY_CHEESE],
+      ["Obst", Category.FRUIT_VEGETABLES],
+      ["Bio-Obst", Category.FRUIT_VEGETABLES],
+      ["Obstbrand", Category.DRINKS],
+      ["Dosenobst", Category.PANTRY],
+      ["Bohnen", Category.FRUIT_VEGETABLES],
+      ["Spezi", Category.DRINKS],
+      ["Pesto", Category.PANTRY],
+      ["Kokosmilch", Category.PANTRY],
+      ["Paprikapulver", Category.PANTRY],
+      ["Mandelmilch", Category.DAIRY_CHEESE],
+      ["Kaffeebohnen", Category.DRINKS],
+      ["Taschentücher", Category.HOUSEHOLD],
     ]
 
     it.each(cases)("%s -> %s", (name, expected) => {
