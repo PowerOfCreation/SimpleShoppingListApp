@@ -68,6 +68,13 @@ export const CURATED_CATEGORY_KEYWORDS: [string, Category][] = [
   ["broccoli", Category.FRUIT_VEGETABLES],
   ["mushroom", Category.FRUIT_VEGETABLES],
   ["lemon", Category.FRUIT_VEGETABLES],
+  ["obst", Category.FRUIT_VEGETABLES],
+  ["bohne", Category.FRUIT_VEGETABLES],
+  ["kokosnuss", Category.FRUIT_VEGETABLES],
+  ["physalis", Category.FRUIT_VEGETABLES],
+  ["zwetschge", Category.FRUIT_VEGETABLES],
+  ["dill", Category.FRUIT_VEGETABLES],
+  ["minze", Category.FRUIT_VEGETABLES],
 
   // Dairy & Cheese
   ["vollmilch", Category.DAIRY_CHEESE],
@@ -173,6 +180,8 @@ export const CURATED_CATEGORY_KEYWORDS: [string, Category][] = [
   ["weißwein", Category.DRINKS],
   ["sekt", Category.DRINKS],
   ["schnaps", Category.DRINKS],
+  ["obstbrand", Category.DRINKS],
+  ["obstler", Category.DRINKS],
   ["bier", Category.DRINKS],
   ["tee", Category.DRINKS],
   ["kakao", Category.DRINKS],
@@ -186,6 +195,8 @@ export const CURATED_CATEGORY_KEYWORDS: [string, Category][] = [
   ["wine", Category.DRINKS],
   ["beer", Category.DRINKS],
   ["tea", Category.DRINKS],
+  ["spezi", Category.DRINKS],
+  ["energy", Category.DRINKS],
 
   // Sweets & Snacks
   ["schokolade", Category.SWEETS_SNACKS],
@@ -210,6 +221,8 @@ export const CURATED_CATEGORY_KEYWORDS: [string, Category][] = [
   ["candy", Category.SWEETS_SNACKS],
   ["cookie", Category.SWEETS_SNACKS],
   ["snack", Category.SWEETS_SNACKS],
+  ["mandeln", Category.SWEETS_SNACKS],
+  ["cashew", Category.SWEETS_SNACKS],
 
   // Frozen
   ["tiefkühlpizza", Category.FROZEN],
@@ -265,6 +278,7 @@ export const CURATED_CATEGORY_KEYWORDS: [string, Category][] = [
   ["gehackt tomate", Category.PANTRY],
   ["geschält tomate", Category.PANTRY],
   ["dosentomate", Category.PANTRY],
+  ["dosenobst", Category.PANTRY],
   ["tomatensauce", Category.PANTRY],
   ["tomatensoße", Category.PANTRY],
   ["tomato sauce", Category.PANTRY],
@@ -280,6 +294,19 @@ export const CURATED_CATEGORY_KEYWORDS: [string, Category][] = [
   ["corn", Category.PANTRY],
   ["maiskolben", Category.FRUIT_VEGETABLES],
   ["corn on the cob", Category.FRUIT_VEGETABLES],
+  ["pesto", Category.PANTRY],
+  ["oliven", Category.PANTRY],
+  ["rosinen", Category.PANTRY],
+  ["linsen", Category.PANTRY],
+  ["polenta", Category.PANTRY],
+  ["wrap", Category.PANTRY],
+  ["sirup", Category.PANTRY],
+  ["dicksaft", Category.PANTRY],
+  ["oregano", Category.PANTRY],
+  ["sauerkraut", Category.PANTRY],
+  ["paprikapulver", Category.PANTRY],
+  ["kokosmilch", Category.PANTRY],
+  ["erdnussbutter", Category.PANTRY],
 
   // Household
   ["waschmittel", Category.HOUSEHOLD],
@@ -310,6 +337,9 @@ export const CURATED_CATEGORY_KEYWORDS: [string, Category][] = [
   ["detergent", Category.HOUSEHOLD],
   ["battery", Category.HOUSEHOLD],
   ["batteries", Category.HOUSEHOLD],
+  ["serviette", Category.HOUSEHOLD],
+  ["taschentücher", Category.HOUSEHOLD],
+  ["entkalker", Category.HOUSEHOLD],
 
   // Personal Care
   ["shampoo", Category.PERSONAL_CARE],
@@ -332,6 +362,7 @@ export const CURATED_CATEGORY_KEYWORDS: [string, Category][] = [
   ["toothpaste", Category.PERSONAL_CARE],
   ["soap", Category.PERSONAL_CARE],
   ["diaper", Category.PERSONAL_CARE],
+  ["haarspülung", Category.PERSONAL_CARE],
 
   // Pet Supplies
   ["hundefutter", Category.PET_SUPPLIES],
